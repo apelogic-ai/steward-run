@@ -16,6 +16,7 @@ const run: Run = {
   runtimeUid: "runtime-uid-1",
   phase: "accepted",
   runtimeOwnership: "provisioned",
+  finalized: false,
 };
 
 test("GitHub OIDC requests preserve query parameters and bind the configured audience", async () => {

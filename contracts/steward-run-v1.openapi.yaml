@@ -141,11 +141,13 @@ components:
     Run:
       type: object
       additionalProperties: false
-      required: [runUid, runtimeUid, phase, runtimeOwnership]
+      required: [runUid, runtimeUid, phase, runtimeOwnership, finalized]
       properties:
         runUid: { type: string, format: uuid }
         runtimeUid: { type: string, minLength: 1 }
         phase: { $ref: '#/components/schemas/RunPhase' }
         runtimeOwnership: { type: string, enum: [provisioned, adopted] }
+        finalized:
+          type: boolean
+          description: True after provisioned termination or adopted-runtime detachment completes.
         message: { type: string }
-

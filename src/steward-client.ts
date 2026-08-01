@@ -20,6 +20,7 @@ export interface Run {
   runtimeUid: string;
   phase: RunPhase;
   runtimeOwnership: RuntimeOwnership;
+  finalized: boolean;
   message?: string;
 }
 
@@ -63,7 +64,7 @@ function parseRun(payload: unknown): Run {
     throw new Error("Steward returned an incompatible run response");
   }
   const value = payload as Record<string, unknown>;
-  const allowed = new Set(["runUid", "runtimeUid", "phase", "runtimeOwnership", "message"]);
+  const allowed = new Set(["runUid", "runtimeUid", "phase", "runtimeOwnership", "finalized", "message"]);
   if (
     Object.keys(value).some((key) => !allowed.has(key)) ||
     typeof value.runUid !== "string" ||
@@ -73,6 +74,7 @@ function parseRun(payload: unknown): Run {
     typeof value.phase !== "string" ||
     !runPhases.includes(value.phase as RunPhase) ||
     (value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted") ||
+    typeof value.finalized !== "boolean" ||
     (value.message !== undefined && typeof value.message !== "string")
   ) {
     throw new Error("Steward returned an incompatible run response");
@@ -82,6 +84,7 @@ function parseRun(payload: unknown): Run {
     runtimeUid: value.runtimeUid,
     phase: value.phase as RunPhase,
     runtimeOwnership: value.runtimeOwnership,
+    finalized: value.finalized,
     ...(typeof value.message === "string" ? { message: value.message } : {}),
   };
 }
