@@ -1,0 +1,27 @@
+{
+  "name": "steward-run",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && esbuild src/main.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/index.mjs",
+    "check": "npm run typecheck && npm run test && npm run build && npm run check:dist",
+    "check:dist": "git diff --exit-code -- dist/index.mjs",
+    "test": "node --import tsx --test 'test/**/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tar-stream": "3.1.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.0.15",
+    "@types/tar-stream": "3.1.4",
+    "esbuild": "0.25.8",
+    "tsx": "4.20.3",
+    "typescript": "5.8.3",
+    "yaml": "2.8.1"
+  }
+}

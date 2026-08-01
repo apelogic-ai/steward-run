@@ -1,0 +1,50 @@
+name: steward-run
+description: Run a governed coding-agent workflow in a Steward sandbox
+
+inputs:
+  workflow:
+    description: Governed workflow to execute
+    required: true
+  inputs:
+    description: Newline-delimited workspace-relative input paths
+    required: true
+  outputs:
+    description: Newline-delimited workspace-relative output paths
+    required: true
+  steward-api-url:
+    description: Steward control-plane API base URL
+    required: true
+  oidc-audience:
+    description: Audience requested for the GitHub OIDC token
+    required: true
+  agent-runtime:
+    description: Existing AgentRuntime UID to adopt instead of provisioning one
+    required: false
+  coding-agent-runtime:
+    description: Versioned coding-agent runtime executed inside the Steward sandbox
+    required: false
+    default: claude-code@2.1.220
+
+outputs:
+  status:
+    description: Terminal Steward run phase
+    value: ${{ steps.steward-run.outputs.status }}
+  runtime-uid:
+    description: Provisioned or adopted AgentRuntime UID
+    value: ${{ steps.steward-run.outputs.runtime-uid }}
+
+runs:
+  using: composite
+  steps:
+    - id: steward-run
+      shell: bash
+      env:
+        STEWARD_RUN_WORKFLOW: ${{ inputs.workflow }}
+        STEWARD_RUN_INPUTS: ${{ inputs.inputs }}
+        STEWARD_RUN_OUTPUTS: ${{ inputs.outputs }}
+        STEWARD_RUN_API_URL: ${{ inputs.steward-api-url }}
+        STEWARD_RUN_OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
+        STEWARD_RUN_AGENT_RUNTIME: ${{ inputs.agent-runtime }}
+        STEWARD_RUN_CODING_AGENT_RUNTIME: ${{ inputs.coding-agent-runtime }}
+      run: exec node "$GITHUB_ACTION_PATH/dist/index.mjs"
+
