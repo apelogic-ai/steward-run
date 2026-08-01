@@ -14,7 +14,9 @@ USER root
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 RUN node --version \
     && test -x /home/runner/run.sh \
-    && test -d /home/runner/k8s
+    && test -d /home/runner/k8s \
+    && rm -f /usr/bin/containerd /usr/bin/containerd-shim-runc-v2 /usr/bin/ctr \
+    && rm -rf /home/runner/externals/node20/lib/node_modules/npm \
+              /home/runner/externals/node24/lib/node_modules/npm
 
 USER runner
-

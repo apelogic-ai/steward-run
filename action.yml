@@ -46,5 +46,4 @@ runs:
         STEWARD_RUN_OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
         STEWARD_RUN_AGENT_RUNTIME: ${{ inputs.agent-runtime }}
         STEWARD_RUN_CODING_AGENT_RUNTIME: ${{ inputs.coding-agent-runtime }}
-      run: exec node "$GITHUB_ACTION_PATH/dist/index.mjs"
-
+      run: exec node "$GITHUB_ACTION_PATH/dist/index.cjs"

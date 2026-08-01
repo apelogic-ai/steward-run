@@ -35,7 +35,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
   }
   assert.equal(action.inputs["coding-agent-runtime"]?.default, "claude-code@2.1.220");
   assert.deepEqual(Object.keys(action.outputs).sort(), ["runtime-uid", "status"]);
-  assert.match(action.runs.steps[0]?.run ?? "", /dist\/index\.mjs/);
+  assert.match(action.runs.steps[0]?.run ?? "", /dist\/index\.cjs/);
 });
 
 test("the provisional Steward API covers the complete run lifecycle", async () => {

@@ -15,7 +15,11 @@ export async function getGitHubOidcToken(
     );
   }
   const url = new URL(requestUrl);
-  if (url.protocol !== "https:") throw new Error("GitHub OIDC request URL must use HTTPS");
+  const loopback =
+    url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
+    throw new Error("GitHub OIDC request URL must use HTTPS except on loopback");
+  }
   url.searchParams.set("audience", audience);
   let response: Response;
   try {
@@ -56,4 +60,3 @@ export function oidcTokenProvider(
       fetchImplementation,
     );
 }
-

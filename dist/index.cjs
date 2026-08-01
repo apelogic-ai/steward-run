@@ -1,17 +1,16 @@
+"use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
-  get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
-}) : x)(function(x) {
-  if (typeof require !== "undefined") return require.apply(this, arguments);
-  throw Error('Dynamic require of "' + x + '" is not supported');
-});
-var __commonJS = (cb, mod) => function __require2() {
+var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -29,18 +28,19 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // node_modules/events-universal/default.js
 var require_default = __commonJS({
-  "node_modules/events-universal/default.js"(exports, module) {
-    module.exports = __require("events");
+  "node_modules/events-universal/default.js"(exports2, module2) {
+    module2.exports = require("events");
   }
 });
 
 // node_modules/fast-fifo/fixed-size.js
 var require_fixed_size = __commonJS({
-  "node_modules/fast-fifo/fixed-size.js"(exports, module) {
-    module.exports = class FixedFIFO {
+  "node_modules/fast-fifo/fixed-size.js"(exports2, module2) {
+    module2.exports = class FixedFIFO {
       constructor(hwm) {
         if (!(hwm > 0) || (hwm - 1 & hwm) !== 0) throw new Error("Max size for a FixedFIFO should be a power of two");
         this.buffer = new Array(hwm);
@@ -79,9 +79,9 @@ var require_fixed_size = __commonJS({
 
 // node_modules/fast-fifo/index.js
 var require_fast_fifo = __commonJS({
-  "node_modules/fast-fifo/index.js"(exports, module) {
+  "node_modules/fast-fifo/index.js"(exports2, module2) {
     var FixedFIFO = require_fixed_size();
-    module.exports = class FastFIFO {
+    module2.exports = class FastFIFO {
       constructor(hwm) {
         this.hwm = hwm || 16;
         this.head = new FixedFIFO(this.hwm);
@@ -126,7 +126,7 @@ var require_fast_fifo = __commonJS({
 
 // node_modules/b4a/index.js
 var require_b4a = __commonJS({
-  "node_modules/b4a/index.js"(exports, module) {
+  "node_modules/b4a/index.js"(exports2, module2) {
     function isBuffer(value) {
       return Buffer.isBuffer(value) || value instanceof Uint8Array;
     }
@@ -239,7 +239,7 @@ var require_b4a = __commonJS({
     function writeUInt32LE(buffer, value, offset) {
       return toBuffer(buffer).writeUInt32LE(value, offset);
     }
-    module.exports = {
+    module2.exports = {
       isBuffer,
       isEncoding,
       alloc,
@@ -283,9 +283,9 @@ var require_b4a = __commonJS({
 
 // node_modules/text-decoder/lib/pass-through-decoder.js
 var require_pass_through_decoder = __commonJS({
-  "node_modules/text-decoder/lib/pass-through-decoder.js"(exports, module) {
+  "node_modules/text-decoder/lib/pass-through-decoder.js"(exports2, module2) {
     var b4a = require_b4a();
-    module.exports = class PassThroughDecoder {
+    module2.exports = class PassThroughDecoder {
       constructor(encoding) {
         this.encoding = encoding;
       }
@@ -304,9 +304,9 @@ var require_pass_through_decoder = __commonJS({
 
 // node_modules/text-decoder/lib/utf8-decoder.js
 var require_utf8_decoder = __commonJS({
-  "node_modules/text-decoder/lib/utf8-decoder.js"(exports, module) {
+  "node_modules/text-decoder/lib/utf8-decoder.js"(exports2, module2) {
     var b4a = require_b4a();
-    module.exports = class UTF8Decoder {
+    module2.exports = class UTF8Decoder {
       constructor() {
         this._reset();
       }
@@ -451,10 +451,10 @@ var require_utf8_decoder = __commonJS({
 
 // node_modules/text-decoder/index.js
 var require_text_decoder = __commonJS({
-  "node_modules/text-decoder/index.js"(exports, module) {
+  "node_modules/text-decoder/index.js"(exports2, module2) {
     var PassThroughDecoder = require_pass_through_decoder();
     var UTF8Decoder = require_utf8_decoder();
-    module.exports = class TextDecoder {
+    module2.exports = class TextDecoder {
       constructor(encoding = "utf8") {
         this.encoding = normalizeEncoding(encoding);
         switch (this.encoding) {
@@ -513,8 +513,8 @@ var require_text_decoder = __commonJS({
 
 // node_modules/streamx/lib/errors.js
 var require_errors = __commonJS({
-  "node_modules/streamx/lib/errors.js"(exports, module) {
-    module.exports = class StreamError extends Error {
+  "node_modules/streamx/lib/errors.js"(exports2, module2) {
+    module2.exports = class StreamError extends Error {
       constructor(msg, code, fn = StreamError) {
         super(msg);
         this.code = code;
@@ -555,7 +555,7 @@ var require_errors = __commonJS({
 
 // node_modules/streamx/index.js
 var require_streamx = __commonJS({
-  "node_modules/streamx/index.js"(exports, module) {
+  "node_modules/streamx/index.js"(exports2, module2) {
     var { EventEmitter } = require_default();
     var FIFO = require_fast_fifo();
     var TextDecoder = require_text_decoder();
@@ -1562,7 +1562,7 @@ var require_streamx = __commonJS({
     function isWritev(s) {
       return s._writev !== Writable.prototype._writev && s._writev !== Duplex.prototype._writev;
     }
-    module.exports = {
+    module2.exports = {
       pipeline: pipeline2,
       pipelinePromise,
       isStream,
@@ -1586,7 +1586,7 @@ var require_streamx = __commonJS({
 
 // node_modules/tar-stream/headers.js
 var require_headers = __commonJS({
-  "node_modules/tar-stream/headers.js"(exports) {
+  "node_modules/tar-stream/headers.js"(exports2) {
     var b4a = require_b4a();
     var ZEROS = "0000000000000000000";
     var SEVENS = "7777777777777777777";
@@ -1598,10 +1598,10 @@ var require_headers = __commonJS({
     var MASK = 4095;
     var MAGIC_OFFSET = 257;
     var VERSION_OFFSET = 263;
-    exports.decodeLongPath = function decodeLongPath(buf, encoding) {
+    exports2.decodeLongPath = function decodeLongPath(buf, encoding) {
       return decodeStr(buf, 0, buf.length, encoding);
     };
-    exports.encodePax = function encodePax(opts) {
+    exports2.encodePax = function encodePax(opts) {
       let result = "";
       if (opts.name) result += addLength(" path=" + opts.name + "\n");
       if (opts.linkname) result += addLength(" linkpath=" + opts.linkname + "\n");
@@ -1613,7 +1613,7 @@ var require_headers = __commonJS({
       }
       return b4a.from(result);
     };
-    exports.decodePax = function decodePax(buf) {
+    exports2.decodePax = function decodePax(buf) {
       const result = {};
       while (buf.length) {
         let i = 0;
@@ -1628,7 +1628,7 @@ var require_headers = __commonJS({
       }
       return result;
     };
-    exports.encode = function encode(opts) {
+    exports2.encode = function encode(opts) {
       const buf = b4a.alloc(512);
       let name = opts.name;
       let prefix = "";
@@ -1660,7 +1660,7 @@ var require_headers = __commonJS({
       b4a.write(buf, encodeOct(cksum(buf), 6), 148);
       return buf;
     };
-    exports.decode = function decode(buf, filenameEncoding, allowUnknownFormat) {
+    exports2.decode = function decode(buf, filenameEncoding, allowUnknownFormat) {
       let typeflag = buf[156] === 0 ? 0 : buf[156] - ZERO_OFFSET;
       let name = decodeStr(buf, 0, 100, filenameEncoding);
       const mode = decodeOct(buf, 100, 8);
@@ -1847,7 +1847,7 @@ var require_headers = __commonJS({
 
 // node_modules/tar-stream/extract.js
 var require_extract = __commonJS({
-  "node_modules/tar-stream/extract.js"(exports, module) {
+  "node_modules/tar-stream/extract.js"(exports2, module2) {
     var { Writable, Readable: Readable2, getStreamError } = require_streamx();
     var FIFO = require_fast_fifo();
     var b4a = require_b4a();
@@ -2167,7 +2167,7 @@ var require_extract = __commonJS({
         }
       }
     };
-    module.exports = function extract(opts) {
+    module2.exports = function extract(opts) {
       return new Extract(opts);
     };
     function noop() {
@@ -2181,7 +2181,7 @@ var require_extract = __commonJS({
 
 // node_modules/tar-stream/constants.js
 var require_constants = __commonJS({
-  "node_modules/tar-stream/constants.js"(exports, module) {
+  "node_modules/tar-stream/constants.js"(exports2, module2) {
     var constants = {
       // just for envs without fs
       S_IFMT: 61440,
@@ -2192,16 +2192,16 @@ var require_constants = __commonJS({
       S_IFLNK: 40960
     };
     try {
-      module.exports = __require("fs").constants || constants;
+      module2.exports = require("fs").constants || constants;
     } catch {
-      module.exports = constants;
+      module2.exports = constants;
     }
   }
 });
 
 // node_modules/tar-stream/pack.js
 var require_pack = __commonJS({
-  "node_modules/tar-stream/pack.js"(exports, module) {
+  "node_modules/tar-stream/pack.js"(exports2, module2) {
     var { Readable: Readable2, Writable, getStreamError } = require_streamx();
     var b4a = require_b4a();
     var constants = require_constants();
@@ -2403,7 +2403,7 @@ var require_pack = __commonJS({
         cb();
       }
     };
-    module.exports = function pack(opts) {
+    module2.exports = function pack(opts) {
       return new Pack(opts);
     };
     function modeToType(mode) {
@@ -2435,14 +2435,19 @@ var require_pack = __commonJS({
 
 // node_modules/tar-stream/index.js
 var require_tar_stream = __commonJS({
-  "node_modules/tar-stream/index.js"(exports) {
-    exports.extract = require_extract();
-    exports.pack = require_pack();
+  "node_modules/tar-stream/index.js"(exports2) {
+    exports2.extract = require_extract();
+    exports2.pack = require_pack();
   }
 });
 
 // src/main.ts
-import { appendFile } from "node:fs/promises";
+var main_exports = {};
+__export(main_exports, {
+  main: () => main
+});
+module.exports = __toCommonJS(main_exports);
+var import_promises5 = require("node:fs/promises");
 
 // src/config.ts
 function required(environment, name) {
@@ -2466,34 +2471,26 @@ function readActionConfig(environment) {
 }
 
 // src/lifecycle.ts
-import { createHash } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
+var import_node_crypto2 = require("node:crypto");
+var import_promises3 = require("node:timers/promises");
 
 // src/archive.ts
+var import_node_fs = require("node:fs");
+var import_promises = require("node:fs/promises");
+var import_node_crypto = require("node:crypto");
+var import_node_path = require("node:path");
+var import_promises2 = require("node:stream/promises");
 var import_tar_stream = __toESM(require_tar_stream(), 1);
-import { createWriteStream } from "node:fs";
-import {
-  chmod,
-  lstat,
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  rm
-} from "node:fs/promises";
-import { randomUUID } from "node:crypto";
-import { basename, dirname, join, posix, win32 } from "node:path";
-import { pipeline } from "node:stream/promises";
 function invalidWorkspacePath(value) {
   return new Error(`workspace-relative path is invalid: ${JSON.stringify(value)}`);
 }
 function normalizeWorkspacePath(value) {
   let candidate = value.trim();
   while (candidate.startsWith("./")) candidate = candidate.slice(2);
-  if (!candidate || candidate === "." || candidate.includes("\\") || candidate.includes("\0") || posix.isAbsolute(candidate) || win32.isAbsolute(candidate)) {
+  if (!candidate || candidate === "." || candidate.includes("\\") || candidate.includes("\0") || import_node_path.posix.isAbsolute(candidate) || import_node_path.win32.isAbsolute(candidate)) {
     throw invalidWorkspacePath(value);
   }
-  const normalized = posix.normalize(candidate);
+  const normalized = import_node_path.posix.normalize(candidate);
   if (normalized === ".." || normalized.startsWith("../")) {
     throw invalidWorkspacePath(value);
   }
@@ -2514,8 +2511,8 @@ function parseWorkspacePaths(source) {
   return paths;
 }
 async function collectEntries(workspace, relative, entries) {
-  const source = join(workspace, ...relative.split("/"));
-  const metadata = await lstat(source).catch((error) => {
+  const source = (0, import_node_path.join)(workspace, ...relative.split("/"));
+  const metadata = await (0, import_promises.lstat)(source).catch((error) => {
     if (error.code === "ENOENT") {
       throw new Error(`declared input does not exist: ${relative}`);
     }
@@ -2531,10 +2528,10 @@ async function collectEntries(workspace, relative, entries) {
       type: "directory",
       mode: metadata.mode & 511
     });
-    const children = await readdir(source);
+    const children = await (0, import_promises.readdir)(source);
     children.sort((left, right) => left.localeCompare(right, "en"));
     for (const child of children) {
-      await collectEntries(workspace, posix.join(relative, child), entries);
+      await collectEntries(workspace, import_node_path.posix.join(relative, child), entries);
     }
     return;
   }
@@ -2575,7 +2572,7 @@ async function createInputArchive(workspace, paths) {
             pack.entry(header, (error) => error ? reject(error) : resolve());
           });
         } else {
-          const body = await readFile(entry.source);
+          const body = await (0, import_promises.readFile)(entry.source);
           await new Promise((resolve, reject) => {
             pack.entry(header, body, (error) => error ? reject(error) : resolve());
           });
@@ -2589,10 +2586,10 @@ async function createInputArchive(workspace, paths) {
   return pack;
 }
 function normalizeArchivePath(value) {
-  if (!value || value.includes("\\") || value.includes("\0") || posix.isAbsolute(value) || win32.isAbsolute(value)) {
+  if (!value || value.includes("\\") || value.includes("\0") || import_node_path.posix.isAbsolute(value) || import_node_path.win32.isAbsolute(value)) {
     throw new Error(`unsafe archive path: ${JSON.stringify(value)}`);
   }
-  const normalized = posix.normalize(value.replace(/\/$/u, ""));
+  const normalized = import_node_path.posix.normalize(value.replace(/\/$/u, ""));
   if (!normalized || normalized === "." || normalized === ".." || normalized.startsWith("../")) {
     throw new Error(`unsafe archive path: ${JSON.stringify(value)}`);
   }
@@ -2605,8 +2602,8 @@ async function ensureSafeDirectories(workspace, relativeDirectory) {
   if (!relativeDirectory || relativeDirectory === ".") return;
   let current = workspace;
   for (const component of relativeDirectory.split("/")) {
-    current = join(current, component);
-    const metadata = await lstat(current).catch((error) => {
+    current = (0, import_node_path.join)(current, component);
+    const metadata = await (0, import_promises.lstat)(current).catch((error) => {
       if (error.code === "ENOENT") return void 0;
       throw error;
     });
@@ -2616,26 +2613,26 @@ async function ensureSafeDirectories(workspace, relativeDirectory) {
     if (metadata && !metadata.isDirectory()) {
       throw new Error(`non-directory in output path: ${relativeDirectory}`);
     }
-    if (!metadata) await mkdir(current);
+    if (!metadata) await (0, import_promises.mkdir)(current);
   }
 }
 async function writeOutputFile(stream, workspace, relative, mode) {
-  const parent = dirname(relative).split("\\").join("/");
+  const parent = (0, import_node_path.dirname)(relative).split("\\").join("/");
   await ensureSafeDirectories(workspace, parent);
-  const target = join(workspace, ...relative.split("/"));
-  const existing = await lstat(target).catch((error) => {
+  const target = (0, import_node_path.join)(workspace, ...relative.split("/"));
+  const existing = await (0, import_promises.lstat)(target).catch((error) => {
     if (error.code === "ENOENT") return void 0;
     throw error;
   });
   if (existing?.isSymbolicLink()) throw new Error(`symbolic link in output path: ${relative}`);
   if (existing?.isDirectory()) throw new Error(`output file would replace a directory: ${relative}`);
-  const temporary = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
+  const temporary = (0, import_node_path.join)((0, import_node_path.dirname)(target), `.${(0, import_node_path.basename)(target)}.${(0, import_node_crypto.randomUUID)()}.tmp`);
   try {
-    await pipeline(stream, createWriteStream(temporary, { flags: "wx", mode: mode ?? 384 }));
-    await chmod(temporary, (mode ?? 384) & 511);
-    await rename(temporary, target);
+    await (0, import_promises2.pipeline)(stream, (0, import_node_fs.createWriteStream)(temporary, { flags: "wx", mode: mode ?? 384 }));
+    await (0, import_promises.chmod)(temporary, (mode ?? 384) & 511);
+    await (0, import_promises.rename)(temporary, target);
   } catch (error) {
-    await rm(temporary, { force: true });
+    await (0, import_promises.rm)(temporary, { force: true });
     throw error;
   }
 }
@@ -2669,7 +2666,7 @@ async function extractOutputArchive(archive, workspace, declaredPaths) {
       }
     })();
   });
-  await pipeline(archive, extract);
+  await (0, import_promises2.pipeline)(archive, extract);
 }
 
 // src/lifecycle.ts
@@ -2686,7 +2683,7 @@ function createIdempotencyKey(environment) {
     identityField(environment, "GITHUB_RUN_ATTEMPT"),
     identityField(environment, "GITHUB_JOB")
   ].join("\0");
-  return createHash("sha256").update(identity).digest("hex");
+  return (0, import_node_crypto2.createHash)("sha256").update(identity).digest("hex");
 }
 function abortError() {
   const error = new Error("Steward run was cancelled");
@@ -2734,7 +2731,7 @@ async function runWorkflow(config, workspace, dependencies) {
     }
     return createInputArchive(workspace, inputPaths);
   };
-  const sleep = dependencies.sleep ?? (async (milliseconds, signal) => delay(milliseconds, void 0, { signal }));
+  const sleep = dependencies.sleep ?? (async (milliseconds, signal) => (0, import_promises3.setTimeout)(milliseconds, void 0, { signal }));
   let created;
   let primaryError;
   try {
@@ -2797,7 +2794,10 @@ async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImple
     );
   }
   const url = new URL(requestUrl);
-  if (url.protocol !== "https:") throw new Error("GitHub OIDC request URL must use HTTPS");
+  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
+    throw new Error("GitHub OIDC request URL must use HTTPS except on loopback");
+  }
   url.searchParams.set("audience", audience);
   let response;
   try {
@@ -2831,8 +2831,8 @@ function oidcTokenProvider(environment, audience, fetchImplementation = fetch) {
 }
 
 // src/steward-client.ts
-import { setTimeout as delay2 } from "node:timers/promises";
-import { Readable } from "node:stream";
+var import_promises4 = require("node:timers/promises");
+var import_node_stream = require("node:stream");
 var runPhases = [
   "accepted",
   "materializing",
@@ -2894,7 +2894,7 @@ var StewardClient = class {
     this.#baseUrl = validatedBaseUrl(options.baseUrl);
     this.#getToken = options.getToken;
     this.#fetch = options.fetch ?? fetch;
-    this.#sleep = options.sleep ?? (async (milliseconds) => delay2(milliseconds));
+    this.#sleep = options.sleep ?? (async (milliseconds) => (0, import_promises4.setTimeout)(milliseconds));
     this.#maxAttempts = options.maxAttempts ?? 4;
   }
   async #request(method, path, options) {
@@ -2978,7 +2978,7 @@ var StewardClient = class {
     if (!response.headers.get("content-type")?.startsWith("application/x-tar") || !response.body) {
       throw new Error("Steward returned an incompatible output archive response");
     }
-    return Readable.fromWeb(response.body);
+    return import_node_stream.Readable.fromWeb(response.body);
   }
   async finalizeRun(runUid) {
     return this.#runResponse(
@@ -2999,7 +2999,7 @@ async function setActionOutput(name, value) {
   if (!/^[a-z-]+$/u.test(name) || /[\r\n]/u.test(value)) {
     throw new Error("refusing to write an unsafe GitHub Actions output");
   }
-  await appendFile(requiredEnvironment("GITHUB_OUTPUT"), `${name}=${value}
+  await (0, import_promises5.appendFile)(requiredEnvironment("GITHUB_OUTPUT"), `${name}=${value}
 `, {
     encoding: "utf8"
   });
@@ -3026,7 +3026,7 @@ async function main() {
     process.off("SIGTERM", cancel);
   }
 }
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.env.STEWARD_RUN_WORKFLOW !== void 0) {
   main().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`steward-run: ${message}
@@ -3034,6 +3034,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exitCode = 1;
   });
 }
-export {
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
   main
-};
+});

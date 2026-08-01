@@ -1,0 +1,70 @@
+name: Action round trip
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: mkdir in && printf 'round-trip\n' > in/payload.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: steward-input
+          path: in/payload.txt
+
+  governed:
+    needs: seed
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: steward-input
+          path: in
+      - id: mock
+        shell: bash
+        run: |
+          node --import tsx test/support/mock-steward.ts "$RUNNER_TEMP/mock-port" &
+          for attempt in {1..30}; do
+            if test -s "$RUNNER_TEMP/mock-port"; then break; fi
+            sleep 1
+          done
+          test -s "$RUNNER_TEMP/mock-port"
+          echo "url=http://127.0.0.1:$(<"$RUNNER_TEMP/mock-port")" >> "$GITHUB_OUTPUT"
+      - id: governed
+        uses: ./
+        with:
+          workflow: cve-triage
+          inputs: in
+          outputs: results
+          steward-api-url: ${{ steps.mock.outputs.url }}
+          oidc-audience: steward-run-test
+      - run: test "${{ steps.governed.outputs.status }}" = succeeded
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: steward-output
+          path: results/report.txt
+
+  verify:
+    needs: governed
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: steward-output
+          path: results
+      - run: test "$(cat results/report.txt)" = round-trip
+

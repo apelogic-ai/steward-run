@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-const targets = ["action.yml", "Dockerfile", "dist/index.mjs"];
+const targets = ["action.yml", "Dockerfile", "dist/index.cjs"];
 const forbidden = [
   "GITHUB_TOKEN",
   "ANTHROPIC_API_KEY",
@@ -21,9 +21,8 @@ for (const target of targets) {
 }
 
 const action = await readFile(new URL("../action.yml", import.meta.url), "utf8");
-if (!action.includes("dist/index.mjs") || !action.includes("steward-api-url")) {
+if (!action.includes("dist/index.cjs") || !action.includes("steward-api-url")) {
   throw new Error("action.yml does not route work exclusively through the Steward client");
 }
 
 process.stdout.write("thin-shell check passed\n");
-

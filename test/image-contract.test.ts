@@ -14,6 +14,8 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
   );
   assert.match(dockerfile, /COPY --from=node-runtime \/usr\/local\/bin\/node/);
   assert.match(dockerfile, /USER runner/);
+  assert.match(dockerfile, /rm -f \/usr\/bin\/containerd \/usr\/bin\/containerd-shim-runc-v2 \/usr\/bin\/ctr/);
+  assert.match(dockerfile, /rm -rf \/home\/runner\/externals\/node20\/lib\/node_modules\/npm/);
   assert.doesNotMatch(dockerfile, /claude|codex|api[_-]?key|credential|secret/iu);
   assert.doesNotMatch(dockerfile, /ENTRYPOINT|CMD/u);
 });
@@ -25,4 +27,3 @@ test("the thin-shell security check is a required build gate", async () => {
   assert.match(packageJson.scripts.check ?? "", /check:thin-shell/);
   assert.equal(packageJson.scripts["check:thin-shell"], "node scripts/check-thin-shell.mjs");
 });
-

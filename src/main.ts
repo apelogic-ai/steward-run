@@ -42,7 +42,7 @@ export async function main(): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.env.STEWARD_RUN_WORKFLOW !== undefined) {
   main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`steward-run: ${message}\n`);
