@@ -29,9 +29,20 @@ test("CI, round-trip, and release workflows enforce the product contract", async
     "utf8",
   );
   assert.match(roundtrip, /id-token:\s*write/);
+  assert.match(roundtrip, /runs-on:\s*ubuntu-24\.04/);
   assert.match(roundtrip, /actions\/download-artifact@/);
   assert.match(roundtrip, /uses:\s*\.\//);
   assert.match(roundtrip, /actions\/upload-artifact@/);
+  assert.match(roundtrip, /workflow:\s*copy-smoke/);
+  assert.match(roundtrip, /inputs:\s*in/);
+  assert.match(roundtrip, /outputs:\s*out/);
+  assert.match(roundtrip, /status.*succeeded/);
+  assert.match(roundtrip, /runtime-uid.*mock-runtime-uid/);
+  assert.match(roundtrip, /mock-finalized/);
+  assert.match(roundtrip, /in\/payload\.bin/);
+  assert.match(roundtrip, /out\/payload\.bin/);
+  assert.match(roundtrip, /\bcmp\b/);
+  assert.match(roundtrip, /sha256sum/);
 
   const releaseSource = await readFile(
     new URL("../.github/workflows/release.yml", import.meta.url),
@@ -44,4 +55,3 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(releaseSource, /--sbom=true/);
   assert.doesNotMatch(releaseSource, /--tag[^\n]*latest/);
 });
-

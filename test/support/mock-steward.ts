@@ -10,10 +10,19 @@ const identityToken = "header.payload.signature";
 export interface MockSteward {
   url: string;
   observations: {
+    created: boolean;
+    uploaded: boolean;
+    executed: boolean;
+    polled: boolean;
+    downloaded: boolean;
     finalized: boolean;
     oidcRequests: number;
   };
   close: () => Promise<void>;
+}
+
+interface MockStewardOptions {
+  finalizationMarker?: string;
 }
 
 async function requestBody(request: IncomingMessage): Promise<Buffer> {
@@ -29,7 +38,7 @@ async function uploadedPayload(body: Buffer): Promise<Buffer> {
     void (async () => {
       const chunks: Buffer[] = [];
       for await (const chunk of stream) chunks.push(Buffer.from(chunk));
-      if (header.name === "in/payload.txt") payload = Buffer.concat(chunks);
+      if (header.name === "in/payload.bin") payload = Buffer.concat(chunks);
       next();
     })().catch((error: unknown) => next(error as Error));
   });
@@ -38,7 +47,7 @@ async function uploadedPayload(body: Buffer): Promise<Buffer> {
     extract.once("error", reject);
     extract.end(body);
   });
-  if (!payload) throw new Error("mock input archive omitted in/payload.txt");
+  if (!payload) throw new Error("mock input archive omitted in/payload.bin");
   return payload;
 }
 
@@ -59,17 +68,25 @@ function run(finalized: boolean, phase: "accepted" | "running" | "succeeded") {
 
 async function outputArchive(payload: Buffer): Promise<Buffer> {
   const pack = tar.pack();
-  pack.entry({ name: "results", type: "directory" });
-  pack.entry({ name: "results/report.txt" }, payload);
+  pack.entry({ name: "out", type: "directory" });
+  pack.entry({ name: "out/payload.bin" }, payload);
   pack.finalize();
   const chunks: Buffer[] = [];
   for await (const chunk of pack) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks);
 }
 
-export async function startMockSteward(): Promise<MockSteward> {
-  const observations = { finalized: false, oidcRequests: 0 };
-  let payload: Buffer<ArrayBufferLike> = Buffer.from("missing input\n");
+export async function startMockSteward(options: MockStewardOptions = {}): Promise<MockSteward> {
+  const observations = {
+    created: false,
+    uploaded: false,
+    executed: false,
+    polled: false,
+    downloaded: false,
+    finalized: false,
+    oidcRequests: 0,
+  };
+  let payload: Buffer<ArrayBufferLike> | undefined;
   const server = createServer((request, response) => {
     void (async () => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -88,18 +105,37 @@ export async function startMockSteward(): Promise<MockSteward> {
         return;
       }
       if (request.method === "POST" && url.pathname === "/v1/runs") {
+        const createRequest: unknown = JSON.parse((await requestBody(request)).toString("utf8"));
+        if (
+          !createRequest ||
+          typeof createRequest !== "object" ||
+          Array.isArray(createRequest) ||
+          (createRequest as Record<string, unknown>).workflow !== "copy-smoke"
+        ) {
+          json(response, 400, { message: "mock only supports workflow copy-smoke" });
+          return;
+        }
+        observations.created = true;
         json(response, 201, run(false, "accepted"));
       } else if (request.method === "PUT" && url.pathname === `/v1/runs/${runUid}/inputs`) {
         payload = await uploadedPayload(await requestBody(request));
+        observations.uploaded = true;
         response.writeHead(204).end();
       } else if (request.method === "POST" && url.pathname === `/v1/runs/${runUid}/execute`) {
+        observations.executed = true;
         json(response, 202, run(false, "running"));
       } else if (request.method === "GET" && url.pathname === `/v1/runs/${runUid}`) {
+        observations.polled = true;
         json(response, 200, run(observations.finalized, "succeeded"));
       } else if (request.method === "GET" && url.pathname === `/v1/runs/${runUid}/outputs`) {
+        if (!payload) throw new Error("mock output requested before input upload");
+        observations.downloaded = true;
         response.writeHead(200, { "content-type": "application/x-tar" });
         response.end(await outputArchive(payload));
       } else if (request.method === "DELETE" && url.pathname === `/v1/runs/${runUid}`) {
+        if (options.finalizationMarker) {
+          await writeFile(options.finalizationMarker, `${runUid}\n`, "utf8");
+        }
         observations.finalized = true;
         json(response, 202, run(true, "succeeded"));
       } else {
@@ -127,8 +163,10 @@ export async function startMockSteward(): Promise<MockSteward> {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const portFile = process.argv[2];
+  const finalizationMarker = process.argv[3];
   if (!portFile) throw new Error("mock server requires a port-file argument");
-  const mock = await startMockSteward();
+  if (!finalizationMarker) throw new Error("mock server requires a finalization-marker argument");
+  const mock = await startMockSteward({ finalizationMarker });
   await writeFile(portFile, new URL(mock.url).port, "utf8");
   const stop = () => void mock.close().then(() => process.exit(0));
   process.once("SIGINT", stop);
