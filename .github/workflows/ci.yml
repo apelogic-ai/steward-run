@@ -32,16 +32,32 @@ jobs:
       - name: Build thin ARC image
         run: >-
           docker build --platform linux/amd64
-          --build-arg VERSION=0.1.0-ci
+          --build-arg VERSION=0.1.1-ci
           --build-arg REVISION="$GITHUB_SHA"
           --tag steward-run:ci .
       - name: Smoke-test ARC contracts
         run: >-
           docker run --rm --platform linux/amd64 --entrypoint /bin/bash steward-run:ci
-          -c 'test "$(id -un)" = runner && test -x /home/runner/run.sh && test -d /home/runner/k8s && node --version'
-      - name: Scan image vulnerabilities
+          -c 'test "$(id -un)" = runner && test -x /home/runner/run.sh && test -d /home/runner/k8s && ! command -v curl && ! command -v docker && ! command -v dockerd && ! command -v runc && git --version && node --version'
+      - name: Export image vulnerability report
         run: >-
           docker run --rm
           -v /var/run/docker.sock:/var/run/docker.sock
+          -v "${{ github.workspace }}:/report"
           aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
-          image --scanners vuln --ignore-unfixed --severity CRITICAL --exit-code 1 steward-run:ci
+          image --scanners vuln --format json --output /report/trivy-report.json steward-run:ci
+      - name: Enforce critical vulnerability policy
+        run: >-
+          node scripts/check-vulnerability-report.mjs
+          trivy-report.json
+          security/vulnerability-policy.json
+          vulnerability-summary.json
+      - name: Publish vulnerability report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: steward-run-vulnerability-report-${{ github.sha }}
+          path: |
+            trivy-report.json
+            vulnerability-summary.json
+          if-no-files-found: error
