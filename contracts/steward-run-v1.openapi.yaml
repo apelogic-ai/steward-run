@@ -1,0 +1,153 @@
+openapi: 3.1.0
+info:
+  title: Steward Run API
+  version: 1.0.0-provisional
+  description: >-
+    Provisional translator-facing contract. Production use is gated on Steward
+    publishing a compatible version and implementing service-principal acting-for-user.
+servers:
+  - url: https://steward.invalid
+security:
+  - githubOidc: []
+paths:
+  /v1/runs:
+    post:
+      operationId: createRun
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRunRequest'
+      responses:
+        '201':
+          description: Run created or idempotently returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /v1/runs/{runUid}/inputs:
+    parameters:
+      - $ref: '#/components/parameters/RunUid'
+    put:
+      operationId: uploadInputs
+      requestBody:
+        required: true
+        content:
+          application/x-tar:
+            schema:
+              type: string
+              contentMediaType: application/x-tar
+              contentEncoding: binary
+      responses:
+        '204': { description: Input archive accepted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { description: Archive exceeds server policy }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /v1/runs/{runUid}/execute:
+    parameters:
+      - $ref: '#/components/parameters/RunUid'
+    post:
+      operationId: executeRun
+      responses:
+        '202':
+          description: Sandbox-side execution accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/runs/{runUid}:
+    parameters:
+      - $ref: '#/components/parameters/RunUid'
+    get:
+      operationId: getRun
+      responses:
+        '200':
+          description: Current run state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Run not found }
+    delete:
+      operationId: finalizeRun
+      description: Terminates a provisioned runtime or detaches an adopted runtime.
+      responses:
+        '202':
+          description: Finalization accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Run not found }
+  /v1/runs/{runUid}/outputs:
+    parameters:
+      - $ref: '#/components/parameters/RunUid'
+    get:
+      operationId: downloadOutputs
+      responses:
+        '200':
+          description: Declared sandbox outputs
+          content:
+            application/x-tar:
+              schema:
+                type: string
+                contentMediaType: application/x-tar
+                contentEncoding: binary
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: Outputs are not ready }
+components:
+  securitySchemes:
+    githubOidc:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    RunUid:
+      name: runUid
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 32, maxLength: 64 }
+  responses:
+    Unauthorized: { description: Missing, invalid, or mismatched GitHub OIDC identity }
+    Conflict: { description: Request conflicts with the current run state }
+    Invalid: { description: Request or archive failed validation }
+  schemas:
+    CreateRunRequest:
+      type: object
+      additionalProperties: false
+      required: [workflow, codingAgentRuntime]
+      properties:
+        workflow: { type: string, minLength: 1 }
+        codingAgentRuntime: { type: string, minLength: 1 }
+        agentRuntimeUid: { type: string, minLength: 1 }
+    RunPhase:
+      type: string
+      enum: [accepted, materializing, running, collecting, succeeded, parked, failed, cancelled]
+    Run:
+      type: object
+      additionalProperties: false
+      required: [runUid, runtimeUid, phase, runtimeOwnership, finalized]
+      properties:
+        runUid: { type: string, format: uuid }
+        runtimeUid: { type: string, minLength: 1 }
+        phase: { $ref: '#/components/schemas/RunPhase' }
+        runtimeOwnership: { type: string, enum: [provisioned, adopted] }
+        finalized:
+          type: boolean
+          description: True after provisioned termination or adopted-runtime detachment completes.
+        message: { type: string }
