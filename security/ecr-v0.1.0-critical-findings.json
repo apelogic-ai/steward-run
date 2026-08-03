@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "registry": "663383948333.dkr.ecr.us-east-1.amazonaws.com",
+    "repository": "steward-run",
+    "tag": "0.1.0",
+    "indexDigest": "sha256:1d0ff5bd773a407bcdefa65741efab8e76584d0526bfe685e1c7d045c340ac30",
+    "linuxAmd64Digest": "sha256:93b67151acf60d14455d11ee72557af08ef2d8b0d15dc2e81cb898f76b79d324",
+    "scanCompletedAt": "2026-08-03T04:39:09Z",
+    "severityCounts": {
+      "critical": 23,
+      "high": 85,
+      "medium": 87,
+      "low": 16,
+      "undefined": 4
+    }
+  },
+  "classification": {
+    "fixableCriticalOccurrences": 23,
+    "unfixedCriticalOccurrences": 0,
+    "findings": [
+      {
+        "vulnerabilityId": "CVE-2026-8924",
+        "affectedPackages": ["curl", "libcurl3t64-gnutls", "libcurl4t64"],
+        "installedVersion": "8.5.0-2ubuntu10.8",
+        "fixedVersion": "8.5.0-2ubuntu10.10",
+        "occurrences": 3,
+        "classification": "fixable"
+      },
+      {
+        "vulnerabilityId": "CVE-2026-8925",
+        "affectedPackages": ["curl", "libcurl3t64-gnutls", "libcurl4t64"],
+        "installedVersion": "8.5.0-2ubuntu10.8",
+        "fixedVersion": "8.5.0-2ubuntu10.10",
+        "occurrences": 3,
+        "classification": "fixable"
+      },
+      {
+        "vulnerabilityId": "CVE-2026-10536",
+        "affectedPackages": ["curl", "libcurl3t64-gnutls", "libcurl4t64"],
+        "installedVersion": "8.5.0-2ubuntu10.8",
+        "fixedVersion": "8.5.0-2ubuntu10.11",
+        "occurrences": 3,
+        "classification": "fixable"
+      },
+      {
+        "vulnerabilityId": "CVE-2026-8927",
+        "affectedPackages": ["curl", "libcurl3t64-gnutls", "libcurl4t64"],
+        "installedVersion": "8.5.0-2ubuntu10.8",
+        "fixedVersion": "8.5.0-2ubuntu10.10",
+        "occurrences": 3,
+        "classification": "fixable"
+      },
+      {
+        "vulnerabilityId": "CVE-2026-33845",
+        "affectedPackages": ["gnutls28", "libgnutls30t64"],
+        "installedVersion": "3.8.3-1.1ubuntu3.5",
+        "fixedVersion": "3.8.3-1.1ubuntu3.6",
+        "occurrences": 2,
+        "classification": "fixable"
+      },
+      {
+        "vulnerabilityId": "CVE-2026-42010",
+        "affectedPackages": ["gnutls28", "libgnutls30t64"],
+        "installedVersion": "3.8.3-1.1ubuntu3.5",
+        "fixedVersion": "3.8.3-1.1ubuntu3.6",
+        "occurrences": 2,
+        "classification": "fixable"
+      },
+      {
+        "vulnerabilityId": "CVE-2026-34182",
+        "affectedPackages": ["openssl", "libssl3t64"],
+        "installedVersion": "3.0.13-0ubuntu3.9",
+        "fixedVersion": "3.0.13-0ubuntu3.11",
+        "occurrences": 2,
+        "classification": "fixable"
+      },
+      {
+        "vulnerabilityId": "CVE-2026-60002",
+        "affectedPackages": ["openssh", "openssh-client"],
+        "installedVersion": "9.6p1-3ubuntu13.15",
+        "fixedVersion": "9.6p1-3ubuntu13.18",
+        "occurrences": 2,
+        "classification": "fixable"
+      },
+      {
+        "vulnerabilityId": "CVE-2026-5450",
+        "affectedPackages": ["glibc", "libc6", "libc-bin"],
+        "installedVersion": "2.39-0ubuntu8.7",
+        "fixedVersion": "2.39-0ubuntu8.8",
+        "occurrences": 3,
+        "classification": "fixable"
+      }
+    ]
+  }
+}
