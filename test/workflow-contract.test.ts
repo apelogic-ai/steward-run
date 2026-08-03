@@ -23,6 +23,12 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(ci, /gitleaks\/gitleaks:v8\.30\.1@sha256:/);
   assert.match(ci, /aquasec\/trivy:0\.72\.0@sha256:/);
   assert.match(ci, /docker build/);
+  assert.match(ci, /trivy-report\.json/);
+  assert.match(ci, /vulnerability-summary\.json/);
+  assert.match(ci, /check-vulnerability-report\.mjs/);
+  assert.match(ci, /name:\s*steward-run-vulnerability-report/);
+  assert.match(ci, /if:\s*always\(\)/);
+  assert.doesNotMatch(ci, /--ignore-unfixed/);
 
   const roundtrip = await readFile(
     new URL("../.github/workflows/roundtrip.yml", import.meta.url),

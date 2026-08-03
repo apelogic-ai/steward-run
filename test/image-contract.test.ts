@@ -10,14 +10,32 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
   );
   assert.match(
     dockerfile,
-    /FROM ghcr\.io\/actions\/actions-runner:2\.334\.0@sha256:b6614fce332517f74d0a76e7c762fb08e4f2ff13dcf333183397c8a5725b6e8e/,
+    /FROM ghcr\.io\/actions\/actions-runner:2\.336\.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda/,
   );
   assert.match(dockerfile, /COPY --from=node-runtime \/usr\/local\/bin\/node/);
   assert.match(dockerfile, /USER runner/);
+  assert.match(dockerfile, /apt-get upgrade -y/);
+  assert.match(dockerfile, /apt-get purge -y curl libcurl4t64/);
   assert.match(dockerfile, /rm -f \/usr\/bin\/containerd \/usr\/bin\/containerd-shim-runc-v2 \/usr\/bin\/ctr/);
-  assert.match(dockerfile, /rm -rf \/home\/runner\/externals\/node20\/lib\/node_modules\/npm/);
+  assert.match(dockerfile, /\/usr\/bin\/docker \/usr\/bin\/docker-init \/usr\/bin\/docker-proxy/);
+  assert.match(dockerfile, /\/usr\/bin\/dockerd \/usr\/bin\/runc/);
+  assert.match(dockerfile, /rm -rf \/usr\/local\/lib\/docker/);
+  assert.match(dockerfile, /\/home\/runner\/externals\/node20\/lib\/node_modules\/npm/);
   assert.doesNotMatch(dockerfile, /claude|codex|api[_-]?key|credential|secret/iu);
   assert.doesNotMatch(dockerfile, /ENTRYPOINT|CMD/u);
+});
+
+test("the package metadata identifies the security-cleared successor", async () => {
+  const packageJson = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { version: string };
+  const packageLock = JSON.parse(
+    await readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
+  ) as { version: string; packages: Record<string, { version?: string }> };
+
+  assert.equal(packageJson.version, "0.1.1");
+  assert.equal(packageLock.version, "0.1.1");
+  assert.equal(packageLock.packages[""]?.version, "0.1.1");
 });
 
 test("the thin-shell security check is a required build gate", async () => {
