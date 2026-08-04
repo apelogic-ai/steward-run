@@ -57,11 +57,12 @@ jobs:
           inputs: in
           outputs: out
           steward-api-url: ${{ steps.mock.outputs.url }}
-          oidc-audience: steward-run-test
+          oidc-audience: steward-task-api
       - name: Verify governed result and finalization
         shell: bash
         run: |
           test "${{ steps.governed.outputs.status }}" = succeeded
+          test "${{ steps.governed.outputs['task-uid'] }}" = 2f9f6ade-261d-4090-9532-9e157b59db2e
           test "${{ steps.governed.outputs['runtime-uid'] }}" = mock-runtime-uid
           test -f "$RUNNER_TEMP/mock-finalized"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

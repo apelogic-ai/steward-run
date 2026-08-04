@@ -34,11 +34,11 @@ test("the composite action exposes the versioned steward-run contract", async ()
     assert.equal(action.inputs[name]?.required, true, `${name} must be required`);
   }
   assert.equal(action.inputs["coding-agent-runtime"]?.default, "claude-code@2.1.220");
-  assert.deepEqual(Object.keys(action.outputs).sort(), ["runtime-uid", "status"]);
+  assert.deepEqual(Object.keys(action.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
   assert.match(action.runs.steps[0]?.run ?? "", /dist\/index\.cjs/);
 });
 
-test("the provisional Steward API covers the complete run lifecycle", async () => {
+test("the Steward Task API contract covers the complete lifecycle", async () => {
   const source = await readFile(
     new URL("../contracts/steward-run-v1.openapi.yaml", import.meta.url),
     "utf8",
@@ -49,10 +49,13 @@ test("the provisional Steward API covers the complete run lifecycle", async () =
   };
 
   assert.match(api.openapi, /^3\.1\./);
-  assert.ok(api.paths["/v1/runs"]?.post);
-  assert.ok(api.paths["/v1/runs/{runUid}/inputs"]?.put);
-  assert.ok(api.paths["/v1/runs/{runUid}/execute"]?.post);
-  assert.ok(api.paths["/v1/runs/{runUid}"]?.get);
-  assert.ok(api.paths["/v1/runs/{runUid}/outputs"]?.get);
-  assert.ok(api.paths["/v1/runs/{runUid}"]?.delete);
+  assert.ok(api.paths["/v1/tasks"]?.post);
+  assert.ok(api.paths["/v1/tasks/{taskUid}/inputs"]?.put);
+  assert.ok(api.paths["/v1/tasks/{taskUid}/execute"]?.post);
+  assert.ok(api.paths["/v1/tasks/{taskUid}"]?.get);
+  assert.ok(api.paths["/v1/tasks/{taskUid}/outputs"]?.get);
+  assert.ok(api.paths["/v1/tasks/{taskUid}"]?.delete);
+  assert.doesNotMatch(source, /\/v1\/runs|runUid/u);
+  assert.match(source, /steward-task-api/);
+  assert.match(source, /67108864/);
 });

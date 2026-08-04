@@ -60,11 +60,11 @@ The action runs inside the ARC runner job and does exactly two categories of thi
    `upload-artifact` step; obtain the job's OIDC id-token (`ACTIONS_ID_TOKEN_REQUEST_URL` +
    `ACTIONS_ID_TOKEN_REQUEST_TOKEN`; the workflow must grant `id-token: write`).
 2. **Call Steward's REST API** as the translator: validate the OIDC token, resolve the actor to
-   a **corporate email server-side** (R6 / roadmap §2.6.5), then `POST` to provision/adopt an
-   `AgentRuntime` (principal = `Service` acting-for the resolved user; `agentType`/`tools`/
-   `llms`/`budget` = the selected workflow's envelope), poll `status.phase`, and on completion
-   collect the sandbox's outputs into the workspace. Provision-run-**terminate** per job by
-   default (see D2).
+   a **corporate email server-side** (R6 / roadmap §2.6.5), then submit a Steward `Task`. Steward
+   selects the versioned workflow envelope, provisions or adopts its `AgentRuntime`, and returns
+   the durable Task identity. The action uploads inputs, requests execution, polls Task status
+   through any approval hold, collects outputs after success, and requests finalization. A
+   provisioned runtime is terminated; an adopted runtime is detached (see D2).
 
 Flow: `download-artifact` (regular step) → `steward-run` (materialise in → API provision → run
 → collect out) → `upload-artifact` (regular step). The agentic step is invisible to the
@@ -98,7 +98,8 @@ the resumed invocation (a new job, new token).
 
 | Output | Meaning |
 |---|---|
-| `status` | Terminal phase of the walk |
+| `status` | Terminal phase of the Task |
+| `task-uid` | The Steward Task UID (for audit correlation) |
 | `runtime-uid` | The provisioned/adopted `AgentRuntime` UID (for audit correlation) |
 
 `action.yml` is `runs: composite`. No `<form>`-style ambient config; everything is an input or
@@ -119,15 +120,15 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 
 ## 7. Dependencies & seams
 
-- **Hard dependency: `steward`'s `Principal::Service` arm** (roadmap §4; DEV plan Phase C). The
-  acting-for-a-user API call cannot succeed until the mint/admission/mcp-gw service arm is
-  finished. Do not ship the action's provision path against a Steward that still rejects
-  `Service`.
+- **Hard dependency: Steward's Task API and service identity boundary.** The six-operation Task
+  lifecycle and service groups are implemented. Production remains blocked until an external
+  GitHub OIDC mapper validates job claims and emits Steward's service + acting-user TokenReview
+  groups for the `steward-task-api` audience.
 - **Consumed by `gitops`** (scale set pins the image) and **by workflows** (`uses:
   apelogic-ai/steward-run@vX`).
-- **Unverified contract:** the exact Steward apiserver route the action calls (provision/adopt
-  `AgentRuntime`, poll status) was **not** inspected in `steward-apiserver`. Confirm it against
-  the live API before building §3 — it is the roadmap's model, not a read fact.
+- **Verified contract:** `contracts/steward-run-v1.openapi.yaml` records Steward's `/v1/tasks`
+  submission, input, execute, status, output, and finalization operations. Workspace-relative
+  input and output tar archives are limited to 64 MiB each.
 
 ---
 
@@ -151,7 +152,7 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 | # | Decision | Recommendation | Cost of deferring |
 |---|---|---|---|
 | D1 | Repo name | `steward-run` (matches the `uses:` line). `arc-runner` if a Steward-agnostic name is wanted | Low |
-| D2 | Provision-per-job vs adopt a standing `AgentRuntime` | Provision-run-terminate per job for v0 (pure Plane A, no Task). Adopt-standing is cheaper per job but raises "who owns the standing runtime's lifecycle" | Medium — decide before the action's provision path is written |
+| D2 | Provision-per-job vs adopt a standing `AgentRuntime` | Resolved: provision and terminate by default; explicit `agent-runtime` adopts and detaches an existing runtime | — |
 | D3 | Coding-agent runtime | Pluggable via input; Claude Code first. Do not weld it into the image | Low |
 | D4 | Visibility | Internal by default; private if the API contract is sensitive | Low |
 | D5 | `containerMode` coupling | The action must work under both `kubernetes` and `dind`; the choice is `gitops`', not baked here | Low |
@@ -160,9 +161,8 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 
 ## 10. Agent execution notes
 
-- **Verify current GitHub Actions OIDC and artifact APIs** and the Steward apiserver route
-  contract (§7) before writing §3 — do not build against the roadmap's model as if it were the
-  live API.
+- Keep GitHub Actions OIDC and artifact usage aligned with their current APIs, and keep the
+  checked-in Task contract aligned with Steward's generated OpenAPI before each release.
 - **Pin** the base runner image, the agent runtime, and every dependency by digest/version.
 - **The thin-shell check is a build gate**, not documentation.
 - **Stop at the boundary (§1).** No env names, no `runs-on` labels, no secrets — those are

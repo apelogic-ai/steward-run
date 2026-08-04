@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import tar from "tar-stream";
 
-const runUid = "2f9f6ade-261d-4090-9532-9e157b59db2e";
+const taskUid = "2f9f6ade-261d-4090-9532-9e157b59db2e";
 const runtimeUid = "mock-runtime-uid";
 const identityToken = "header.payload.signature";
 
@@ -56,13 +56,14 @@ function json(response: ServerResponse, status: number, body: unknown): void {
   response.end(JSON.stringify(body));
 }
 
-function run(finalized: boolean, phase: "accepted" | "running" | "succeeded") {
+function task(finalized: boolean, phase: "submitted" | "running" | "succeeded") {
   return {
-    runUid,
+    taskUid,
     runtimeUid,
     phase,
     runtimeOwnership: "provisioned",
     finalized,
+    deltas: [],
   };
 }
 
@@ -96,6 +97,10 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
           json(response, 401, { message: "invalid request token" });
           return;
         }
+        if (url.searchParams.get("audience") !== "steward-task-api") {
+          json(response, 400, { message: "invalid OIDC audience" });
+          return;
+        }
         json(response, 200, { value: identityToken });
         return;
       }
@@ -104,7 +109,7 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         json(response, 401, { message: "invalid identity token" });
         return;
       }
-      if (request.method === "POST" && url.pathname === "/v1/runs") {
+      if (request.method === "POST" && url.pathname === "/v1/tasks") {
         const createRequest: unknown = JSON.parse((await requestBody(request)).toString("utf8"));
         if (
           !createRequest ||
@@ -116,28 +121,28 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
           return;
         }
         observations.created = true;
-        json(response, 201, run(false, "accepted"));
-      } else if (request.method === "PUT" && url.pathname === `/v1/runs/${runUid}/inputs`) {
+        json(response, 201, task(false, "submitted"));
+      } else if (request.method === "PUT" && url.pathname === `/v1/tasks/${taskUid}/inputs`) {
         payload = await uploadedPayload(await requestBody(request));
         observations.uploaded = true;
         response.writeHead(204).end();
-      } else if (request.method === "POST" && url.pathname === `/v1/runs/${runUid}/execute`) {
+      } else if (request.method === "POST" && url.pathname === `/v1/tasks/${taskUid}/execute`) {
         observations.executed = true;
-        json(response, 202, run(false, "running"));
-      } else if (request.method === "GET" && url.pathname === `/v1/runs/${runUid}`) {
+        json(response, 202, task(false, "running"));
+      } else if (request.method === "GET" && url.pathname === `/v1/tasks/${taskUid}`) {
         observations.polled = true;
-        json(response, 200, run(observations.finalized, "succeeded"));
-      } else if (request.method === "GET" && url.pathname === `/v1/runs/${runUid}/outputs`) {
+        json(response, 200, task(observations.finalized, "succeeded"));
+      } else if (request.method === "GET" && url.pathname === `/v1/tasks/${taskUid}/outputs`) {
         if (!payload) throw new Error("mock output requested before input upload");
         observations.downloaded = true;
         response.writeHead(200, { "content-type": "application/x-tar" });
         response.end(await outputArchive(payload));
-      } else if (request.method === "DELETE" && url.pathname === `/v1/runs/${runUid}`) {
+      } else if (request.method === "DELETE" && url.pathname === `/v1/tasks/${taskUid}`) {
         if (options.finalizationMarker) {
-          await writeFile(options.finalizationMarker, `${runUid}\n`, "utf8");
+          await writeFile(options.finalizationMarker, `${taskUid}\n`, "utf8");
         }
         observations.finalized = true;
-        json(response, 202, run(true, "succeeded"));
+        json(response, 202, task(true, "succeeded"));
       } else {
         json(response, 404, { message: "not found" });
       }
