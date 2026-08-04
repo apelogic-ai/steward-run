@@ -9,16 +9,17 @@ import type { ActionConfig } from "../src/config.ts";
 import {
   createIdempotencyKey,
   runWorkflow,
-  type RunClient,
+  type TaskClient,
 } from "../src/lifecycle.ts";
-import type { CreateRunRequest, Run } from "../src/steward-client.ts";
+import type { Task, TaskSubmissionRequest } from "../src/steward-client.ts";
 
-const baseRun: Run = {
-  runUid: "2f9f6ade-261d-4090-9532-9e157b59db2e",
+const baseTask: Task = {
+  taskUid: "2f9f6ade-261d-4090-9532-9e157b59db2e",
   runtimeUid: "runtime-uid-1",
-  phase: "accepted",
+  phase: "submitted",
   runtimeOwnership: "provisioned",
   finalized: false,
+  deltas: [],
 };
 
 const config: ActionConfig = {
@@ -26,7 +27,7 @@ const config: ActionConfig = {
   inputPaths: "in",
   outputPaths: "results",
   apiUrl: "https://steward.example.test",
-  oidcAudience: "steward",
+  oidcAudience: "steward-task-api",
   codingAgentRuntime: "claude-code@2.1.220",
 };
 
@@ -39,45 +40,45 @@ async function outputArchive(path = "results/report.txt", body = "done"): Promis
   return Readable.from(Buffer.concat(chunks));
 }
 
-class FakeClient implements RunClient {
+class FakeClient implements TaskClient {
   readonly calls: string[] = [];
-  readonly requests: CreateRunRequest[] = [];
-  phases: Run["phase"][] = ["running", "succeeded"];
-  ownership: Run["runtimeOwnership"] = "provisioned";
+  readonly requests: TaskSubmissionRequest[] = [];
+  phases: Task["phase"][] = ["running", "succeeded"];
+  ownership: Task["runtimeOwnership"] = "provisioned";
   archivePath = "results/report.txt";
   finalizeError?: Error;
 
-  async createRun(request: CreateRunRequest): Promise<Run> {
+  async submitTask(request: TaskSubmissionRequest): Promise<Task> {
     this.calls.push("create");
     this.requests.push(request);
-    return { ...baseRun, runtimeOwnership: this.ownership };
+    return { ...baseTask, runtimeOwnership: this.ownership };
   }
-  async uploadInputs(_uid: string, createArchive: () => Promise<Readable>): Promise<void> {
+  async uploadTaskInputs(_uid: string, createArchive: () => Promise<Readable>): Promise<void> {
     this.calls.push("upload");
     for await (const _chunk of await createArchive()) {
       // Exercise the real input stream.
     }
   }
-  async executeRun(): Promise<Run> {
+  async executeTask(): Promise<Task> {
     this.calls.push("execute");
-    return { ...baseRun, phase: "running", runtimeOwnership: this.ownership };
+    return { ...baseTask, phase: "running", runtimeOwnership: this.ownership };
   }
-  async getRun(): Promise<Run> {
+  async getTask(): Promise<Task> {
     this.calls.push("poll");
     return {
-      ...baseRun,
+      ...baseTask,
       phase: this.phases.shift() ?? "succeeded",
       runtimeOwnership: this.ownership,
     };
   }
-  async downloadOutputs(): Promise<Readable> {
+  async downloadTaskOutputs(): Promise<Readable> {
     this.calls.push("download");
     return outputArchive(this.archivePath);
   }
-  async finalizeRun(): Promise<Run> {
+  async finalizeTask(): Promise<Task> {
     this.calls.push("finalize");
     if (this.finalizeError) throw this.finalizeError;
-    return { ...baseRun, phase: "cancelled", runtimeOwnership: this.ownership, finalized: true };
+    return { ...baseTask, phase: "cancelled", runtimeOwnership: this.ownership, finalized: true };
   }
 }
 
@@ -88,7 +89,7 @@ async function fixture(): Promise<string> {
   return root;
 }
 
-function dependencies(client: RunClient, outputs: Record<string, string>) {
+function dependencies(client: TaskClient, outputs: Record<string, string>) {
   return {
     client,
     environment: {
@@ -102,7 +103,7 @@ function dependencies(client: RunClient, outputs: Record<string, string>) {
   };
 }
 
-test("a provisioned run round-trips files, reports outputs, and finalizes", async () => {
+test("a provisioned Task round-trips files, reports identities, and finalizes", async () => {
   const root = await fixture();
   const client = new FakeClient();
   const outputs: Record<string, string> = {};
@@ -110,18 +111,22 @@ test("a provisioned run round-trips files, reports outputs, and finalizes", asyn
     const result = await runWorkflow(config, root, dependencies(client, outputs));
     assert.equal(result.phase, "succeeded");
     assert.equal(await readFile(join(root, "results", "report.txt"), "utf8"), "done");
-    assert.deepEqual(outputs, { status: "succeeded", "runtime-uid": "runtime-uid-1" });
+    assert.deepEqual(outputs, {
+      status: "succeeded",
+      "task-uid": baseTask.taskUid,
+      "runtime-uid": "runtime-uid-1",
+    });
     assert.deepEqual(client.calls, ["create", "upload", "execute", "poll", "poll", "download", "finalize"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("adoption is explicit and a parked run returns without downloading outputs", async () => {
+test("adoption is explicit and a parked Task waits for approval before collecting outputs", async () => {
   const root = await fixture();
   const client = new FakeClient();
   client.ownership = "adopted";
-  client.phases = ["parked"];
+  client.phases = ["parked", "queued", "running", "succeeded"];
   const outputs: Record<string, string> = {};
   try {
     const result = await runWorkflow(
@@ -129,16 +134,16 @@ test("adoption is explicit and a parked run returns without downloading outputs"
       root,
       dependencies(client, outputs),
     );
-    assert.equal(result.phase, "parked");
+    assert.equal(result.phase, "succeeded");
     assert.equal(client.requests[0]?.agentRuntimeUid, "standing-runtime");
-    assert.ok(!client.calls.includes("download"));
+    assert.ok(client.calls.includes("download"));
     assert.equal(client.calls.at(-1), "finalize");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("agent failure and corrupt outputs still finalize and fail the action", async () => {
+test("Task failure and corrupt outputs still finalize and fail the action", async () => {
   for (const mode of ["failed", "corrupt"] as const) {
     const root = await fixture();
     const client = new FakeClient();
@@ -148,7 +153,7 @@ test("agent failure and corrupt outputs still finalize and fail the action", asy
     try {
       await assert.rejects(
         runWorkflow(config, root, dependencies(client, outputs)),
-        mode === "failed" ? /Steward run failed/ : /not a declared output/,
+        mode === "failed" ? /Steward Task failed/ : /not a declared output/,
       );
       assert.equal(client.calls.at(-1), "finalize");
       assert.equal(outputs["runtime-uid"], "runtime-uid-1");
@@ -158,7 +163,7 @@ test("agent failure and corrupt outputs still finalize and fail the action", asy
   }
 });
 
-test("missing inputs fail before any Steward request and cleanup failure is fatal", async () => {
+test("missing inputs fail before any Steward request and Task cleanup failure is fatal", async () => {
   const root = await fixture();
   try {
     const missingClient = new FakeClient();
@@ -179,26 +184,29 @@ test("missing inputs fail before any Steward request and cleanup failure is fata
   }
 });
 
-test("finalization is polled to confirmation and cancellation reports cancelled", async () => {
+test("finalization tolerates real sandbox teardown latency and cancellation reports cancelled", async () => {
   const root = await fixture();
   try {
     const finalizing = new FakeClient();
     let finalizationStarted = false;
-    finalizing.finalizeRun = async () => {
+    let cleanupPolls = 0;
+    finalizing.finalizeTask = async () => {
       finalizing.calls.push("finalize");
       finalizationStarted = true;
-      return { ...baseRun, phase: "succeeded", finalized: false };
+      return { ...baseTask, phase: "succeeded", finalized: false };
     };
-    const originalGet = finalizing.getRun.bind(finalizing);
-    finalizing.getRun = async () => {
+    const originalGet = finalizing.getTask.bind(finalizing);
+    finalizing.getTask = async () => {
       if (finalizationStarted) {
         finalizing.calls.push("cleanup-poll");
-        return { ...baseRun, phase: "succeeded", finalized: true };
+        cleanupPolls += 1;
+        return { ...baseTask, phase: "succeeded", finalized: cleanupPolls >= 8 };
       }
       return originalGet();
     };
     await runWorkflow(config, root, dependencies(finalizing, {}));
     assert.equal(finalizing.calls.at(-1), "cleanup-poll");
+    assert.equal(cleanupPolls, 8);
 
     const cancelling = new FakeClient();
     cancelling.phases = ["running"];

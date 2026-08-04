@@ -2,33 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Readable } from "node:stream";
 import type { FetchLike } from "./oidc.js";
 
-export const runPhases = [
-  "accepted",
-  "materializing",
-  "running",
-  "collecting",
-  "succeeded",
-  "parked",
-  "failed",
-  "cancelled",
-] as const;
-export type RunPhase = (typeof runPhases)[number];
 export type RuntimeOwnership = "provisioned" | "adopted";
-
-export interface Run {
-  runUid: string;
-  runtimeUid: string;
-  phase: RunPhase;
-  runtimeOwnership: RuntimeOwnership;
-  finalized: boolean;
-  message?: string;
-}
-
-export interface CreateRunRequest {
-  workflow: string;
-  codingAgentRuntime: string;
-  agentRuntimeUid?: string;
-}
 
 export const taskPhases = [
   "submitted",
@@ -223,36 +197,6 @@ function validatedBaseUrl(value: string): URL {
   return url;
 }
 
-function parseRun(payload: unknown): Run {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("Steward returned an incompatible run response");
-  }
-  const value = payload as Record<string, unknown>;
-  const allowed = new Set(["runUid", "runtimeUid", "phase", "runtimeOwnership", "finalized", "message"]);
-  if (
-    Object.keys(value).some((key) => !allowed.has(key)) ||
-    typeof value.runUid !== "string" ||
-    !value.runUid ||
-    typeof value.runtimeUid !== "string" ||
-    !value.runtimeUid ||
-    typeof value.phase !== "string" ||
-    !runPhases.includes(value.phase as RunPhase) ||
-    (value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted") ||
-    typeof value.finalized !== "boolean" ||
-    (value.message !== undefined && typeof value.message !== "string")
-  ) {
-    throw new Error("Steward returned an incompatible run response");
-  }
-  return {
-    runUid: value.runUid,
-    runtimeUid: value.runtimeUid,
-    phase: value.phase as RunPhase,
-    runtimeOwnership: value.runtimeOwnership,
-    finalized: value.finalized,
-    ...(typeof value.message === "string" ? { message: value.message } : {}),
-  };
-}
-
 function retryDelay(response: Response | undefined, attempt: number): number {
   const retryAfter = response?.headers.get("retry-after");
   if (retryAfter && /^\d+$/u.test(retryAfter)) {
@@ -321,11 +265,6 @@ export class StewardClient {
     throw new Error(`Steward request ${method} ${path} exhausted retries`);
   }
 
-  async #runResponse(response: Response): Promise<Run> {
-    const payload: unknown = await response.json().catch(() => undefined);
-    return parseRun(payload);
-  }
-
   async #taskResponse(response: Response): Promise<Task> {
     const payload: unknown = await response.json().catch(() => undefined);
     return parseTask(payload);
@@ -391,59 +330,4 @@ export class StewardClient {
     );
   }
 
-  async createRun(request: CreateRunRequest, idempotencyKey: string): Promise<Run> {
-    const response = await this.#request("POST", "v1/runs", {
-      expectedStatus: 201,
-      headers: {
-        "content-type": "application/json",
-        "idempotency-key": idempotencyKey,
-      },
-      body: JSON.stringify(request),
-    });
-    return this.#runResponse(response);
-  }
-
-  async uploadInputs(runUid: string, createArchive: () => Promise<Readable>): Promise<void> {
-    await this.#request("PUT", `v1/runs/${encodeURIComponent(runUid)}/inputs`, {
-      expectedStatus: 204,
-      headers: { "content-type": "application/x-tar" },
-      body: async () => (await createArchive()) as unknown as BodyInit,
-      duplex: "half",
-    });
-  }
-
-  async executeRun(runUid: string): Promise<Run> {
-    return this.#runResponse(
-      await this.#request("POST", `v1/runs/${encodeURIComponent(runUid)}/execute`, {
-        expectedStatus: 202,
-      }),
-    );
-  }
-
-  async getRun(runUid: string): Promise<Run> {
-    return this.#runResponse(
-      await this.#request("GET", `v1/runs/${encodeURIComponent(runUid)}`, {
-        expectedStatus: 200,
-      }),
-    );
-  }
-
-  async downloadOutputs(runUid: string): Promise<Readable> {
-    const response = await this.#request("GET", `v1/runs/${encodeURIComponent(runUid)}/outputs`, {
-      expectedStatus: 200,
-      headers: { accept: "application/x-tar" },
-    });
-    if (!response.headers.get("content-type")?.startsWith("application/x-tar") || !response.body) {
-      throw new Error("Steward returned an incompatible output archive response");
-    }
-    return Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
-  }
-
-  async finalizeRun(runUid: string): Promise<Run> {
-    return this.#runResponse(
-      await this.#request("DELETE", `v1/runs/${encodeURIComponent(runUid)}`, {
-        expectedStatus: 202,
-      }),
-    );
-  }
 }
