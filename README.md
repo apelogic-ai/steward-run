@@ -1,12 +1,19 @@
 # steward-run
 
 `steward-run` is the environment-agnostic GitHub Action and ARC runner image that translates a
-live GitHub Actions job into a governed Steward sandbox run. The workspace is the only workflow
+live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-The current API contract in `contracts/steward-run-v1.openapi.yaml` is provisional. Production
-use is blocked until Steward publishes a compatible contract and implements service-principal
-acting-for-user admission.
+The client implements Steward's six-operation `/v1/tasks` lifecycle documented in
+`contracts/steward-run-v1.openapi.yaml`. It submits, uploads a workspace-relative tar archive,
+requests execution, polls through approval parking to a terminal phase, downloads declared
+outputs, and always requests finalization.
+
+Production activation still requires an identity mapper in front of Steward. It must validate
+GitHub OIDC claims, authorize the invoking repository and workflow, resolve the actor, and produce
+the `steward-run` service and acting-user groups accepted by Steward's TokenReview boundary. The
+required token audience is `steward-task-api`; the mock round trip does not prove that production
+identity path or a real Agent Sandbox.
 
 ## Development
 
@@ -30,13 +37,13 @@ steps. All paths are relative to `GITHUB_WORKSPACE`.
   with:
     name: request
     path: in
-- uses: apelogic-ai/steward-run@v0.1.0
+- uses: apelogic-ai/steward-run@v0.2.0
   with:
     workflow: cve-triage
     inputs: in
     outputs: results
     steward-api-url: ${{ vars.STEWARD_API_URL }}
-    oidc-audience: ${{ vars.STEWARD_OIDC_AUDIENCE }}
+    oidc-audience: steward-task-api
 - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
   with:
     name: result

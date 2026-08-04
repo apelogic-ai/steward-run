@@ -31,7 +31,7 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
         STEWARD_RUN_API_URL: mock.url,
         STEWARD_RUN_CODING_AGENT_RUNTIME: "claude-code@2.1.220",
         STEWARD_RUN_INPUTS: "in",
-        STEWARD_RUN_OIDC_AUDIENCE: "steward-test",
+        STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api",
         STEWARD_RUN_OUTPUTS: "out",
         STEWARD_RUN_WORKFLOW: "copy-smoke",
       },
@@ -43,6 +43,7 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
     assert.equal(code, 0, stderr);
     assert.deepEqual(await readFile(join(workspace, "out", "payload.bin")), payload);
     assert.match(await readFile(outputFile, "utf8"), /status=succeeded/);
+    assert.match(await readFile(outputFile, "utf8"), /task-uid=[0-9a-f-]+/);
     assert.match(await readFile(outputFile, "utf8"), /runtime-uid=mock-runtime-uid/);
     assert.match(await readFile(finalizationMarker, "utf8"), /^[0-9a-f-]+\n$/u);
     assert.ok(mock.observations.oidcRequests >= 5);
@@ -73,7 +74,7 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
 test("the mock rejects workflows other than copy-smoke", async () => {
   const mock = await startMockSteward();
   try {
-    const response = await fetch(`${mock.url}/v1/runs`, {
+    const response = await fetch(`${mock.url}/v1/tasks`, {
       method: "POST",
       headers: {
         authorization: "Bearer header.payload.signature",

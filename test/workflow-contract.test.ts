@@ -43,7 +43,9 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(roundtrip, /inputs:\s*in/);
   assert.match(roundtrip, /outputs:\s*out/);
   assert.match(roundtrip, /status.*succeeded/);
+  assert.match(roundtrip, /task-uid/);
   assert.match(roundtrip, /runtime-uid.*mock-runtime-uid/);
+  assert.match(roundtrip, /oidc-audience:\s*steward-task-api/);
   assert.match(roundtrip, /mock-finalized/);
   assert.match(roundtrip, /in\/payload\.bin/);
   assert.match(roundtrip, /out\/payload\.bin/);

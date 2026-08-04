@@ -3,26 +3,26 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Readable } from "node:stream";
 import { createInputArchive, extractOutputArchive, parseWorkspacePaths } from "./archive.js";
 import type { ActionConfig } from "./config.js";
-import type { CreateRunRequest, Run } from "./steward-client.js";
+import type { Task, TaskSubmissionRequest } from "./steward-client.js";
 
-export interface RunClient {
-  createRun(request: CreateRunRequest, idempotencyKey: string): Promise<Run>;
-  uploadInputs(runUid: string, createArchive: () => Promise<Readable>): Promise<void>;
-  executeRun(runUid: string): Promise<Run>;
-  getRun(runUid: string): Promise<Run>;
-  downloadOutputs(runUid: string): Promise<Readable>;
-  finalizeRun(runUid: string): Promise<Run>;
+export interface TaskClient {
+  submitTask(request: TaskSubmissionRequest, idempotencyKey: string): Promise<Task>;
+  uploadTaskInputs(taskUid: string, createArchive: () => Promise<Readable>): Promise<void>;
+  executeTask(taskUid: string): Promise<Task>;
+  getTask(taskUid: string): Promise<Task>;
+  downloadTaskOutputs(taskUid: string): Promise<Readable>;
+  finalizeTask(taskUid: string): Promise<Task>;
 }
 
 interface LifecycleDependencies {
-  client: RunClient;
+  client: TaskClient;
   environment: NodeJS.ProcessEnv;
-  setOutput: (name: "status" | "runtime-uid", value: string) => Promise<void>;
+  setOutput: (name: "status" | "task-uid" | "runtime-uid", value: string) => Promise<void>;
   sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
 }
 
-const terminalPhases = new Set<Run["phase"]>(["succeeded", "parked", "failed", "cancelled"]);
+const terminalPhases = new Set<Task["phase"]>(["succeeded", "failed", "cancelled"]);
 
 function identityField(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name]?.trim();
@@ -41,26 +41,26 @@ export function createIdempotencyKey(environment: NodeJS.ProcessEnv): string {
 }
 
 function abortError(): Error {
-  const error = new Error("Steward run was cancelled");
+  const error = new Error("Steward Task was cancelled");
   error.name = "AbortError";
   return error;
 }
 
 async function pollUntilTerminal(
-  initial: Run,
-  client: RunClient,
+  initial: Task,
+  client: TaskClient,
   sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>,
   signal?: AbortSignal,
-): Promise<Run> {
+): Promise<Task> {
   let current = initial;
   let interval = 1_000;
   while (!terminalPhases.has(current.phase)) {
     if (signal?.aborted) throw abortError();
     await sleep(interval, signal);
     if (signal?.aborted) throw abortError();
-    current = await client.getRun(current.runUid);
-    if (current.runUid !== initial.runUid || current.runtimeUid !== initial.runtimeUid) {
-      throw new Error("Steward changed run identity while polling");
+    current = await client.getTask(current.taskUid);
+    if (current.taskUid !== initial.taskUid || current.runtimeUid !== initial.runtimeUid) {
+      throw new Error("Steward changed Task identity while polling");
     }
     interval = Math.min(interval * 2, 10_000);
   }
@@ -72,26 +72,26 @@ function errorMessage(error: unknown): string {
 }
 
 async function finalizeAndConfirm(
-  run: Run,
-  client: RunClient,
+  task: Task,
+  client: TaskClient,
   sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>,
 ): Promise<void> {
-  let current = await client.finalizeRun(run.runUid);
-  for (let attempt = 0; !current.finalized && attempt < 6; attempt += 1) {
+  let current = await client.finalizeTask(task.taskUid);
+  for (let attempt = 0; !current.finalized && attempt < 120; attempt += 1) {
     await sleep(Math.min(250 * 2 ** attempt, 2_000));
-    current = await client.getRun(run.runUid);
-    if (current.runUid !== run.runUid || current.runtimeUid !== run.runtimeUid) {
-      throw new Error("Steward changed run identity during finalization");
+    current = await client.getTask(task.taskUid);
+    if (current.taskUid !== task.taskUid || current.runtimeUid !== task.runtimeUid) {
+      throw new Error("Steward changed Task identity during finalization");
     }
   }
-  if (!current.finalized) throw new Error("Steward did not confirm run finalization");
+  if (!current.finalized) throw new Error("Steward did not confirm Task finalization");
 }
 
 export async function runWorkflow(
   config: ActionConfig,
   workspace: string,
   dependencies: LifecycleDependencies,
-): Promise<Run> {
+): Promise<Task> {
   const inputPaths = parseWorkspacePaths(config.inputPaths);
   const outputPaths = parseWorkspacePaths(config.outputPaths);
   let initialArchive: Readable | undefined = await createInputArchive(workspace, inputPaths);
@@ -106,10 +106,10 @@ export async function runWorkflow(
   const sleep =
     dependencies.sleep ??
     (async (milliseconds: number, signal?: AbortSignal) => delay(milliseconds, undefined, { signal }));
-  let created: Run | undefined;
+  let created: Task | undefined;
   let primaryError: unknown;
   try {
-    created = await dependencies.client.createRun(
+    created = await dependencies.client.submitTask(
       {
         workflow: config.workflow,
         codingAgentRuntime: config.codingAgentRuntime,
@@ -117,9 +117,10 @@ export async function runWorkflow(
       },
       createIdempotencyKey(dependencies.environment),
     );
+    await dependencies.setOutput("task-uid", created.taskUid);
     await dependencies.setOutput("runtime-uid", created.runtimeUid);
-    await dependencies.client.uploadInputs(created.runUid, createArchive);
-    const executing = await dependencies.client.executeRun(created.runUid);
+    await dependencies.client.uploadTaskInputs(created.taskUid, createArchive);
+    const executing = await dependencies.client.executeTask(created.taskUid);
     const terminal = await pollUntilTerminal(
       executing,
       dependencies.client,
@@ -129,14 +130,15 @@ export async function runWorkflow(
     await dependencies.setOutput("status", terminal.phase);
     if (terminal.phase === "succeeded") {
       await extractOutputArchive(
-        await dependencies.client.downloadOutputs(terminal.runUid),
+        await dependencies.client.downloadTaskOutputs(terminal.taskUid),
         workspace,
         outputPaths,
       );
       return terminal;
     }
-    if (terminal.phase === "parked") return terminal;
-    throw new Error(`Steward run ${terminal.phase}${terminal.message ? `: ${terminal.message}` : ""}`);
+    throw new Error(
+      `Steward Task ${terminal.phase}${terminal.failureReason ? `: ${terminal.failureReason}` : ""}`,
+    );
   } catch (error) {
     primaryError = error;
     if (created && error instanceof Error && error.name === "AbortError") {
@@ -151,7 +153,7 @@ export async function runWorkflow(
         if (primaryError) {
           throw new AggregateError(
             [primaryError, cleanupError],
-            `Steward run failed and cleanup failed: ${errorMessage(cleanupError)}`,
+            `Steward Task failed and cleanup failed: ${errorMessage(cleanupError)}`,
           );
         }
         throw cleanupError;

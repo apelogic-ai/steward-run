@@ -2,29 +2,47 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Readable } from "node:stream";
 import type { FetchLike } from "./oidc.js";
 
-export const runPhases = [
-  "accepted",
-  "materializing",
-  "running",
-  "collecting",
-  "succeeded",
+export type RuntimeOwnership = "provisioned" | "adopted";
+
+export const taskPhases = [
+  "submitted",
   "parked",
+  "queued",
+  "running",
+  "succeeded",
   "failed",
   "cancelled",
 ] as const;
-export type RunPhase = (typeof runPhases)[number];
-export type RuntimeOwnership = "provisioned" | "adopted";
+export type TaskPhase = (typeof taskPhases)[number];
 
-export interface Run {
-  runUid: string;
-  runtimeUid: string;
-  phase: RunPhase;
-  runtimeOwnership: RuntimeOwnership;
-  finalized: boolean;
-  message?: string;
+interface ModelRef {
+  provider: string;
+  model: string;
 }
 
-export interface CreateRunRequest {
+interface ToolGrant {
+  provider: string;
+  resource: string;
+  action: string;
+}
+
+export type TaskAdmissionDelta =
+  | { dimension: "budget"; requested: string; ceiling: string; currency: string }
+  | { dimension: "ttl"; requested: string; ceiling: string }
+  | { dimension: "models"; requested: ModelRef[]; ceiling: ModelRef[] }
+  | { dimension: "tools"; requested: ToolGrant[]; ceiling: ToolGrant[] };
+
+export interface Task {
+  taskUid: string;
+  runtimeUid: string;
+  phase: TaskPhase;
+  runtimeOwnership: RuntimeOwnership;
+  finalized: boolean;
+  failureReason?: string;
+  deltas: TaskAdmissionDelta[];
+}
+
+export interface TaskSubmissionRequest {
   workflow: string;
   codingAgentRuntime: string;
   agentRuntimeUid?: string;
@@ -39,10 +57,130 @@ interface ClientOptions {
 }
 
 interface RequestOptions {
-  expectedStatus: number;
+  expectedStatus: number | readonly number[];
   headers?: Record<string, string>;
   body?: BodyInit | (() => Promise<BodyInit>);
   duplex?: "half";
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function parseModelRef(value: unknown): ModelRef | undefined {
+  const item = record(value);
+  return item &&
+    hasOnlyKeys(item, ["provider", "model"]) &&
+    typeof item.provider === "string" &&
+    item.provider &&
+    typeof item.model === "string" &&
+    item.model
+    ? { provider: item.provider, model: item.model }
+    : undefined;
+}
+
+function parseToolGrant(value: unknown): ToolGrant | undefined {
+  const item = record(value);
+  return item &&
+    hasOnlyKeys(item, ["provider", "resource", "action"]) &&
+    typeof item.provider === "string" &&
+    item.provider &&
+    typeof item.resource === "string" &&
+    item.resource &&
+    typeof item.action === "string" &&
+    item.action
+    ? { provider: item.provider, resource: item.resource, action: item.action }
+    : undefined;
+}
+
+function parseItems<T>(value: unknown, parse: (item: unknown) => T | undefined): T[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const parsed = value.map(parse);
+  return parsed.every((item): item is T => item !== undefined) ? parsed : undefined;
+}
+
+function parseTaskDelta(value: unknown): TaskAdmissionDelta | undefined {
+  const delta = record(value);
+  if (!delta || typeof delta.dimension !== "string") return undefined;
+  if (
+    delta.dimension === "budget" &&
+    hasOnlyKeys(delta, ["dimension", "requested", "ceiling", "currency"]) &&
+    typeof delta.requested === "string" &&
+    typeof delta.ceiling === "string" &&
+    typeof delta.currency === "string"
+  ) {
+    return {
+      dimension: "budget",
+      requested: delta.requested,
+      ceiling: delta.ceiling,
+      currency: delta.currency,
+    };
+  }
+  if (
+    delta.dimension === "ttl" &&
+    hasOnlyKeys(delta, ["dimension", "requested", "ceiling"]) &&
+    typeof delta.requested === "string" &&
+    typeof delta.ceiling === "string"
+  ) {
+    return { dimension: "ttl", requested: delta.requested, ceiling: delta.ceiling };
+  }
+  if (delta.dimension === "models" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])) {
+    const requested = parseItems(delta.requested, parseModelRef);
+    const ceiling = parseItems(delta.ceiling, parseModelRef);
+    if (requested && ceiling) return { dimension: "models", requested, ceiling };
+  }
+  if (delta.dimension === "tools" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])) {
+    const requested = parseItems(delta.requested, parseToolGrant);
+    const ceiling = parseItems(delta.ceiling, parseToolGrant);
+    if (requested && ceiling) return { dimension: "tools", requested, ceiling };
+  }
+  return undefined;
+}
+
+function parseTask(payload: unknown): Task {
+  const value = record(payload);
+  const rawDeltas = value?.deltas ?? [];
+  const deltas = parseItems(rawDeltas, parseTaskDelta);
+  if (
+    !value ||
+    !hasOnlyKeys(value, [
+      "taskUid",
+      "runtimeUid",
+      "phase",
+      "runtimeOwnership",
+      "finalized",
+      "failureReason",
+      "deltas",
+    ]) ||
+    typeof value.taskUid !== "string" ||
+    !value.taskUid ||
+    typeof value.runtimeUid !== "string" ||
+    !value.runtimeUid ||
+    typeof value.phase !== "string" ||
+    !taskPhases.includes(value.phase as TaskPhase) ||
+    (value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted") ||
+    typeof value.finalized !== "boolean" ||
+    (value.failureReason !== undefined && typeof value.failureReason !== "string") ||
+    !deltas
+  ) {
+    throw new Error("Steward returned an incompatible Task response");
+  }
+  return {
+    taskUid: value.taskUid,
+    runtimeUid: value.runtimeUid,
+    phase: value.phase as TaskPhase,
+    runtimeOwnership: value.runtimeOwnership,
+    finalized: value.finalized,
+    ...(typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {}),
+    deltas,
+  };
 }
 
 function validatedBaseUrl(value: string): URL {
@@ -57,36 +195,6 @@ function validatedBaseUrl(value: string): URL {
   url.search = "";
   if (!url.pathname.endsWith("/")) url.pathname += "/";
   return url;
-}
-
-function parseRun(payload: unknown): Run {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("Steward returned an incompatible run response");
-  }
-  const value = payload as Record<string, unknown>;
-  const allowed = new Set(["runUid", "runtimeUid", "phase", "runtimeOwnership", "finalized", "message"]);
-  if (
-    Object.keys(value).some((key) => !allowed.has(key)) ||
-    typeof value.runUid !== "string" ||
-    !value.runUid ||
-    typeof value.runtimeUid !== "string" ||
-    !value.runtimeUid ||
-    typeof value.phase !== "string" ||
-    !runPhases.includes(value.phase as RunPhase) ||
-    (value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted") ||
-    typeof value.finalized !== "boolean" ||
-    (value.message !== undefined && typeof value.message !== "string")
-  ) {
-    throw new Error("Steward returned an incompatible run response");
-  }
-  return {
-    runUid: value.runUid,
-    runtimeUid: value.runtimeUid,
-    phase: value.phase as RunPhase,
-    runtimeOwnership: value.runtimeOwnership,
-    finalized: value.finalized,
-    ...(typeof value.message === "string" ? { message: value.message } : {}),
-  };
 }
 
 function retryDelay(response: Response | undefined, attempt: number): number {
@@ -142,7 +250,10 @@ export class StewardClient {
         await this.#sleep(retryDelay(undefined, attempt));
         continue;
       }
-      if (response.status === options.expectedStatus) return response;
+      const expectedStatuses = Array.isArray(options.expectedStatus)
+        ? options.expectedStatus
+        : [options.expectedStatus];
+      if (expectedStatuses.includes(response.status)) return response;
       if (isRetryableStatus(response.status) && attempt + 1 < this.#maxAttempts) {
         await response.body?.cancel().catch(() => undefined);
         await this.#sleep(retryDelay(response, attempt));
@@ -154,25 +265,25 @@ export class StewardClient {
     throw new Error(`Steward request ${method} ${path} exhausted retries`);
   }
 
-  async #runResponse(response: Response): Promise<Run> {
+  async #taskResponse(response: Response): Promise<Task> {
     const payload: unknown = await response.json().catch(() => undefined);
-    return parseRun(payload);
+    return parseTask(payload);
   }
 
-  async createRun(request: CreateRunRequest, idempotencyKey: string): Promise<Run> {
-    const response = await this.#request("POST", "v1/runs", {
-      expectedStatus: 201,
+  async submitTask(request: TaskSubmissionRequest, idempotencyKey: string): Promise<Task> {
+    const response = await this.#request("POST", "v1/tasks", {
+      expectedStatus: [201, 202],
       headers: {
         "content-type": "application/json",
         "idempotency-key": idempotencyKey,
       },
       body: JSON.stringify(request),
     });
-    return this.#runResponse(response);
+    return this.#taskResponse(response);
   }
 
-  async uploadInputs(runUid: string, createArchive: () => Promise<Readable>): Promise<void> {
-    await this.#request("PUT", `v1/runs/${encodeURIComponent(runUid)}/inputs`, {
+  async uploadTaskInputs(taskUid: string, createArchive: () => Promise<Readable>): Promise<void> {
+    await this.#request("PUT", `v1/tasks/${encodeURIComponent(taskUid)}/inputs`, {
       expectedStatus: 204,
       headers: { "content-type": "application/x-tar" },
       body: async () => (await createArchive()) as unknown as BodyInit,
@@ -180,38 +291,43 @@ export class StewardClient {
     });
   }
 
-  async executeRun(runUid: string): Promise<Run> {
-    return this.#runResponse(
-      await this.#request("POST", `v1/runs/${encodeURIComponent(runUid)}/execute`, {
+  async executeTask(taskUid: string): Promise<Task> {
+    return this.#taskResponse(
+      await this.#request("POST", `v1/tasks/${encodeURIComponent(taskUid)}/execute`, {
         expectedStatus: 202,
       }),
     );
   }
 
-  async getRun(runUid: string): Promise<Run> {
-    return this.#runResponse(
-      await this.#request("GET", `v1/runs/${encodeURIComponent(runUid)}`, {
+  async getTask(taskUid: string): Promise<Task> {
+    return this.#taskResponse(
+      await this.#request("GET", `v1/tasks/${encodeURIComponent(taskUid)}`, {
         expectedStatus: 200,
       }),
     );
   }
 
-  async downloadOutputs(runUid: string): Promise<Readable> {
-    const response = await this.#request("GET", `v1/runs/${encodeURIComponent(runUid)}/outputs`, {
-      expectedStatus: 200,
-      headers: { accept: "application/x-tar" },
-    });
+  async downloadTaskOutputs(taskUid: string): Promise<Readable> {
+    const response = await this.#request(
+      "GET",
+      `v1/tasks/${encodeURIComponent(taskUid)}/outputs`,
+      {
+        expectedStatus: 200,
+        headers: { accept: "application/x-tar" },
+      },
+    );
     if (!response.headers.get("content-type")?.startsWith("application/x-tar") || !response.body) {
       throw new Error("Steward returned an incompatible output archive response");
     }
     return Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
   }
 
-  async finalizeRun(runUid: string): Promise<Run> {
-    return this.#runResponse(
-      await this.#request("DELETE", `v1/runs/${encodeURIComponent(runUid)}`, {
+  async finalizeTask(taskUid: string): Promise<Task> {
+    return this.#taskResponse(
+      await this.#request("DELETE", `v1/tasks/${encodeURIComponent(taskUid)}`, {
         expectedStatus: 202,
       }),
     );
   }
+
 }

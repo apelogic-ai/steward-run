@@ -1,18 +1,19 @@
 openapi: 3.1.0
 info:
-  title: Steward Run API
-  version: 1.0.0-provisional
+  title: Steward Task API
+  version: 1.0.0
   description: >-
-    Provisional translator-facing contract. Production use is gated on Steward
-    publishing a compatible version and implementing service-principal acting-for-user.
+    Task submission lifecycle consumed by steward-run. Bearer assertions must be
+    issued for the steward-task-api audience and mapped to Steward service and
+    acting-user identity groups before they reach this API.
 servers:
   - url: https://steward.invalid
 security:
-  - githubOidc: []
+  - bearerAuth: []
 paths:
-  /v1/runs:
+  /v1/tasks:
     post:
-      operationId: createRun
+      operationId: submitTask
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -20,22 +21,27 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateRunRequest'
+              $ref: '#/components/schemas/TaskSubmissionRequest'
       responses:
         '201':
-          description: Run created or idempotently returned
+          description: Task admitted or idempotently returned
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Run'
+              schema: { $ref: '#/components/schemas/TaskStatusResponse' }
+        '202':
+          description: Task parked for approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskStatusResponse' }
+        '400': { $ref: '#/components/responses/Invalid' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Invalid' }
-  /v1/runs/{runUid}/inputs:
+  /v1/tasks/{taskUid}/inputs:
     parameters:
-      - $ref: '#/components/parameters/RunUid'
+      - $ref: '#/components/parameters/TaskUid'
     put:
-      operationId: uploadInputs
+      operationId: uploadTaskInputs
       requestBody:
         required: true
         content:
@@ -44,76 +50,80 @@ paths:
               type: string
               contentMediaType: application/x-tar
               contentEncoding: binary
+              maxLength: 67108864
       responses:
         '204': { description: Input archive accepted }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '413': { description: Archive exceeds server policy }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { description: Archive exceeds the 64 MiB server limit }
+        '415': { description: Content-Type is not application/x-tar }
         '422': { $ref: '#/components/responses/Invalid' }
-  /v1/runs/{runUid}/execute:
+  /v1/tasks/{taskUid}/execute:
     parameters:
-      - $ref: '#/components/parameters/RunUid'
+      - $ref: '#/components/parameters/TaskUid'
     post:
-      operationId: executeRun
+      operationId: executeTask
       responses:
         '202':
-          description: Sandbox-side execution accepted
+          description: Desired execution recorded durably
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Run'
+              schema: { $ref: '#/components/schemas/TaskStatusResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
-  /v1/runs/{runUid}:
+  /v1/tasks/{taskUid}:
     parameters:
-      - $ref: '#/components/parameters/RunUid'
+      - $ref: '#/components/parameters/TaskUid'
     get:
-      operationId: getRun
+      operationId: getTask
       responses:
         '200':
-          description: Current run state
+          description: Current Task state
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Run'
+              schema: { $ref: '#/components/schemas/TaskStatusResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { description: Run not found }
+        '404': { $ref: '#/components/responses/NotFound' }
     delete:
-      operationId: finalizeRun
+      operationId: finalizeTask
       description: Terminates a provisioned runtime or detaches an adopted runtime.
       responses:
         '202':
-          description: Finalization accepted
+          description: Desired cleanup recorded durably
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Run'
+              schema: { $ref: '#/components/schemas/TaskStatusResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { description: Run not found }
-  /v1/runs/{runUid}/outputs:
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tasks/{taskUid}/outputs:
     parameters:
-      - $ref: '#/components/parameters/RunUid'
+      - $ref: '#/components/parameters/TaskUid'
     get:
-      operationId: downloadOutputs
+      operationId: downloadTaskOutputs
       responses:
         '200':
-          description: Declared sandbox outputs
+          description: Workspace-relative Task outputs, limited to 67108864 bytes
           content:
             application/x-tar:
               schema:
                 type: string
                 contentMediaType: application/x-tar
                 contentEncoding: binary
+                maxLength: 67108864
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: Outputs are not ready }
 components:
   securitySchemes:
-    githubOidc:
+    bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: TokenReview assertion with the steward-task-api audience
   parameters:
-    RunUid:
-      name: runUid
+    TaskUid:
+      name: taskUid
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -123,11 +133,12 @@ components:
       required: true
       schema: { type: string, minLength: 32, maxLength: 64 }
   responses:
-    Unauthorized: { description: Missing, invalid, or mismatched GitHub OIDC identity }
-    Conflict: { description: Request conflicts with the current run state }
+    Unauthorized: { description: Missing, invalid, or unauthorized bearer identity }
+    Conflict: { description: Request conflicts with the current Task state }
     Invalid: { description: Request or archive failed validation }
+    NotFound: { description: Task not found for this identity }
   schemas:
-    CreateRunRequest:
+    TaskSubmissionRequest:
       type: object
       additionalProperties: false
       required: [workflow, codingAgentRuntime]
@@ -135,19 +146,79 @@ components:
         workflow: { type: string, minLength: 1 }
         codingAgentRuntime: { type: string, minLength: 1 }
         agentRuntimeUid: { type: string, minLength: 1 }
-    RunPhase:
+    TaskPhase:
       type: string
-      enum: [accepted, materializing, running, collecting, succeeded, parked, failed, cancelled]
-    Run:
+      enum: [submitted, parked, queued, running, succeeded, failed, cancelled]
+    RuntimeOwnership:
+      type: string
+      enum: [provisioned, adopted]
+    ModelRef:
       type: object
       additionalProperties: false
-      required: [runUid, runtimeUid, phase, runtimeOwnership, finalized]
+      required: [provider, model]
       properties:
-        runUid: { type: string, format: uuid }
+        provider: { type: string, minLength: 1 }
+        model: { type: string, minLength: 1 }
+    ToolGrant:
+      type: object
+      additionalProperties: false
+      required: [provider, resource, action]
+      properties:
+        provider: { type: string, minLength: 1 }
+        resource: { type: string, minLength: 1 }
+        action: { type: string, minLength: 1 }
+    TaskAdmissionDelta:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [dimension, requested, ceiling, currency]
+          properties:
+            dimension: { const: budget }
+            requested: { type: string }
+            ceiling: { type: string }
+            currency: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [dimension, requested, ceiling]
+          properties:
+            dimension: { const: ttl }
+            requested: { type: string }
+            ceiling: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [dimension, requested, ceiling]
+          properties:
+            dimension: { const: models }
+            requested:
+              type: array
+              items: { $ref: '#/components/schemas/ModelRef' }
+            ceiling:
+              type: array
+              items: { $ref: '#/components/schemas/ModelRef' }
+        - type: object
+          additionalProperties: false
+          required: [dimension, requested, ceiling]
+          properties:
+            dimension: { const: tools }
+            requested:
+              type: array
+              items: { $ref: '#/components/schemas/ToolGrant' }
+            ceiling:
+              type: array
+              items: { $ref: '#/components/schemas/ToolGrant' }
+    TaskStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [taskUid, runtimeUid, phase, runtimeOwnership, finalized]
+      properties:
+        taskUid: { type: string, format: uuid }
         runtimeUid: { type: string, minLength: 1 }
-        phase: { $ref: '#/components/schemas/RunPhase' }
-        runtimeOwnership: { type: string, enum: [provisioned, adopted] }
+        phase: { $ref: '#/components/schemas/TaskPhase' }
+        runtimeOwnership: { $ref: '#/components/schemas/RuntimeOwnership' }
         finalized:
           type: boolean
           description: True after provisioned termination or adopted-runtime detachment completes.
-        message: { type: string }
+        failureReason: { type: string }
+        deltas:
+          type: array
+          items: { $ref: '#/components/schemas/TaskAdmissionDelta' }

@@ -27,8 +27,11 @@ inputs:
 
 outputs:
   status:
-    description: Terminal Steward run phase
+    description: Terminal Steward Task phase
     value: ${{ steps.steward-run.outputs.status }}
+  task-uid:
+    description: Steward Task UID for audit correlation
+    value: ${{ steps.steward-run.outputs.task-uid }}
   runtime-uid:
     description: Provisioned or adopted AgentRuntime UID
     value: ${{ steps.steward-run.outputs.runtime-uid }}

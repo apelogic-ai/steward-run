@@ -2670,7 +2670,7 @@ async function extractOutputArchive(archive, workspace, declaredPaths) {
 }
 
 // src/lifecycle.ts
-var terminalPhases = /* @__PURE__ */ new Set(["succeeded", "parked", "failed", "cancelled"]);
+var terminalPhases = /* @__PURE__ */ new Set(["succeeded", "failed", "cancelled"]);
 function identityField(environment, name) {
   const value = environment[name]?.trim();
   if (!value) throw new Error(`required GitHub job identity ${name} is missing`);
@@ -2686,7 +2686,7 @@ function createIdempotencyKey(environment) {
   return (0, import_node_crypto2.createHash)("sha256").update(identity).digest("hex");
 }
 function abortError() {
-  const error = new Error("Steward run was cancelled");
+  const error = new Error("Steward Task was cancelled");
   error.name = "AbortError";
   return error;
 }
@@ -2697,9 +2697,9 @@ async function pollUntilTerminal(initial, client, sleep, signal) {
     if (signal?.aborted) throw abortError();
     await sleep(interval, signal);
     if (signal?.aborted) throw abortError();
-    current = await client.getRun(current.runUid);
-    if (current.runUid !== initial.runUid || current.runtimeUid !== initial.runtimeUid) {
-      throw new Error("Steward changed run identity while polling");
+    current = await client.getTask(current.taskUid);
+    if (current.taskUid !== initial.taskUid || current.runtimeUid !== initial.runtimeUid) {
+      throw new Error("Steward changed Task identity while polling");
     }
     interval = Math.min(interval * 2, 1e4);
   }
@@ -2708,16 +2708,16 @@ async function pollUntilTerminal(initial, client, sleep, signal) {
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
-async function finalizeAndConfirm(run, client, sleep) {
-  let current = await client.finalizeRun(run.runUid);
-  for (let attempt = 0; !current.finalized && attempt < 6; attempt += 1) {
+async function finalizeAndConfirm(task, client, sleep) {
+  let current = await client.finalizeTask(task.taskUid);
+  for (let attempt = 0; !current.finalized && attempt < 120; attempt += 1) {
     await sleep(Math.min(250 * 2 ** attempt, 2e3));
-    current = await client.getRun(run.runUid);
-    if (current.runUid !== run.runUid || current.runtimeUid !== run.runtimeUid) {
-      throw new Error("Steward changed run identity during finalization");
+    current = await client.getTask(task.taskUid);
+    if (current.taskUid !== task.taskUid || current.runtimeUid !== task.runtimeUid) {
+      throw new Error("Steward changed Task identity during finalization");
     }
   }
-  if (!current.finalized) throw new Error("Steward did not confirm run finalization");
+  if (!current.finalized) throw new Error("Steward did not confirm Task finalization");
 }
 async function runWorkflow(config, workspace, dependencies) {
   const inputPaths = parseWorkspacePaths(config.inputPaths);
@@ -2735,7 +2735,7 @@ async function runWorkflow(config, workspace, dependencies) {
   let created;
   let primaryError;
   try {
-    created = await dependencies.client.createRun(
+    created = await dependencies.client.submitTask(
       {
         workflow: config.workflow,
         codingAgentRuntime: config.codingAgentRuntime,
@@ -2743,9 +2743,10 @@ async function runWorkflow(config, workspace, dependencies) {
       },
       createIdempotencyKey(dependencies.environment)
     );
+    await dependencies.setOutput("task-uid", created.taskUid);
     await dependencies.setOutput("runtime-uid", created.runtimeUid);
-    await dependencies.client.uploadInputs(created.runUid, createArchive);
-    const executing = await dependencies.client.executeRun(created.runUid);
+    await dependencies.client.uploadTaskInputs(created.taskUid, createArchive);
+    const executing = await dependencies.client.executeTask(created.taskUid);
     const terminal = await pollUntilTerminal(
       executing,
       dependencies.client,
@@ -2755,14 +2756,15 @@ async function runWorkflow(config, workspace, dependencies) {
     await dependencies.setOutput("status", terminal.phase);
     if (terminal.phase === "succeeded") {
       await extractOutputArchive(
-        await dependencies.client.downloadOutputs(terminal.runUid),
+        await dependencies.client.downloadTaskOutputs(terminal.taskUid),
         workspace,
         outputPaths
       );
       return terminal;
     }
-    if (terminal.phase === "parked") return terminal;
-    throw new Error(`Steward run ${terminal.phase}${terminal.message ? `: ${terminal.message}` : ""}`);
+    throw new Error(
+      `Steward Task ${terminal.phase}${terminal.failureReason ? `: ${terminal.failureReason}` : ""}`
+    );
   } catch (error) {
     primaryError = error;
     if (created && error instanceof Error && error.name === "AbortError") {
@@ -2777,7 +2779,7 @@ async function runWorkflow(config, workspace, dependencies) {
         if (primaryError) {
           throw new AggregateError(
             [primaryError, cleanupError],
-            `Steward run failed and cleanup failed: ${errorMessage(cleanupError)}`
+            `Steward Task failed and cleanup failed: ${errorMessage(cleanupError)}`
           );
         }
         throw cleanupError;
@@ -2833,16 +2835,86 @@ function oidcTokenProvider(environment, audience, fetchImplementation = fetch) {
 // src/steward-client.ts
 var import_promises4 = require("node:timers/promises");
 var import_node_stream = require("node:stream");
-var runPhases = [
-  "accepted",
-  "materializing",
-  "running",
-  "collecting",
-  "succeeded",
+var taskPhases = [
+  "submitted",
   "parked",
+  "queued",
+  "running",
+  "succeeded",
   "failed",
   "cancelled"
 ];
+function record(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+}
+function hasOnlyKeys(value, keys) {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+function parseModelRef(value) {
+  const item = record(value);
+  return item && hasOnlyKeys(item, ["provider", "model"]) && typeof item.provider === "string" && item.provider && typeof item.model === "string" && item.model ? { provider: item.provider, model: item.model } : void 0;
+}
+function parseToolGrant(value) {
+  const item = record(value);
+  return item && hasOnlyKeys(item, ["provider", "resource", "action"]) && typeof item.provider === "string" && item.provider && typeof item.resource === "string" && item.resource && typeof item.action === "string" && item.action ? { provider: item.provider, resource: item.resource, action: item.action } : void 0;
+}
+function parseItems(value, parse) {
+  if (!Array.isArray(value)) return void 0;
+  const parsed = value.map(parse);
+  return parsed.every((item) => item !== void 0) ? parsed : void 0;
+}
+function parseTaskDelta(value) {
+  const delta = record(value);
+  if (!delta || typeof delta.dimension !== "string") return void 0;
+  if (delta.dimension === "budget" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling", "currency"]) && typeof delta.requested === "string" && typeof delta.ceiling === "string" && typeof delta.currency === "string") {
+    return {
+      dimension: "budget",
+      requested: delta.requested,
+      ceiling: delta.ceiling,
+      currency: delta.currency
+    };
+  }
+  if (delta.dimension === "ttl" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"]) && typeof delta.requested === "string" && typeof delta.ceiling === "string") {
+    return { dimension: "ttl", requested: delta.requested, ceiling: delta.ceiling };
+  }
+  if (delta.dimension === "models" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])) {
+    const requested = parseItems(delta.requested, parseModelRef);
+    const ceiling = parseItems(delta.ceiling, parseModelRef);
+    if (requested && ceiling) return { dimension: "models", requested, ceiling };
+  }
+  if (delta.dimension === "tools" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])) {
+    const requested = parseItems(delta.requested, parseToolGrant);
+    const ceiling = parseItems(delta.ceiling, parseToolGrant);
+    if (requested && ceiling) return { dimension: "tools", requested, ceiling };
+  }
+  return void 0;
+}
+function parseTask(payload) {
+  const value = record(payload);
+  const rawDeltas = value?.deltas ?? [];
+  const deltas = parseItems(rawDeltas, parseTaskDelta);
+  if (!value || !hasOnlyKeys(value, [
+    "taskUid",
+    "runtimeUid",
+    "phase",
+    "runtimeOwnership",
+    "finalized",
+    "failureReason",
+    "deltas"
+  ]) || typeof value.taskUid !== "string" || !value.taskUid || typeof value.runtimeUid !== "string" || !value.runtimeUid || typeof value.phase !== "string" || !taskPhases.includes(value.phase) || value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted" || typeof value.finalized !== "boolean" || value.failureReason !== void 0 && typeof value.failureReason !== "string" || !deltas) {
+    throw new Error("Steward returned an incompatible Task response");
+  }
+  return {
+    taskUid: value.taskUid,
+    runtimeUid: value.runtimeUid,
+    phase: value.phase,
+    runtimeOwnership: value.runtimeOwnership,
+    finalized: value.finalized,
+    ...typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {},
+    deltas
+  };
+}
 function validatedBaseUrl(value) {
   const url = new URL(value);
   const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
@@ -2855,24 +2927,6 @@ function validatedBaseUrl(value) {
   url.search = "";
   if (!url.pathname.endsWith("/")) url.pathname += "/";
   return url;
-}
-function parseRun(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("Steward returned an incompatible run response");
-  }
-  const value = payload;
-  const allowed = /* @__PURE__ */ new Set(["runUid", "runtimeUid", "phase", "runtimeOwnership", "finalized", "message"]);
-  if (Object.keys(value).some((key) => !allowed.has(key)) || typeof value.runUid !== "string" || !value.runUid || typeof value.runtimeUid !== "string" || !value.runtimeUid || typeof value.phase !== "string" || !runPhases.includes(value.phase) || value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted" || typeof value.finalized !== "boolean" || value.message !== void 0 && typeof value.message !== "string") {
-    throw new Error("Steward returned an incompatible run response");
-  }
-  return {
-    runUid: value.runUid,
-    runtimeUid: value.runtimeUid,
-    phase: value.phase,
-    runtimeOwnership: value.runtimeOwnership,
-    finalized: value.finalized,
-    ...typeof value.message === "string" ? { message: value.message } : {}
-  };
 }
 function retryDelay(response, attempt) {
   const retryAfter = response?.headers.get("retry-after");
@@ -2922,7 +2976,8 @@ var StewardClient = class {
         await this.#sleep(retryDelay(void 0, attempt));
         continue;
       }
-      if (response.status === options.expectedStatus) return response;
+      const expectedStatuses = Array.isArray(options.expectedStatus) ? options.expectedStatus : [options.expectedStatus];
+      if (expectedStatuses.includes(response.status)) return response;
       if (isRetryableStatus(response.status) && attempt + 1 < this.#maxAttempts) {
         await response.body?.cancel().catch(() => void 0);
         await this.#sleep(retryDelay(response, attempt));
@@ -2933,56 +2988,60 @@ var StewardClient = class {
     }
     throw new Error(`Steward request ${method} ${path} exhausted retries`);
   }
-  async #runResponse(response) {
+  async #taskResponse(response) {
     const payload = await response.json().catch(() => void 0);
-    return parseRun(payload);
+    return parseTask(payload);
   }
-  async createRun(request, idempotencyKey) {
-    const response = await this.#request("POST", "v1/runs", {
-      expectedStatus: 201,
+  async submitTask(request, idempotencyKey) {
+    const response = await this.#request("POST", "v1/tasks", {
+      expectedStatus: [201, 202],
       headers: {
         "content-type": "application/json",
         "idempotency-key": idempotencyKey
       },
       body: JSON.stringify(request)
     });
-    return this.#runResponse(response);
+    return this.#taskResponse(response);
   }
-  async uploadInputs(runUid, createArchive) {
-    await this.#request("PUT", `v1/runs/${encodeURIComponent(runUid)}/inputs`, {
+  async uploadTaskInputs(taskUid, createArchive) {
+    await this.#request("PUT", `v1/tasks/${encodeURIComponent(taskUid)}/inputs`, {
       expectedStatus: 204,
       headers: { "content-type": "application/x-tar" },
       body: async () => await createArchive(),
       duplex: "half"
     });
   }
-  async executeRun(runUid) {
-    return this.#runResponse(
-      await this.#request("POST", `v1/runs/${encodeURIComponent(runUid)}/execute`, {
+  async executeTask(taskUid) {
+    return this.#taskResponse(
+      await this.#request("POST", `v1/tasks/${encodeURIComponent(taskUid)}/execute`, {
         expectedStatus: 202
       })
     );
   }
-  async getRun(runUid) {
-    return this.#runResponse(
-      await this.#request("GET", `v1/runs/${encodeURIComponent(runUid)}`, {
+  async getTask(taskUid) {
+    return this.#taskResponse(
+      await this.#request("GET", `v1/tasks/${encodeURIComponent(taskUid)}`, {
         expectedStatus: 200
       })
     );
   }
-  async downloadOutputs(runUid) {
-    const response = await this.#request("GET", `v1/runs/${encodeURIComponent(runUid)}/outputs`, {
-      expectedStatus: 200,
-      headers: { accept: "application/x-tar" }
-    });
+  async downloadTaskOutputs(taskUid) {
+    const response = await this.#request(
+      "GET",
+      `v1/tasks/${encodeURIComponent(taskUid)}/outputs`,
+      {
+        expectedStatus: 200,
+        headers: { accept: "application/x-tar" }
+      }
+    );
     if (!response.headers.get("content-type")?.startsWith("application/x-tar") || !response.body) {
       throw new Error("Steward returned an incompatible output archive response");
     }
     return import_node_stream.Readable.fromWeb(response.body);
   }
-  async finalizeRun(runUid) {
-    return this.#runResponse(
-      await this.#request("DELETE", `v1/runs/${encodeURIComponent(runUid)}`, {
+  async finalizeTask(taskUid) {
+    return this.#taskResponse(
+      await this.#request("DELETE", `v1/tasks/${encodeURIComponent(taskUid)}`, {
         expectedStatus: 202
       })
     );
