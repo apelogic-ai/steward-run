@@ -6,6 +6,13 @@ import tar from "tar-stream";
 const taskUid = "2f9f6ade-261d-4090-9532-9e157b59db2e";
 const runtimeUid = "mock-runtime-uid";
 const identityToken = "header.payload.signature";
+type MockOperation =
+  | "submit"
+  | "upload-inputs"
+  | "execute"
+  | "poll"
+  | "download-outputs"
+  | "finalize";
 
 export interface MockSteward {
   url: string;
@@ -17,6 +24,7 @@ export interface MockSteward {
     downloaded: boolean;
     finalized: boolean;
     oidcRequests: number;
+    operations: MockOperation[];
   };
   close: () => Promise<void>;
 }
@@ -78,7 +86,7 @@ async function outputArchive(payload: Buffer): Promise<Buffer> {
 }
 
 export async function startMockSteward(options: MockStewardOptions = {}): Promise<MockSteward> {
-  const observations = {
+  const observations: MockSteward["observations"] = {
     created: false,
     uploaded: false,
     executed: false,
@@ -86,6 +94,7 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
     downloaded: false,
     finalized: false,
     oidcRequests: 0,
+    operations: [],
   };
   let payload: Buffer<ArrayBufferLike> | undefined;
   const server = createServer((request, response) => {
@@ -121,20 +130,25 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
           return;
         }
         observations.created = true;
+        observations.operations.push("submit");
         json(response, 201, task(false, "submitted"));
       } else if (request.method === "PUT" && url.pathname === `/v1/tasks/${taskUid}/inputs`) {
         payload = await uploadedPayload(await requestBody(request));
         observations.uploaded = true;
+        observations.operations.push("upload-inputs");
         response.writeHead(204).end();
       } else if (request.method === "POST" && url.pathname === `/v1/tasks/${taskUid}/execute`) {
         observations.executed = true;
+        observations.operations.push("execute");
         json(response, 202, task(false, "running"));
       } else if (request.method === "GET" && url.pathname === `/v1/tasks/${taskUid}`) {
         observations.polled = true;
+        observations.operations.push("poll");
         json(response, 200, task(observations.finalized, "succeeded"));
       } else if (request.method === "GET" && url.pathname === `/v1/tasks/${taskUid}/outputs`) {
         if (!payload) throw new Error("mock output requested before input upload");
         observations.downloaded = true;
+        observations.operations.push("download-outputs");
         response.writeHead(200, { "content-type": "application/x-tar" });
         response.end(await outputArchive(payload));
       } else if (request.method === "DELETE" && url.pathname === `/v1/tasks/${taskUid}`) {
@@ -142,6 +156,7 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
           await writeFile(options.finalizationMarker, `${taskUid}\n`, "utf8");
         }
         observations.finalized = true;
+        observations.operations.push("finalize");
         json(response, 202, task(true, "succeeded"));
       } else {
         json(response, 404, { message: "not found" });

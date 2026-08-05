@@ -58,8 +58,20 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   );
   const release = parse(releaseSource) as { permissions: Record<string, string> };
   assert.equal(release.permissions["id-token"], "write");
+  assert.equal(release.permissions.contents, "write");
   assert.match(releaseSource, /AWS_ROLE_ARN/);
+  assert.match(
+    releaseSource,
+    /sigstore\/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6/,
+  );
   assert.match(releaseSource, /--provenance=mode=max/);
   assert.match(releaseSource, /--sbom=true/);
+  assert.match(releaseSource, /containerimage\.digest/);
+  assert.match(releaseSource, /cosign sign --yes/);
+  assert.match(releaseSource, /cosign sign-blob --yes/);
+  assert.match(releaseSource, /release-manifest\.json/);
+  assert.match(releaseSource, /release-manifest\.sigstore\.json/);
+  assert.match(releaseSource, /GITHUB_SHA/);
+  assert.match(releaseSource, /gh release upload/);
   assert.doesNotMatch(releaseSource, /--tag[^\n]*latest/);
 });

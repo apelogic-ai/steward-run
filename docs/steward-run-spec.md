@@ -94,7 +94,14 @@ the resumed invocation (a new job, new token).
 | `inputs` | Workspace path(s) materialised into the sandbox as its input directory |
 | `outputs` | Sandbox output path(s) written back to the workspace |
 | `steward-api-url` | The control-plane API base (env-supplied; not hardcoded) |
+| `steward-ca-certificate-file` *(optional)* | Filesystem path to the PEM CA bundle trusted for Steward TLS |
+| `oidc-audience` *(authentication choice)* | Audience for a GitHub Actions OIDC token |
+| `bearer-token-file` *(authentication choice)* | Filesystem path to a rotating JWT with a maximum one-hour lifetime |
 | `agent-runtime` *(optional)* | Adopt an existing `AgentRuntime` id instead of provisioning (D2) |
+
+Exactly one authentication choice is required. Tokens are never action inputs. A CA is supplied as
+a file path rather than inline PEM, and custom trust is scoped to Steward requests. Remote API URLs
+must use HTTPS; missing/invalid CA files, untrusted chains, and hostname mismatch fail closed.
 
 | Output | Meaning |
 |---|---|

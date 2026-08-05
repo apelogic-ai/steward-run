@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
 import tar from "tar-stream";
-import type { ActionConfig } from "../src/config.ts";
+import type { WorkflowConfig } from "../src/config.ts";
 import {
   createIdempotencyKey,
   runWorkflow,
@@ -22,12 +22,11 @@ const baseTask: Task = {
   deltas: [],
 };
 
-const config: ActionConfig = {
+const config: WorkflowConfig = {
   workflow: "cve-triage",
   inputPaths: "in",
   outputPaths: "results",
   apiUrl: "https://steward.example.test",
-  oidcAudience: "steward-task-api",
   codingAgentRuntime: "claude-code@2.1.220",
 };
 

@@ -1,8 +1,10 @@
 import { appendFile } from "node:fs/promises";
+import { shortLivedBearerTokenFileProvider } from "./auth.js";
 import { readActionConfig } from "./config.js";
 import { runWorkflow } from "./lifecycle.js";
 import { oidcTokenProvider } from "./oidc.js";
 import { StewardClient } from "./steward-client.js";
+import { createStewardFetch } from "./transport.js";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -26,9 +28,14 @@ export async function main(): Promise<void> {
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
+    const getToken =
+      config.authentication.kind === "github-oidc"
+        ? oidcTokenProvider(process.env, config.authentication.audience)
+        : shortLivedBearerTokenFileProvider(config.authentication.path);
     const client = new StewardClient({
       baseUrl: config.apiUrl,
-      getToken: oidcTokenProvider(process.env, config.oidcAudience),
+      getToken,
+      fetch: await createStewardFetch(config.caCertificateFile),
     });
     await runWorkflow(config, requiredEnvironment("GITHUB_WORKSPACE"), {
       client,
