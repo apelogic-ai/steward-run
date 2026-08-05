@@ -1,12 +1,20 @@
 name: Release image
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version to publish, without the v prefix
+        required: true
+        type: string
 
 permissions:
   contents: write
   id-token: write
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -16,6 +24,8 @@ jobs:
       AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
       ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
       ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      IMAGE_REPOSITORY: ${{ vars.ECR_REGISTRY }}/${{ vars.ECR_REPOSITORY }}
+      COSIGN_EXPERIMENTAL: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
@@ -24,29 +34,47 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      - name: Validate semantic release tag
+        with:
+          cosign-release: v3.1.2
+      - name: Validate release candidate
         shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$(node -p 'require("./package.json").version')" == "$REQUESTED_VERSION" ]]
+          if gh release view "v$REQUESTED_VERSION" >/dev/null 2>&1; then
+            echo "release v$REQUESTED_VERSION already exists" >&2
+            exit 1
+          fi
+          echo "VERSION=$REQUESTED_VERSION" >> "$GITHUB_ENV"
+          echo "CANDIDATE_TAG=candidate-$REQUESTED_VERSION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - name: Authenticate to ECR
         run: aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
-      - name: Build and publish immutable version
+      - name: Reject an existing semantic image tag
+        shell: bash
+        run: |
+          existing_tag="$(aws ecr list-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --filter tagStatus=TAGGED \
+            --query "imageIds[?imageTag=='$VERSION'].imageTag | [0]" \
+            --output text)"
+          [[ "$existing_tag" == None ]]
+      - name: Build and publish unique candidate
         shell: bash
         run: |
           docker buildx build \
             --platform linux/amd64 \
             --build-arg "VERSION=$VERSION" \
             --build-arg "REVISION=$GITHUB_SHA" \
-            --tag "$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION" \
+            --tag "$IMAGE_REPOSITORY:$CANDIDATE_TAG" \
             --provenance=mode=max \
             --sbom=true \
             --metadata-file release-metadata.json \
             --push .
       - name: Bind action commit and image digest
         shell: bash
-        env:
-          IMAGE_REPOSITORY: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
         run: |
           node scripts/write-release-manifest.mjs \
             release-metadata.json \
@@ -55,13 +83,13 @@ jobs:
             "$GITHUB_SHA" \
             "$IMAGE_REPOSITORY"
           image_digest="$(node -e 'const metadata = require("./release-metadata.json"); process.stdout.write(metadata["containerimage.digest"])')"
-          echo "IMAGE_REPOSITORY=$IMAGE_REPOSITORY" >> "$GITHUB_ENV"
           echo "IMAGE_DIGEST=$image_digest" >> "$GITHUB_ENV"
       - name: Sign and verify immutable release artifacts
         shell: bash
         run: |
           certificate_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
           cosign sign --yes \
+            --registry-referrers-mode=oci-1-1 \
             --bundle image-signature.sigstore.json \
             "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
           cosign sign-blob --yes \
@@ -73,7 +101,7 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "$IMAGE_DIGEST"
           registry_verified=false
-          for attempt in {1..12}; do
+          for attempt in {1..3}; do
             if cosign verify \
               --experimental-oci11=true \
               --certificate-identity "$certificate_identity" \
@@ -82,8 +110,8 @@ jobs:
               registry_verified=true
               break
             fi
-            if [[ "$attempt" -lt 12 ]]; then
-              sleep 10
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep 5
             fi
           done
           [[ "$registry_verified" == true ]]
@@ -92,17 +120,31 @@ jobs:
             --certificate-identity "$certificate_identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             release-manifest.json
-      - name: Attach immutable release handoff
+      - name: Promote verified candidate to semantic image tag
+        shell: bash
+        run: |
+          docker buildx imagetools create \
+            --tag "$IMAGE_REPOSITORY:$VERSION" \
+            "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
+          published_digest="$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$VERSION" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+          [[ "$published_digest" == "$IMAGE_DIGEST" ]]
+      - name: Create verified release and immutable handoff
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "$GITHUB_REF_NAME" \
+          gh release create "v$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "steward-run v$VERSION" \
+            --notes "Verified in-cluster Steward integration release with an OCI 1.1 image signature, provenance, SBOM, and immutable GitOps handoff." \
             release-manifest.json \
             release-manifest.sigstore.json \
             image-signature.sigstore.json \
-            release-metadata.json \
-            --clobber
+            release-metadata.json
           {
             echo "## Immutable release handoff"
             echo "- Action commit: \`$GITHUB_SHA\`"

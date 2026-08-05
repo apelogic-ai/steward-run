@@ -37,7 +37,7 @@ steps. All paths are relative to `GITHUB_WORKSPACE`.
   with:
     name: request
     path: in
-- uses: apelogic-ai/steward-run@v0.2.3
+- uses: apelogic-ai/steward-run@v0.2.4
   with:
     workflow: cve-triage
     inputs: in
@@ -61,9 +61,10 @@ and accepts only JWTs with `iat` and `exp` whose total lifetime is at most one h
 authentication inputs are mutually exclusive. Token contents must never be supplied as action
 inputs.
 
-Publishing a GitHub release named `vX.Y.Z` builds `linux/amd64`, attaches provenance and an SBOM,
-and pushes only the immutable `X.Y.Z` image tag. The workflow keylessly signs the OCI index and a
-release manifest that binds its digest to the immutable action commit, then attaches the manifest
-and Sigstore bundles to the GitHub release for GitOps consumption. `AWS_REGION`, `AWS_ROLE_ARN`,
-`ECR_REGISTRY`, and `ECR_REPOSITORY` are repository variables; release authentication uses GitHub
-OIDC.
+Dispatching the release workflow with version `X.Y.Z` builds `linux/amd64` under a unique candidate
+tag and attaches provenance and an SBOM. The workflow keylessly signs the OCI index using OCI 1.1,
+verifies both the local bundle and registry referrer, and signs a manifest that binds the digest to
+the immutable action commit. Only then does it create the final `X.Y.Z` image tag and `vX.Y.Z`
+GitHub release, with the manifest and Sigstore bundles attached for GitOps consumption. `AWS_REGION`,
+`AWS_ROLE_ARN`, `ECR_REGISTRY`, and `ECR_REPOSITORY` are repository variables; release
+authentication uses GitHub OIDC.
