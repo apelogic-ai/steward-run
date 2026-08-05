@@ -67,11 +67,26 @@ jobs:
           cosign sign-blob --yes \
             --bundle release-manifest.sigstore.json \
             release-manifest.json
-          cosign verify \
-            --experimental-oci11=true \
+          cosign verify-blob \
+            --bundle image-signature.sigstore.json \
             --certificate-identity "$certificate_identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
+            "$IMAGE_DIGEST"
+          registry_verified=false
+          for attempt in {1..12}; do
+            if cosign verify \
+              --experimental-oci11=true \
+              --certificate-identity "$certificate_identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$IMAGE_REPOSITORY@$IMAGE_DIGEST"; then
+              registry_verified=true
+              break
+            fi
+            if [[ "$attempt" -lt 12 ]]; then
+              sleep 10
+            fi
+          done
+          [[ "$registry_verified" == true ]]
           cosign verify-blob \
             --bundle release-manifest.sigstore.json \
             --certificate-identity "$certificate_identity" \
@@ -94,6 +109,7 @@ jobs:
             echo "- Runner image: \`$IMAGE_REPOSITORY@$IMAGE_DIGEST\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
         with:
           name: steward-run-${{ env.VERSION }}-metadata
           path: |

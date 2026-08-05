@@ -32,7 +32,7 @@ jobs:
       - name: Build thin ARC image
         run: >-
           docker build --platform linux/amd64
-          --build-arg VERSION=0.2.2-ci
+          --build-arg VERSION=0.2.3-ci
           --build-arg REVISION="$GITHUB_SHA"
           --tag steward-run:ci .
       - name: Smoke-test ARC contracts
