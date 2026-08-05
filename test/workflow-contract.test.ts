@@ -68,7 +68,8 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(releaseSource, /--sbom=true/);
   assert.match(releaseSource, /containerimage\.digest/);
   assert.match(releaseSource, /cosign sign --yes/);
-  assert.match(releaseSource, /--registry-referrers-mode=legacy/);
+  assert.doesNotMatch(releaseSource, /--registry-referrers-mode=legacy/);
+  assert.match(releaseSource, /cosign verify \\\n\s+--experimental-oci11=true/);
   assert.match(releaseSource, /cosign sign-blob --yes/);
   assert.match(releaseSource, /release-manifest\.json/);
   assert.match(releaseSource, /release-manifest\.sigstore\.json/);

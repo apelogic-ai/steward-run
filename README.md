@@ -37,7 +37,7 @@ steps. All paths are relative to `GITHUB_WORKSPACE`.
   with:
     name: request
     path: in
-- uses: apelogic-ai/steward-run@v0.2.1
+- uses: apelogic-ai/steward-run@v0.2.2
   with:
     workflow: cve-triage
     inputs: in
