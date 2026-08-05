@@ -62,5 +62,8 @@ authentication inputs are mutually exclusive. Token contents must never be suppl
 inputs.
 
 Publishing a GitHub release named `vX.Y.Z` builds `linux/amd64`, attaches provenance and an SBOM,
-and pushes only the immutable `X.Y.Z` image tag. `AWS_REGION`, `AWS_ROLE_ARN`, `ECR_REGISTRY`, and
-`ECR_REPOSITORY` are repository variables; release authentication uses GitHub OIDC.
+and pushes only the immutable `X.Y.Z` image tag. The workflow keylessly signs the OCI index and a
+release manifest that binds its digest to the immutable action commit, then attaches the manifest
+and Sigstore bundles to the GitHub release for GitOps consumption. `AWS_REGION`, `AWS_ROLE_ARN`,
+`ECR_REGISTRY`, and `ECR_REPOSITORY` are repository variables; release authentication uses GitHub
+OIDC.

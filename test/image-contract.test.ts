@@ -25,7 +25,7 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
   assert.doesNotMatch(dockerfile, /ENTRYPOINT|CMD/u);
 });
 
-test("the package metadata identifies the security-cleared successor", async () => {
+test("the package metadata identifies the in-cluster integration release", async () => {
   const packageJson = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
   ) as { version: string };
@@ -33,9 +33,9 @@ test("the package metadata identifies the security-cleared successor", async () 
     await readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   ) as { version: string; packages: Record<string, { version?: string }> };
 
-  assert.equal(packageJson.version, "0.1.1");
-  assert.equal(packageLock.version, "0.1.1");
-  assert.equal(packageLock.packages[""]?.version, "0.1.1");
+  assert.equal(packageJson.version, "0.2.0");
+  assert.equal(packageLock.version, "0.2.0");
+  assert.equal(packageLock.packages[""]?.version, "0.2.0");
 });
 
 test("the thin-shell security check is a required build gate", async () => {
