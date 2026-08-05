@@ -29,7 +29,7 @@ See `docs/steward-run-spec.md` for the product boundary.
 
 ## Usage
 
-The workflow must grant `id-token: write`; artifact download and upload remain ordinary adjacent
+GitHub OIDC mode requires `id-token: write`; artifact download and upload remain ordinary adjacent
 steps. All paths are relative to `GITHUB_WORKSPACE`.
 
 ```yaml
@@ -44,11 +44,22 @@ steps. All paths are relative to `GITHUB_WORKSPACE`.
     outputs: results
     steward-api-url: ${{ vars.STEWARD_API_URL }}
     oidc-audience: steward-task-api
+    steward-ca-certificate-file: ${{ vars.STEWARD_CA_CERTIFICATE_FILE }}
 - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
   with:
     name: result
     path: results
 ```
+
+`steward-ca-certificate-file` is an optional filesystem path to a PEM CA bundle used only for
+Steward API TLS. Missing or malformed files, an untrusted chain, and hostname mismatch fail closed.
+Remote Steward URLs must use HTTPS; plaintext HTTP is accepted only for loopback tests.
+
+For an identity service that projects rotating credentials into the job, omit `oidc-audience` and
+set `bearer-token-file` to the projected file path. The action rereads the file for every request
+and accepts only JWTs with `iat` and `exp` whose total lifetime is at most one hour. The two
+authentication inputs are mutually exclusive. Token contents must never be supplied as action
+inputs.
 
 Publishing a GitHub release named `vX.Y.Z` builds `linux/amd64`, attaches provenance and an SBOM,
 and pushes only the immutable `X.Y.Z` image tag. `AWS_REGION`, `AWS_ROLE_ARN`, `ECR_REGISTRY`, and

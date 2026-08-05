@@ -47,6 +47,14 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
     assert.match(await readFile(outputFile, "utf8"), /runtime-uid=mock-runtime-uid/);
     assert.match(await readFile(finalizationMarker, "utf8"), /^[0-9a-f-]+\n$/u);
     assert.ok(mock.observations.oidcRequests >= 5);
+    assert.deepEqual(mock.observations.operations, [
+      "submit",
+      "upload-inputs",
+      "execute",
+      "poll",
+      "download-outputs",
+      "finalize",
+    ]);
     assert.deepEqual(
       {
         created: mock.observations.created,

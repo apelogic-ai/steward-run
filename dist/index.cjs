@@ -1155,7 +1155,7 @@ var require_streamx = __commonJS({
         }
       }
     };
-    var Readable2 = class _Readable extends Stream {
+    var Readable3 = class _Readable extends Stream {
       constructor(opts) {
         super(opts);
         this._duplexState |= OPENING | WRITE_DONE | READ_READ_AHEAD;
@@ -1366,7 +1366,7 @@ var require_streamx = __commonJS({
         return this;
       }
     };
-    var Duplex = class extends Readable2 {
+    var Duplex = class extends Readable3 {
       // and Writable
       constructor(opts) {
         super(opts);
@@ -1575,7 +1575,7 @@ var require_streamx = __commonJS({
       getStreamError,
       Stream,
       Writable,
-      Readable: Readable2,
+      Readable: Readable3,
       Duplex,
       Transform,
       // Export PassThrough for compatibility with Node.js core's stream module
@@ -1848,7 +1848,7 @@ var require_headers = __commonJS({
 // node_modules/tar-stream/extract.js
 var require_extract = __commonJS({
   "node_modules/tar-stream/extract.js"(exports2, module2) {
-    var { Writable, Readable: Readable2, getStreamError } = require_streamx();
+    var { Writable, Readable: Readable3, getStreamError } = require_streamx();
     var FIFO = require_fast_fifo();
     var b4a = require_b4a();
     var headers = require_headers();
@@ -1895,7 +1895,7 @@ var require_extract = __commonJS({
         return buf.subarray(this._offset, this._offset += size);
       }
     };
-    var Source = class extends Readable2 {
+    var Source = class extends Readable3 {
       constructor(self, header, offset) {
         super();
         this.header = header;
@@ -2202,7 +2202,7 @@ var require_constants = __commonJS({
 // node_modules/tar-stream/pack.js
 var require_pack = __commonJS({
   "node_modules/tar-stream/pack.js"(exports2, module2) {
-    var { Readable: Readable2, Writable, getStreamError } = require_streamx();
+    var { Readable: Readable3, Writable, getStreamError } = require_streamx();
     var b4a = require_b4a();
     var constants = require_constants();
     var headers = require_headers();
@@ -2295,7 +2295,7 @@ var require_pack = __commonJS({
         cb();
       }
     };
-    var Pack = class extends Readable2 {
+    var Pack = class extends Readable3 {
       constructor(opts) {
         super(opts);
         this._drain = noop;
@@ -2447,7 +2447,43 @@ __export(main_exports, {
   main: () => main
 });
 module.exports = __toCommonJS(main_exports);
-var import_promises5 = require("node:fs/promises");
+var import_promises7 = require("node:fs/promises");
+
+// src/auth.ts
+var import_promises = require("node:fs/promises");
+var maximumTokenLifetimeSeconds = 60 * 60;
+var minimumRemainingLifetimeSeconds = 30;
+var allowedClockSkewSeconds = 60;
+function jwtClaims(token) {
+  const segments = token.split(".");
+  if (segments.length !== 3 || segments.some((segment) => !segment)) return void 0;
+  try {
+    const parsed = JSON.parse(Buffer.from(segments[1] ?? "", "base64url").toString("utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function validateShortLivedToken(token, nowSeconds) {
+  const claims = jwtClaims(token);
+  const issuedAt = claims?.iat;
+  const expiresAt = claims?.exp;
+  if (!Number.isInteger(issuedAt) || !Number.isInteger(expiresAt) || issuedAt > nowSeconds + allowedClockSkewSeconds || expiresAt - issuedAt > maximumTokenLifetimeSeconds || expiresAt - issuedAt <= 0 || expiresAt - nowSeconds < minimumRemainingLifetimeSeconds) {
+    throw new Error("bearer-token file contains an invalid short-lived bearer token");
+  }
+  return token;
+}
+function shortLivedBearerTokenFileProvider(path, now = () => Math.floor(Date.now() / 1e3)) {
+  return async () => {
+    let token;
+    try {
+      token = (await (0, import_promises.readFile)(path, "utf8")).trim();
+    } catch {
+      throw new Error("bearer-token file could not be read");
+    }
+    return validateShortLivedToken(token, now());
+  };
+}
 
 // src/config.ts
 function required(environment, name) {
@@ -2459,27 +2495,34 @@ function required(environment, name) {
 }
 function readActionConfig(environment) {
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
+  const oidcAudience = environment.STEWARD_RUN_OIDC_AUDIENCE?.trim();
+  const bearerTokenFile = environment.STEWARD_RUN_BEARER_TOKEN_FILE?.trim();
+  const caCertificateFile = environment.STEWARD_RUN_CA_CERTIFICATE_FILE?.trim();
+  if (Boolean(oidcAudience) === Boolean(bearerTokenFile)) {
+    throw new Error("configure exactly one authentication method: oidc-audience or bearer-token-file");
+  }
   return {
     workflow: required(environment, "STEWARD_RUN_WORKFLOW"),
     inputPaths: required(environment, "STEWARD_RUN_INPUTS"),
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
     apiUrl: required(environment, "STEWARD_RUN_API_URL"),
-    oidcAudience: required(environment, "STEWARD_RUN_OIDC_AUDIENCE"),
     ...agentRuntime ? { agentRuntime } : {},
-    codingAgentRuntime: environment.STEWARD_RUN_CODING_AGENT_RUNTIME?.trim() || "claude-code@2.1.220"
+    codingAgentRuntime: environment.STEWARD_RUN_CODING_AGENT_RUNTIME?.trim() || "claude-code@2.1.220",
+    authentication: oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile },
+    ...caCertificateFile ? { caCertificateFile } : {}
   };
 }
 
 // src/lifecycle.ts
 var import_node_crypto2 = require("node:crypto");
-var import_promises3 = require("node:timers/promises");
+var import_promises4 = require("node:timers/promises");
 
 // src/archive.ts
 var import_node_fs = require("node:fs");
-var import_promises = require("node:fs/promises");
+var import_promises2 = require("node:fs/promises");
 var import_node_crypto = require("node:crypto");
 var import_node_path = require("node:path");
-var import_promises2 = require("node:stream/promises");
+var import_promises3 = require("node:stream/promises");
 var import_tar_stream = __toESM(require_tar_stream(), 1);
 function invalidWorkspacePath(value) {
   return new Error(`workspace-relative path is invalid: ${JSON.stringify(value)}`);
@@ -2512,7 +2555,7 @@ function parseWorkspacePaths(source) {
 }
 async function collectEntries(workspace, relative, entries) {
   const source = (0, import_node_path.join)(workspace, ...relative.split("/"));
-  const metadata = await (0, import_promises.lstat)(source).catch((error) => {
+  const metadata = await (0, import_promises2.lstat)(source).catch((error) => {
     if (error.code === "ENOENT") {
       throw new Error(`declared input does not exist: ${relative}`);
     }
@@ -2528,7 +2571,7 @@ async function collectEntries(workspace, relative, entries) {
       type: "directory",
       mode: metadata.mode & 511
     });
-    const children = await (0, import_promises.readdir)(source);
+    const children = await (0, import_promises2.readdir)(source);
     children.sort((left, right) => left.localeCompare(right, "en"));
     for (const child of children) {
       await collectEntries(workspace, import_node_path.posix.join(relative, child), entries);
@@ -2572,7 +2615,7 @@ async function createInputArchive(workspace, paths) {
             pack.entry(header, (error) => error ? reject(error) : resolve());
           });
         } else {
-          const body = await (0, import_promises.readFile)(entry.source);
+          const body = await (0, import_promises2.readFile)(entry.source);
           await new Promise((resolve, reject) => {
             pack.entry(header, body, (error) => error ? reject(error) : resolve());
           });
@@ -2603,7 +2646,7 @@ async function ensureSafeDirectories(workspace, relativeDirectory) {
   let current = workspace;
   for (const component of relativeDirectory.split("/")) {
     current = (0, import_node_path.join)(current, component);
-    const metadata = await (0, import_promises.lstat)(current).catch((error) => {
+    const metadata = await (0, import_promises2.lstat)(current).catch((error) => {
       if (error.code === "ENOENT") return void 0;
       throw error;
     });
@@ -2613,14 +2656,14 @@ async function ensureSafeDirectories(workspace, relativeDirectory) {
     if (metadata && !metadata.isDirectory()) {
       throw new Error(`non-directory in output path: ${relativeDirectory}`);
     }
-    if (!metadata) await (0, import_promises.mkdir)(current);
+    if (!metadata) await (0, import_promises2.mkdir)(current);
   }
 }
 async function writeOutputFile(stream, workspace, relative, mode) {
   const parent = (0, import_node_path.dirname)(relative).split("\\").join("/");
   await ensureSafeDirectories(workspace, parent);
   const target = (0, import_node_path.join)(workspace, ...relative.split("/"));
-  const existing = await (0, import_promises.lstat)(target).catch((error) => {
+  const existing = await (0, import_promises2.lstat)(target).catch((error) => {
     if (error.code === "ENOENT") return void 0;
     throw error;
   });
@@ -2628,11 +2671,11 @@ async function writeOutputFile(stream, workspace, relative, mode) {
   if (existing?.isDirectory()) throw new Error(`output file would replace a directory: ${relative}`);
   const temporary = (0, import_node_path.join)((0, import_node_path.dirname)(target), `.${(0, import_node_path.basename)(target)}.${(0, import_node_crypto.randomUUID)()}.tmp`);
   try {
-    await (0, import_promises2.pipeline)(stream, (0, import_node_fs.createWriteStream)(temporary, { flags: "wx", mode: mode ?? 384 }));
-    await (0, import_promises.chmod)(temporary, (mode ?? 384) & 511);
-    await (0, import_promises.rename)(temporary, target);
+    await (0, import_promises3.pipeline)(stream, (0, import_node_fs.createWriteStream)(temporary, { flags: "wx", mode: mode ?? 384 }));
+    await (0, import_promises2.chmod)(temporary, (mode ?? 384) & 511);
+    await (0, import_promises2.rename)(temporary, target);
   } catch (error) {
-    await (0, import_promises.rm)(temporary, { force: true });
+    await (0, import_promises2.rm)(temporary, { force: true });
     throw error;
   }
 }
@@ -2666,7 +2709,7 @@ async function extractOutputArchive(archive, workspace, declaredPaths) {
       }
     })();
   });
-  await (0, import_promises2.pipeline)(archive, extract);
+  await (0, import_promises3.pipeline)(archive, extract);
 }
 
 // src/lifecycle.ts
@@ -2731,7 +2774,7 @@ async function runWorkflow(config, workspace, dependencies) {
     }
     return createInputArchive(workspace, inputPaths);
   };
-  const sleep = dependencies.sleep ?? (async (milliseconds, signal) => (0, import_promises3.setTimeout)(milliseconds, void 0, { signal }));
+  const sleep = dependencies.sleep ?? (async (milliseconds, signal) => (0, import_promises4.setTimeout)(milliseconds, void 0, { signal }));
   let created;
   let primaryError;
   try {
@@ -2833,7 +2876,7 @@ function oidcTokenProvider(environment, audience, fetchImplementation = fetch) {
 }
 
 // src/steward-client.ts
-var import_promises4 = require("node:timers/promises");
+var import_promises5 = require("node:timers/promises");
 var import_node_stream = require("node:stream");
 var taskPhases = [
   "submitted",
@@ -2948,7 +2991,7 @@ var StewardClient = class {
     this.#baseUrl = validatedBaseUrl(options.baseUrl);
     this.#getToken = options.getToken;
     this.#fetch = options.fetch ?? fetch;
-    this.#sleep = options.sleep ?? (async (milliseconds) => (0, import_promises4.setTimeout)(milliseconds));
+    this.#sleep = options.sleep ?? (async (milliseconds) => (0, import_promises5.setTimeout)(milliseconds));
     this.#maxAttempts = options.maxAttempts ?? 4;
   }
   async #request(method, path, options) {
@@ -3048,6 +3091,99 @@ var StewardClient = class {
   }
 };
 
+// src/transport.ts
+var import_node_crypto3 = require("node:crypto");
+var import_promises6 = require("node:fs/promises");
+var import_node_http = require("node:http");
+var import_node_https = require("node:https");
+var import_node_stream2 = require("node:stream");
+var certificatePattern = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/gu;
+async function trustedCaBundle(path) {
+  let source;
+  try {
+    source = await (0, import_promises6.readFile)(path, "utf8");
+  } catch {
+    throw new Error("Steward CA certificate file could not be read");
+  }
+  const certificates = source.match(certificatePattern) ?? [];
+  const remainder = source.replace(certificatePattern, "").trim();
+  try {
+    if (!certificates.length || remainder) throw new Error("invalid bundle");
+    for (const pem of certificates) {
+      if (!new import_node_crypto3.X509Certificate(pem).ca) throw new Error("certificate is not a CA");
+    }
+  } catch {
+    throw new Error("Steward CA certificate file does not contain a valid CA certificate");
+  }
+  return certificates.join("\n");
+}
+function headersFrom(response) {
+  const headers = new Headers();
+  for (let index = 0; index < response.rawHeaders.length; index += 2) {
+    const name = response.rawHeaders[index];
+    const value = response.rawHeaders[index + 1];
+    if (name && value !== void 0) headers.append(name, value);
+  }
+  return headers;
+}
+function writeBody(request, body) {
+  if (body === void 0 || body === null) {
+    request.end();
+  } else if (typeof body === "string" || body instanceof Uint8Array || body instanceof ArrayBuffer) {
+    request.end(body);
+  } else if (body instanceof URLSearchParams) {
+    request.end(body.toString());
+  } else if (body instanceof import_node_stream2.Readable) {
+    body.pipe(request);
+  } else if (typeof body === "object" && "getReader" in body) {
+    import_node_stream2.Readable.fromWeb(body).pipe(request);
+  } else {
+    request.destroy(new Error("unsupported Steward request body"));
+  }
+}
+function privateCaFetch(ca) {
+  return async (input, init = {}) => {
+    const url = new URL(input instanceof Request ? input.url : input);
+    const method = init.method ?? (input instanceof Request ? input.method : "GET");
+    const requestHeaders = new Headers(
+      init.headers ?? (input instanceof Request ? input.headers : void 0)
+    );
+    return new Promise((resolve, reject) => {
+      const handleResponse = (response) => {
+        const status = response.statusCode ?? 500;
+        const noBody = method === "HEAD" || status === 204 || status === 205 || status === 304;
+        const body = noBody ? null : import_node_stream2.Readable.toWeb(response);
+        resolve(
+          new Response(body, {
+            status,
+            ...response.statusMessage ? { statusText: response.statusMessage } : {},
+            headers: headersFrom(response)
+          })
+        );
+      };
+      const outgoingHeaders = {};
+      requestHeaders.forEach((value, name) => {
+        outgoingHeaders[name] = value;
+      });
+      const options = {
+        method,
+        headers: outgoingHeaders
+      };
+      const request = url.protocol === "https:" ? (0, import_node_https.request)(url, { ...options, ca, rejectUnauthorized: true }, handleResponse) : url.protocol === "http:" ? (0, import_node_http.request)(url, options, handleResponse) : void 0;
+      if (!request) {
+        reject(new Error("unsupported Steward URL protocol"));
+        return;
+      }
+      request.once("error", reject);
+      writeBody(request, init.body ?? (input instanceof Request ? input.body : void 0));
+    });
+  };
+}
+async function createStewardFetch(caCertificateFile) {
+  if (!caCertificateFile) return fetch;
+  return privateCaFetch(await trustedCaBundle(caCertificateFile));
+}
+
 // src/main.ts
 function requiredEnvironment(name) {
   const value = process.env[name]?.trim();
@@ -3058,7 +3194,7 @@ async function setActionOutput(name, value) {
   if (!/^[a-z-]+$/u.test(name) || /[\r\n]/u.test(value)) {
     throw new Error("refusing to write an unsafe GitHub Actions output");
   }
-  await (0, import_promises5.appendFile)(requiredEnvironment("GITHUB_OUTPUT"), `${name}=${value}
+  await (0, import_promises7.appendFile)(requiredEnvironment("GITHUB_OUTPUT"), `${name}=${value}
 `, {
     encoding: "utf8"
   });
@@ -3070,9 +3206,11 @@ async function main() {
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
+    const getToken = config.authentication.kind === "github-oidc" ? oidcTokenProvider(process.env, config.authentication.audience) : shortLivedBearerTokenFileProvider(config.authentication.path);
     const client = new StewardClient({
       baseUrl: config.apiUrl,
-      getToken: oidcTokenProvider(process.env, config.oidcAudience)
+      getToken,
+      fetch: await createStewardFetch(config.caCertificateFile)
     });
     await runWorkflow(config, requiredEnvironment("GITHUB_WORKSPACE"), {
       client,
