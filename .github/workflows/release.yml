@@ -62,6 +62,7 @@ jobs:
         run: |
           certificate_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
           cosign sign --yes \
+            --registry-referrers-mode=legacy \
             --bundle image-signature.sigstore.json \
             "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
           cosign sign-blob --yes \
