@@ -1,11 +1,18 @@
-export interface ActionConfig {
+export interface WorkflowConfig {
   workflow: string;
   inputPaths: string;
   outputPaths: string;
   apiUrl: string;
-  oidcAudience: string;
   agentRuntime?: string;
   codingAgentRuntime: string;
+}
+
+export type ActionAuthentication =
+  | { kind: "github-oidc"; audience: string }
+  | { kind: "bearer-token-file"; path: string };
+
+export interface ActionConfig extends WorkflowConfig {
+  authentication: ActionAuthentication;
 }
 
 function required(environment: NodeJS.ProcessEnv, name: string): string {
@@ -18,15 +25,21 @@ function required(environment: NodeJS.ProcessEnv, name: string): string {
 
 export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
+  const oidcAudience = environment.STEWARD_RUN_OIDC_AUDIENCE?.trim();
+  const bearerTokenFile = environment.STEWARD_RUN_BEARER_TOKEN_FILE?.trim();
+  if (Boolean(oidcAudience) === Boolean(bearerTokenFile)) {
+    throw new Error("configure exactly one authentication method: oidc-audience or bearer-token-file");
+  }
   return {
     workflow: required(environment, "STEWARD_RUN_WORKFLOW"),
     inputPaths: required(environment, "STEWARD_RUN_INPUTS"),
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
     apiUrl: required(environment, "STEWARD_RUN_API_URL"),
-    oidcAudience: required(environment, "STEWARD_RUN_OIDC_AUDIENCE"),
     ...(agentRuntime ? { agentRuntime } : {}),
     codingAgentRuntime:
       environment.STEWARD_RUN_CODING_AGENT_RUNTIME?.trim() || "claude-code@2.1.220",
+    authentication: oidcAudience
+      ? { kind: "github-oidc", audience: oidcAudience }
+      : { kind: "bearer-token-file", path: bearerTokenFile as string },
   };
 }
-

@@ -15,8 +15,11 @@ inputs:
     description: Steward control-plane API base URL
     required: true
   oidc-audience:
-    description: Audience requested for the GitHub OIDC token
-    required: true
+    description: Audience requested for GitHub OIDC; mutually exclusive with bearer-token-file
+    required: false
+  bearer-token-file:
+    description: Filesystem path containing a rotating short-lived JWT; mutually exclusive with oidc-audience
+    required: false
   agent-runtime:
     description: Existing AgentRuntime UID to adopt instead of provisioning one
     required: false
@@ -47,6 +50,7 @@ runs:
         STEWARD_RUN_OUTPUTS: ${{ inputs.outputs }}
         STEWARD_RUN_API_URL: ${{ inputs.steward-api-url }}
         STEWARD_RUN_OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
+        STEWARD_RUN_BEARER_TOKEN_FILE: ${{ inputs.bearer-token-file }}
         STEWARD_RUN_AGENT_RUNTIME: ${{ inputs.agent-runtime }}
         STEWARD_RUN_CODING_AGENT_RUNTIME: ${{ inputs.coding-agent-runtime }}
       run: exec node "$GITHUB_ACTION_PATH/dist/index.cjs"

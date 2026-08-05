@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Readable } from "node:stream";
 import { createInputArchive, extractOutputArchive, parseWorkspacePaths } from "./archive.js";
-import type { ActionConfig } from "./config.js";
+import type { WorkflowConfig } from "./config.js";
 import type { Task, TaskSubmissionRequest } from "./steward-client.js";
 
 export interface TaskClient {
@@ -88,7 +88,7 @@ async function finalizeAndConfirm(
 }
 
 export async function runWorkflow(
-  config: ActionConfig,
+  config: WorkflowConfig,
   workspace: string,
   dependencies: LifecycleDependencies,
 ): Promise<Task> {
