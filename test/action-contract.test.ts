@@ -21,6 +21,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
       "inputs",
       "oidc-audience",
       "outputs",
+      "steward-ca-certificate-file",
       "steward-api-url",
       "workflow",
     ].sort(),
@@ -35,6 +36,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
   }
   assert.notEqual(action.inputs["oidc-audience"]?.required, true);
   assert.notEqual(action.inputs["bearer-token-file"]?.required, true);
+  assert.notEqual(action.inputs["steward-ca-certificate-file"]?.required, true);
   assert.equal(action.inputs["coding-agent-runtime"]?.default, "claude-code@2.1.220");
   assert.deepEqual(Object.keys(action.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
   assert.match(action.runs.steps[0]?.run ?? "", /dist\/index\.cjs/);

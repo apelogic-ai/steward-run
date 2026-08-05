@@ -41,6 +41,22 @@ test("action authentication selects exactly one pluggable credential source", ()
   );
 });
 
+test("the trusted CA input is an optional trimmed filesystem path", () => {
+  assert.equal(
+    readActionConfig({
+      ...baseEnvironment,
+      STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api",
+      STEWARD_RUN_CA_CERTIFICATE_FILE: " /var/run/steward/ca.pem ",
+    }).caCertificateFile,
+    "/var/run/steward/ca.pem",
+  );
+  assert.equal(
+    readActionConfig({ ...baseEnvironment, STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api" })
+      .caCertificateFile,
+    undefined,
+  );
+});
+
 test("short-lived bearer token files are reread so projected credentials can rotate", async () => {
   const root = await mkdtemp(join(tmpdir(), "steward-run-token-"));
   const path = join(root, "token");

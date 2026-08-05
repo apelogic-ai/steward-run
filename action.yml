@@ -14,6 +14,9 @@ inputs:
   steward-api-url:
     description: Steward control-plane API base URL
     required: true
+  steward-ca-certificate-file:
+    description: Filesystem path to a PEM CA bundle trusted for the Steward API
+    required: false
   oidc-audience:
     description: Audience requested for GitHub OIDC; mutually exclusive with bearer-token-file
     required: false
@@ -49,6 +52,7 @@ runs:
         STEWARD_RUN_INPUTS: ${{ inputs.inputs }}
         STEWARD_RUN_OUTPUTS: ${{ inputs.outputs }}
         STEWARD_RUN_API_URL: ${{ inputs.steward-api-url }}
+        STEWARD_RUN_CA_CERTIFICATE_FILE: ${{ inputs.steward-ca-certificate-file }}
         STEWARD_RUN_OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
         STEWARD_RUN_BEARER_TOKEN_FILE: ${{ inputs.bearer-token-file }}
         STEWARD_RUN_AGENT_RUNTIME: ${{ inputs.agent-runtime }}

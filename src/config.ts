@@ -13,6 +13,7 @@ export type ActionAuthentication =
 
 export interface ActionConfig extends WorkflowConfig {
   authentication: ActionAuthentication;
+  caCertificateFile?: string;
 }
 
 function required(environment: NodeJS.ProcessEnv, name: string): string {
@@ -27,6 +28,7 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
   const oidcAudience = environment.STEWARD_RUN_OIDC_AUDIENCE?.trim();
   const bearerTokenFile = environment.STEWARD_RUN_BEARER_TOKEN_FILE?.trim();
+  const caCertificateFile = environment.STEWARD_RUN_CA_CERTIFICATE_FILE?.trim();
   if (Boolean(oidcAudience) === Boolean(bearerTokenFile)) {
     throw new Error("configure exactly one authentication method: oidc-audience or bearer-token-file");
   }
@@ -41,5 +43,6 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
     authentication: oidcAudience
       ? { kind: "github-oidc", audience: oidcAudience }
       : { kind: "bearer-token-file", path: bearerTokenFile as string },
+    ...(caCertificateFile ? { caCertificateFile } : {}),
   };
 }
