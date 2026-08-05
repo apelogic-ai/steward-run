@@ -62,13 +62,13 @@ jobs:
         run: |
           certificate_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
           cosign sign --yes \
-            --registry-referrers-mode=legacy \
             --bundle image-signature.sigstore.json \
             "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
           cosign sign-blob --yes \
             --bundle release-manifest.sigstore.json \
             release-manifest.json
           cosign verify \
+            --experimental-oci11=true \
             --certificate-identity "$certificate_identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
