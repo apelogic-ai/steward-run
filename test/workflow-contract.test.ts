@@ -64,23 +64,43 @@ test("CI, round-trip, and release workflows enforce the product contract", async
     releaseSource,
     /sigstore\/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6/,
   );
+  assert.match(releaseSource, /workflow_dispatch:/);
+  assert.doesNotMatch(releaseSource, /types:\s*\[published\]/);
+  assert.match(releaseSource, /group:\s*release-\$\{\{ inputs\.version \}\}/);
+  assert.match(releaseSource, /cancel-in-progress:\s*false/);
+  assert.match(releaseSource, /cosign-release:\s*v3\.1\.2/);
   assert.match(releaseSource, /--provenance=mode=max/);
   assert.match(releaseSource, /--sbom=true/);
   assert.match(releaseSource, /containerimage\.digest/);
+  assert.match(
+    releaseSource,
+    /candidate-\$REQUESTED_VERSION-\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT/,
+  );
   assert.match(releaseSource, /cosign sign --yes/);
   assert.doesNotMatch(releaseSource, /--registry-referrers-mode=legacy/);
+  assert.match(releaseSource, /COSIGN_EXPERIMENTAL:\s*"1"/);
+  assert.match(releaseSource, /--registry-referrers-mode=oci-1-1/);
   assert.match(releaseSource, /cosign verify \\\n\s+--experimental-oci11=true/);
   assert.match(
     releaseSource,
     /cosign verify-blob \\\n\s+--bundle image-signature\.sigstore\.json[\s\S]+?"\$IMAGE_DIGEST"/,
   );
-  assert.match(releaseSource, /for attempt in \{1\.\.12\}/);
-  assert.match(releaseSource, /sleep 10/);
+  assert.match(releaseSource, /for attempt in \{1\.\.3\}/);
+  assert.match(releaseSource, /sleep 5/);
   assert.match(releaseSource, /cosign sign-blob --yes/);
   assert.match(releaseSource, /release-manifest\.json/);
   assert.match(releaseSource, /release-manifest\.sigstore\.json/);
   assert.match(releaseSource, /GITHUB_SHA/);
-  assert.match(releaseSource, /gh release upload/);
+  assert.match(releaseSource, /docker buildx imagetools create/);
+  assert.match(releaseSource, /gh release create "v\$VERSION"/);
+  const candidateBuild = releaseSource.indexOf('--tag "$IMAGE_REPOSITORY:$CANDIDATE_TAG"');
+  const signatureVerification = releaseSource.indexOf('[[ "$registry_verified" == true ]]');
+  const finalImageTag = releaseSource.indexOf("docker buildx imagetools create");
+  const finalReleaseTag = releaseSource.indexOf('gh release create "v$VERSION"');
+  assert.ok(candidateBuild >= 0);
+  assert.ok(candidateBuild < signatureVerification);
+  assert.ok(signatureVerification < finalImageTag);
+  assert.ok(finalImageTag < finalReleaseTag);
   assert.match(
     releaseSource,
     /uses: actions\/upload-artifact@[a-f0-9]{40}[\s\S]+?if:\s*always\(\)/,
