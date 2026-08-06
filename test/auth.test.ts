@@ -20,8 +20,18 @@ function jwt(payload: Record<string, unknown>): string {
 
 test("action authentication selects exactly one pluggable credential source", () => {
   assert.deepEqual(
-    readActionConfig({ ...baseEnvironment, STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api" })
-      .authentication,
+    readActionConfig({
+      ...baseEnvironment,
+      STEWARD_RUN_IDENTITY_EXCHANGE_URL: " https://identity.example/v1/exchange ",
+    }).authentication,
+    { kind: "github-oidc-exchange", url: "https://identity.example/v1/exchange" },
+  );
+  assert.deepEqual(
+    readActionConfig({
+      ...baseEnvironment,
+      STEWARD_RUN_API_URL: "http://127.0.0.1:8080",
+      STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api",
+    }).authentication,
     { kind: "github-oidc", audience: "steward-task-api" },
   );
   assert.deepEqual(
@@ -34,10 +44,27 @@ test("action authentication selects exactly one pluggable credential source", ()
     () =>
       readActionConfig({
         ...baseEnvironment,
+        STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://identity.example/v1/exchange",
         STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api",
+      }),
+    /exactly one authentication method/,
+  );
+  assert.throws(
+    () =>
+      readActionConfig({
+        ...baseEnvironment,
+        STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://identity.example/v1/exchange",
         STEWARD_RUN_BEARER_TOKEN_FILE: "/var/run/token",
       }),
     /exactly one authentication method/,
+  );
+});
+
+test("direct GitHub OIDC authentication is restricted to loopback Steward tests", () => {
+  assert.throws(
+    () =>
+      readActionConfig({ ...baseEnvironment, STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api" }),
+    /direct GitHub OIDC authentication is only allowed with a loopback Steward API/,
   );
 });
 
@@ -45,14 +72,16 @@ test("the trusted CA input is an optional trimmed filesystem path", () => {
   assert.equal(
     readActionConfig({
       ...baseEnvironment,
-      STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api",
+      STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://identity.example/v1/exchange",
       STEWARD_RUN_CA_CERTIFICATE_FILE: " /var/run/steward/ca.pem ",
     }).caCertificateFile,
     "/var/run/steward/ca.pem",
   );
   assert.equal(
-    readActionConfig({ ...baseEnvironment, STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api" })
-      .caCertificateFile,
+    readActionConfig({
+      ...baseEnvironment,
+      STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://identity.example/v1/exchange",
+    }).caCertificateFile,
     undefined,
   );
 });

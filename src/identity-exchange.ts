@@ -1,4 +1,4 @@
-import { type FetchLike, oidcTokenProvider } from "./oidc.ts";
+import { type FetchLike, oidcTokenProvider } from "./oidc.js";
 
 export const GITHUB_IDENTITY_EXCHANGE_AUDIENCE = "apelogic-github-identity-exchange";
 export const STEWARD_TASK_API_AUDIENCE = "steward-task-api";

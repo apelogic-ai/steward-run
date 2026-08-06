@@ -1,6 +1,7 @@
 import { appendFile } from "node:fs/promises";
 import { shortLivedBearerTokenFileProvider } from "./auth.js";
 import { readActionConfig } from "./config.js";
+import { identityExchangeTokenProvider } from "./identity-exchange.js";
 import { runWorkflow } from "./lifecycle.js";
 import { oidcTokenProvider } from "./oidc.js";
 import { StewardClient } from "./steward-client.js";
@@ -28,10 +29,16 @@ export async function main(): Promise<void> {
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
-    const getToken =
-      config.authentication.kind === "github-oidc"
-        ? oidcTokenProvider(process.env, config.authentication.audience)
-        : shortLivedBearerTokenFileProvider(config.authentication.path);
+    const getToken = (() => {
+      switch (config.authentication.kind) {
+        case "github-oidc-exchange":
+          return identityExchangeTokenProvider(process.env, config.authentication.url);
+        case "github-oidc":
+          return oidcTokenProvider(process.env, config.authentication.audience);
+        case "bearer-token-file":
+          return shortLivedBearerTokenFileProvider(config.authentication.path);
+      }
+    })();
     const client = new StewardClient({
       baseUrl: config.apiUrl,
       getToken,

@@ -17,11 +17,14 @@ inputs:
   steward-ca-certificate-file:
     description: Filesystem path to a PEM CA bundle trusted for the Steward API
     required: false
+  identity-exchange-url:
+    description: HTTPS endpoint that exchanges GitHub OIDC for a short-lived Steward token
+    required: false
   oidc-audience:
-    description: Audience requested for GitHub OIDC; mutually exclusive with bearer-token-file
+    description: Test-only direct GitHub OIDC audience; allowed only with a loopback Steward API
     required: false
   bearer-token-file:
-    description: Filesystem path containing a rotating short-lived JWT; mutually exclusive with oidc-audience
+    description: Filesystem path containing a rotating short-lived JWT; mutually exclusive with OIDC inputs
     required: false
   agent-runtime:
     description: Existing AgentRuntime UID to adopt instead of provisioning one
@@ -53,6 +56,7 @@ runs:
         STEWARD_RUN_OUTPUTS: ${{ inputs.outputs }}
         STEWARD_RUN_API_URL: ${{ inputs.steward-api-url }}
         STEWARD_RUN_CA_CERTIFICATE_FILE: ${{ inputs.steward-ca-certificate-file }}
+        STEWARD_RUN_IDENTITY_EXCHANGE_URL: ${{ inputs.identity-exchange-url }}
         STEWARD_RUN_OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
         STEWARD_RUN_BEARER_TOKEN_FILE: ${{ inputs.bearer-token-file }}
         STEWARD_RUN_AGENT_RUNTIME: ${{ inputs.agent-runtime }}
