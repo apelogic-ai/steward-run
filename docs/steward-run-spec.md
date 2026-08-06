@@ -59,12 +59,13 @@ The action runs inside the ARC runner job and does exactly two categories of thi
    declared `inputs` from `$GITHUB_WORKSPACE`; at the end, write `outputs` back for a following
    `upload-artifact` step; obtain the job's OIDC id-token (`ACTIONS_ID_TOKEN_REQUEST_URL` +
    `ACTIONS_ID_TOKEN_REQUEST_TOKEN`; the workflow must grant `id-token: write`).
-2. **Call Steward's REST API** as the translator: validate the OIDC token, resolve the actor to
-   a **corporate email server-side** (R6 / roadmap §2.6.5), then submit a Steward `Task`. Steward
-   selects the versioned workflow envelope, provisions or adopts its `AgentRuntime`, and returns
-   the durable Task identity. The action uploads inputs, requests execution, polls Task status
-   through any approval hold, collects outputs after success, and requests finalization. A
-   provisioned runtime is terminated; an adopted runtime is detached (see D2).
+2. **Call Steward's REST API** as the translator: exchange the GitHub OIDC token server-side for a
+   short-lived `steward-task-api` token, then submit a Steward `Task`. The exchange validates the
+   calling workflow and resolves the actor. Steward selects the versioned workflow envelope,
+   provisions or adopts its `AgentRuntime`, and returns the durable Task identity. The action
+   uploads inputs, requests execution, polls Task status through any approval hold, collects
+   outputs after success, and requests finalization. A provisioned runtime is terminated; an
+   adopted runtime is detached (see D2).
 
 Flow: `download-artifact` (regular step) → `steward-run` (materialise in → API provision → run
 → collect out) → `upload-artifact` (regular step). The agentic step is invisible to the
@@ -95,13 +96,16 @@ the resumed invocation (a new job, new token).
 | `outputs` | Sandbox output path(s) written back to the workspace |
 | `steward-api-url` | The control-plane API base (env-supplied; not hardcoded) |
 | `steward-ca-certificate-file` *(optional)* | Filesystem path to the PEM CA bundle trusted for Steward TLS |
-| `oidc-audience` *(authentication choice)* | Audience for a GitHub Actions OIDC token |
+| `identity-exchange-url` *(authentication choice)* | HTTPS endpoint that exchanges GitHub OIDC for a short-lived Steward token |
+| `oidc-audience` *(test authentication choice)* | Direct GitHub OIDC audience; allowed only with a loopback Steward API |
 | `bearer-token-file` *(authentication choice)* | Filesystem path to a rotating JWT with a maximum one-hour lifetime |
 | `agent-runtime` *(optional)* | Adopt an existing `AgentRuntime` id instead of provisioning (D2) |
 
 Exactly one authentication choice is required. Tokens are never action inputs. A CA is supplied as
 a file path rather than inline PEM, and custom trust is scoped to Steward requests. Remote API URLs
-must use HTTPS; missing/invalid CA files, untrusted chains, and hostname mismatch fail closed.
+must use HTTPS; missing/invalid CA files, untrusted chains, and hostname mismatch fail closed. The
+exchange always requests GitHub audience `apelogic-github-identity-exchange` and accepts only an
+exchanged token with sole audience `steward-task-api`.
 
 | Output | Meaning |
 |---|---|
@@ -127,10 +131,11 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 
 ## 7. Dependencies & seams
 
-- **Hard dependency: Steward's Task API and service identity boundary.** The six-operation Task
-  lifecycle and service groups are implemented. Production remains blocked until an external
-  GitHub OIDC mapper validates job claims and emits Steward's service + acting-user TokenReview
-  groups for the `steward-task-api` audience.
+- **Hard dependency: Steward's Task API and identity exchange boundary.** The six-operation Task
+  lifecycle and service groups are implemented. Production callers use the reusable
+  `.github/workflows/steward-task.yml` workflow so GitHub emits an allowlistable
+  `job_workflow_ref`. The call is pinned to the full release commit recorded in the signed release
+  manifest; the exchange emits a short-lived `steward-task-api` token.
 - **Consumed by `gitops`** (scale set pins the image) and **by workflows** (`uses:
   apelogic-ai/steward-run@vX`).
 - **Verified contract:** `contracts/steward-run-v1.openapi.yaml` records Steward's `/v1/tasks`

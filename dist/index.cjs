@@ -2495,21 +2495,166 @@ function required(environment, name) {
 }
 function readActionConfig(environment) {
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
+  const identityExchangeUrl = environment.STEWARD_RUN_IDENTITY_EXCHANGE_URL?.trim();
   const oidcAudience = environment.STEWARD_RUN_OIDC_AUDIENCE?.trim();
   const bearerTokenFile = environment.STEWARD_RUN_BEARER_TOKEN_FILE?.trim();
   const caCertificateFile = environment.STEWARD_RUN_CA_CERTIFICATE_FILE?.trim();
-  if (Boolean(oidcAudience) === Boolean(bearerTokenFile)) {
-    throw new Error("configure exactly one authentication method: oidc-audience or bearer-token-file");
+  const apiUrl = required(environment, "STEWARD_RUN_API_URL");
+  const authenticationCount = [identityExchangeUrl, oidcAudience, bearerTokenFile].filter(Boolean).length;
+  if (authenticationCount !== 1) {
+    throw new Error(
+      "configure exactly one authentication method: identity-exchange-url, oidc-audience, or bearer-token-file"
+    );
+  }
+  if (oidcAudience) {
+    let api;
+    try {
+      api = new URL(apiUrl);
+    } catch {
+      throw new Error("steward-api-url must be a valid URL");
+    }
+    const loopback = api.hostname === "localhost" || api.hostname === "127.0.0.1" || api.hostname === "::1";
+    if (!loopback) {
+      throw new Error(
+        "direct GitHub OIDC authentication is only allowed with a loopback Steward API"
+      );
+    }
   }
   return {
     workflow: required(environment, "STEWARD_RUN_WORKFLOW"),
     inputPaths: required(environment, "STEWARD_RUN_INPUTS"),
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
-    apiUrl: required(environment, "STEWARD_RUN_API_URL"),
+    apiUrl,
     ...agentRuntime ? { agentRuntime } : {},
     codingAgentRuntime: environment.STEWARD_RUN_CODING_AGENT_RUNTIME?.trim() || "claude-code@2.1.220",
-    authentication: oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile },
+    authentication: identityExchangeUrl ? { kind: "github-oidc-exchange", url: identityExchangeUrl } : oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile },
     ...caCertificateFile ? { caCertificateFile } : {}
+  };
+}
+
+// src/oidc.ts
+async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImplementation = fetch) {
+  if (!requestUrl || !requestToken) {
+    throw new Error(
+      "GitHub OIDC is unavailable; grant the job id-token: write permission"
+    );
+  }
+  const url = new URL(requestUrl);
+  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
+    throw new Error("GitHub OIDC request URL must use HTTPS except on loopback");
+  }
+  url.searchParams.set("audience", audience);
+  let response;
+  try {
+    response = await fetchImplementation(url, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${requestToken}`
+      }
+    });
+  } catch {
+    throw new Error("GitHub OIDC token request failed");
+  }
+  if (!response.ok) {
+    throw new Error(`GitHub OIDC token request failed with status ${response.status}`);
+  }
+  const payload = await response.json().catch(() => void 0);
+  const value = payload && typeof payload === "object" && "value" in payload ? payload.value : void 0;
+  if (typeof value !== "string" || value.split(".").length !== 3) {
+    throw new Error("GitHub OIDC token response was incompatible");
+  }
+  return value;
+}
+function oidcTokenProvider(environment, audience, fetchImplementation = fetch) {
+  return async () => getGitHubOidcToken(
+    environment.ACTIONS_ID_TOKEN_REQUEST_URL ?? "",
+    environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "",
+    audience,
+    fetchImplementation
+  );
+}
+
+// src/identity-exchange.ts
+var GITHUB_IDENTITY_EXCHANGE_AUDIENCE = "apelogic-github-identity-exchange";
+var STEWARD_TASK_API_AUDIENCE = "steward-task-api";
+var maximumTokenLifetimeSeconds2 = 60 * 60;
+var minimumRemainingLifetimeSeconds2 = 30;
+var allowedClockSkewSeconds2 = 60;
+function isLoopback(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+function validateExchangeUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("identity-exchange-url must be a valid URL");
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback(url.hostname))) {
+    throw new Error("identity-exchange-url must use HTTPS except on loopback");
+  }
+  if (url.username || url.password || url.hash) {
+    throw new Error("identity-exchange-url must not contain credentials or a fragment");
+  }
+  return url;
+}
+function jwtClaims2(token) {
+  const segments = token.split(".");
+  if (segments.length !== 3 || segments.some((segment) => !segment)) return void 0;
+  try {
+    const parsed = JSON.parse(Buffer.from(segments[1] ?? "", "base64url").toString("utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function hasExactAudience(value, expected) {
+  return value === expected || Array.isArray(value) && value.length === 1 && value[0] === expected;
+}
+function validateStewardToken(token, nowSeconds) {
+  const claims = jwtClaims2(token);
+  const issuedAt = claims?.iat;
+  const expiresAt = claims?.exp;
+  if (!hasExactAudience(claims?.aud, STEWARD_TASK_API_AUDIENCE) || !Number.isInteger(issuedAt) || !Number.isInteger(expiresAt) || issuedAt > nowSeconds + allowedClockSkewSeconds2 || expiresAt - issuedAt > maximumTokenLifetimeSeconds2 || expiresAt - issuedAt <= 0 || expiresAt - nowSeconds < minimumRemainingLifetimeSeconds2) {
+    throw new Error("identity exchange response was incompatible");
+  }
+  return token;
+}
+function identityExchangeTokenProvider(environment, exchangeUrl, fetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3)) {
+  const url = validateExchangeUrl(exchangeUrl);
+  const getSourceToken = oidcTokenProvider(
+    environment,
+    GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
+    fetchImplementation
+  );
+  return async () => {
+    const sourceToken = await getSourceToken();
+    let response;
+    try {
+      response = await fetchImplementation(url, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${sourceToken}`
+        }
+      });
+    } catch {
+      throw new Error("identity exchange request failed");
+    }
+    if (!response.ok) {
+      throw new Error(`identity exchange request failed with status ${response.status}`);
+    }
+    const payload = await response.json().catch(() => void 0);
+    const candidate = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : void 0;
+    const token = candidate?.access_token;
+    const tokenType = candidate?.token_type;
+    const expiresIn = candidate?.expires_in;
+    if (typeof token !== "string" || tokenType !== "Bearer" || !Number.isInteger(expiresIn) || expiresIn <= 0 || expiresIn > maximumTokenLifetimeSeconds2) {
+      throw new Error("identity exchange response was incompatible");
+    }
+    return validateStewardToken(token, now());
   };
 }
 
@@ -2829,50 +2974,6 @@ async function runWorkflow(config, workspace, dependencies) {
       }
     }
   }
-}
-
-// src/oidc.ts
-async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImplementation = fetch) {
-  if (!requestUrl || !requestToken) {
-    throw new Error(
-      "GitHub OIDC is unavailable; grant the job id-token: write permission"
-    );
-  }
-  const url = new URL(requestUrl);
-  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
-    throw new Error("GitHub OIDC request URL must use HTTPS except on loopback");
-  }
-  url.searchParams.set("audience", audience);
-  let response;
-  try {
-    response = await fetchImplementation(url, {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${requestToken}`
-      }
-    });
-  } catch {
-    throw new Error("GitHub OIDC token request failed");
-  }
-  if (!response.ok) {
-    throw new Error(`GitHub OIDC token request failed with status ${response.status}`);
-  }
-  const payload = await response.json().catch(() => void 0);
-  const value = payload && typeof payload === "object" && "value" in payload ? payload.value : void 0;
-  if (typeof value !== "string" || value.split(".").length !== 3) {
-    throw new Error("GitHub OIDC token response was incompatible");
-  }
-  return value;
-}
-function oidcTokenProvider(environment, audience, fetchImplementation = fetch) {
-  return async () => getGitHubOidcToken(
-    environment.ACTIONS_ID_TOKEN_REQUEST_URL ?? "",
-    environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "",
-    audience,
-    fetchImplementation
-  );
 }
 
 // src/steward-client.ts
@@ -3206,7 +3307,16 @@ async function main() {
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
-    const getToken = config.authentication.kind === "github-oidc" ? oidcTokenProvider(process.env, config.authentication.audience) : shortLivedBearerTokenFileProvider(config.authentication.path);
+    const getToken = (() => {
+      switch (config.authentication.kind) {
+        case "github-oidc-exchange":
+          return identityExchangeTokenProvider(process.env, config.authentication.url);
+        case "github-oidc":
+          return oidcTokenProvider(process.env, config.authentication.audience);
+        case "bearer-token-file":
+          return shortLivedBearerTokenFileProvider(config.authentication.path);
+      }
+    })();
     const client = new StewardClient({
       baseUrl: config.apiUrl,
       getToken,

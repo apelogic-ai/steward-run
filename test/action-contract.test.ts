@@ -18,6 +18,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
       "agent-runtime",
       "bearer-token-file",
       "coding-agent-runtime",
+      "identity-exchange-url",
       "inputs",
       "oidc-audience",
       "outputs",
@@ -35,6 +36,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
     assert.equal(action.inputs[name]?.required, true, `${name} must be required`);
   }
   assert.notEqual(action.inputs["oidc-audience"]?.required, true);
+  assert.notEqual(action.inputs["identity-exchange-url"]?.required, true);
   assert.notEqual(action.inputs["bearer-token-file"]?.required, true);
   assert.notEqual(action.inputs["steward-ca-certificate-file"]?.required, true);
   assert.equal(action.inputs["coding-agent-runtime"]?.default, "claude-code@2.1.220");

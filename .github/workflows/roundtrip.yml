@@ -57,7 +57,7 @@ jobs:
           inputs: in
           outputs: out
           steward-api-url: ${{ steps.mock.outputs.url }}
-          oidc-audience: steward-task-api
+          identity-exchange-url: ${{ steps.mock.outputs.url }}/v1/exchange
       - name: Verify governed result and finalization
         shell: bash
         run: |

@@ -20,9 +20,16 @@ if (typeof digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(digest)) {
 }
 
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   version,
   action: { commit: actionCommit },
+  reusableWorkflow: {
+    repository: "apelogic-ai/steward-run",
+    path: ".github/workflows/steward-task.yml",
+    commit: actionCommit,
+    immutableReference:
+      `apelogic-ai/steward-run/.github/workflows/steward-task.yml@${actionCommit}`,
+  },
   runnerImage: {
     repository: imageRepository,
     digest,

@@ -30,8 +30,8 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
         GITHUB_WORKSPACE: workspace,
         STEWARD_RUN_API_URL: mock.url,
         STEWARD_RUN_CODING_AGENT_RUNTIME: "claude-code@2.1.220",
+        STEWARD_RUN_IDENTITY_EXCHANGE_URL: `${mock.url}/v1/exchange`,
         STEWARD_RUN_INPUTS: "in",
-        STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api",
         STEWARD_RUN_OUTPUTS: "out",
         STEWARD_RUN_WORKFLOW: "copy-smoke",
       },
@@ -47,6 +47,10 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
     assert.match(await readFile(outputFile, "utf8"), /runtime-uid=mock-runtime-uid/);
     assert.match(await readFile(finalizationMarker, "utf8"), /^[0-9a-f-]+\n$/u);
     assert.ok(mock.observations.oidcRequests >= 5);
+    assert.equal(mock.observations.exchangeRequests, mock.observations.oidcRequests);
+    assert.equal(mock.observations.sourceTokenAtSteward, 0);
+    assert.equal(mock.observations.stewardTokenAtExchange, 0);
+    assert.ok(mock.observations.stewardTokenAtSteward >= 5);
     assert.deepEqual(mock.observations.operations, [
       "submit",
       "upload-inputs",
@@ -82,10 +86,20 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
 test("the mock rejects workflows other than copy-smoke", async () => {
   const mock = await startMockSteward();
   try {
+    const oidcResponse = await fetch(
+      `${mock.url}/oidc?audience=apelogic-github-identity-exchange`,
+      { headers: { authorization: "Bearer request-secret" } },
+    );
+    const sourceToken = (await oidcResponse.json() as { value: string }).value;
+    const exchangeResponse = await fetch(`${mock.url}/v1/exchange`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${sourceToken}` },
+    });
+    const stewardToken = (await exchangeResponse.json() as { access_token: string }).access_token;
     const response = await fetch(`${mock.url}/v1/tasks`, {
       method: "POST",
       headers: {
-        authorization: "Bearer header.payload.signature",
+        authorization: `Bearer ${stewardToken}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({

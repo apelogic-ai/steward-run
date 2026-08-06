@@ -156,6 +156,7 @@ jobs:
           {
             echo "## Immutable release handoff"
             echo "- Action commit: \`$GITHUB_SHA\`"
+            echo "- Reusable workflow: \`$GITHUB_REPOSITORY/.github/workflows/steward-task.yml@$GITHUB_SHA\`"
             echo "- Runner image: \`$IMAGE_REPOSITORY@$IMAGE_DIGEST\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

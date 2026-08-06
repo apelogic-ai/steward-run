@@ -30,9 +30,16 @@ test("release manifest binds the action commit to the immutable runner image dig
       { cwd: repository },
     );
     assert.deepEqual(JSON.parse(await readFile(output, "utf8")), {
-      schemaVersion: 1,
+      schemaVersion: 2,
       version: "0.2.0",
       action: { commit },
+      reusableWorkflow: {
+        repository: "apelogic-ai/steward-run",
+        path: ".github/workflows/steward-task.yml",
+        commit,
+        immutableReference:
+          `apelogic-ai/steward-run/.github/workflows/steward-task.yml@${commit}`,
+      },
       runnerImage: {
         repository: "registry.example/steward-run",
         digest,

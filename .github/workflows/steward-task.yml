@@ -1,0 +1,105 @@
+name: Governed Steward task
+
+on:
+  workflow_call:
+    inputs:
+      action-commit:
+        description: Immutable steward-run commit
+        required: true
+        type: string
+      runner-label:
+        description: Runner label for the governed job
+        required: true
+        type: string
+      workflow:
+        description: Governed Steward workflow
+        required: true
+        type: string
+      input-artifact:
+        description: Artifact whose contents are materialized under in/
+        required: true
+        type: string
+      output-artifact:
+        description: Artifact created from out/
+        required: true
+        type: string
+      steward-api-url:
+        description: Steward Task API base URL
+        required: true
+        type: string
+      identity-exchange-url:
+        description: GitHub OIDC exchange endpoint
+        required: true
+        type: string
+      steward-ca-certificate-file:
+        description: Filesystem path to the Steward CA bundle
+        required: false
+        type: string
+        default: ""
+      agent-runtime:
+        description: Existing AgentRuntime UID to adopt
+        required: false
+        type: string
+        default: ""
+      coding-agent-runtime:
+        description: Versioned coding-agent runtime
+        required: false
+        type: string
+        default: claude-code@2.1.220
+    outputs:
+      status:
+        description: Terminal Steward Task phase
+        value: ${{ jobs.governed.outputs.status }}
+      task-uid:
+        description: Steward Task UID
+        value: ${{ jobs.governed.outputs.task-uid }}
+      runtime-uid:
+        description: AgentRuntime UID
+        value: ${{ jobs.governed.outputs.runtime-uid }}
+
+jobs:
+  governed:
+    runs-on: ${{ inputs.runner-label }}
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      status: ${{ steps.task.outputs.status }}
+      task-uid: ${{ steps.task.outputs.task-uid }}
+      runtime-uid: ${{ steps.task.outputs.runtime-uid }}
+    steps:
+      - name: Validate immutable action commit
+        shell: bash
+        env:
+          ACTION_COMMIT: ${{ inputs.action-commit }}
+        run: |
+          if [[ ! "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "action-commit must be a full lowercase commit SHA" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: apelogic-ai/steward-run
+          ref: ${{ inputs.action-commit }}
+          path: .steward-run-action
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ inputs.input-artifact }}
+          path: in
+      - id: task
+        uses: ./.steward-run-action
+        with:
+          workflow: ${{ inputs.workflow }}
+          inputs: in
+          outputs: out
+          steward-api-url: ${{ inputs.steward-api-url }}
+          identity-exchange-url: ${{ inputs.identity-exchange-url }}
+          steward-ca-certificate-file: ${{ inputs.steward-ca-certificate-file }}
+          agent-runtime: ${{ inputs.agent-runtime }}
+          coding-agent-runtime: ${{ inputs.coding-agent-runtime }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ inputs.output-artifact }}
+          path: out
+          if-no-files-found: error
