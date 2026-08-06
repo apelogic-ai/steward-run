@@ -82,7 +82,7 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(releaseSource, /COSIGN_EXPERIMENTAL:\s*"1"/);
   assert.match(
     releaseSource,
-    /cosign sign --yes \\\n\s+--new-bundle-format=false \\\n\s+--registry-referrers-mode=oci-1-1/,
+    /cosign sign --yes \\\n\s+--use-signing-config=false \\\n\s+--new-bundle-format=false \\\n\s+--registry-referrers-mode=oci-1-1/,
   );
   assert.match(
     releaseSource,
