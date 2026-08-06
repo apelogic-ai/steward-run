@@ -5,7 +5,8 @@ import tar from "tar-stream";
 
 const taskUid = "2f9f6ade-261d-4090-9532-9e157b59db2e";
 const runtimeUid = "mock-runtime-uid";
-const identityToken = "header.payload.signature";
+const sourceAudience = "apelogic-github-identity-exchange";
+const stewardAudience = "steward-task-api";
 type MockOperation =
   | "submit"
   | "upload-inputs"
@@ -24,6 +25,11 @@ export interface MockSteward {
     downloaded: boolean;
     finalized: boolean;
     oidcRequests: number;
+    exchangeRequests: number;
+    sourceTokenAtExchange: number;
+    sourceTokenAtSteward: number;
+    stewardTokenAtExchange: number;
+    stewardTokenAtSteward: number;
     operations: MockOperation[];
   };
   close: () => Promise<void>;
@@ -64,6 +70,11 @@ function json(response: ServerResponse, status: number, body: unknown): void {
   response.end(JSON.stringify(body));
 }
 
+function jwt(payload: Record<string, unknown>): string {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.mock-signature`;
+}
+
 function task(finalized: boolean, phase: "submitted" | "running" | "succeeded") {
   return {
     taskUid,
@@ -94,8 +105,21 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
     downloaded: false,
     finalized: false,
     oidcRequests: 0,
+    exchangeRequests: 0,
+    sourceTokenAtExchange: 0,
+    sourceTokenAtSteward: 0,
+    stewardTokenAtExchange: 0,
+    stewardTokenAtSteward: 0,
     operations: [],
   };
+  const issuedAt = Math.floor(Date.now() / 1_000);
+  const sourceToken = jwt({ aud: sourceAudience, sub: "mock-github-caller" });
+  const stewardToken = jwt({
+    aud: stewardAudience,
+    exp: issuedAt + 120,
+    iat: issuedAt,
+    sub: "mock-corporate-user",
+  });
   let payload: Buffer<ArrayBufferLike> | undefined;
   const server = createServer((request, response) => {
     void (async () => {
@@ -106,18 +130,42 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
           json(response, 401, { message: "invalid request token" });
           return;
         }
-        if (url.searchParams.get("audience") !== "steward-task-api") {
+        if (url.searchParams.get("audience") !== sourceAudience) {
           json(response, 400, { message: "invalid OIDC audience" });
           return;
         }
-        json(response, 200, { value: identityToken });
+        json(response, 200, { value: sourceToken });
+        return;
+      }
+      if (request.method === "POST" && url.pathname === "/v1/exchange") {
+        observations.exchangeRequests += 1;
+        const bearer = request.headers.authorization?.replace(/^Bearer /u, "") ?? "";
+        if (bearer === stewardToken) observations.stewardTokenAtExchange += 1;
+        if (bearer !== sourceToken) {
+          json(response, 401, { error: "invalid_token" });
+          return;
+        }
+        observations.sourceTokenAtExchange += 1;
+        if ((await requestBody(request)).length !== 0) {
+          json(response, 400, { error: "invalid_request" });
+          return;
+        }
+        response.writeHead(200, {
+          "cache-control": "no-store",
+          "content-type": "application/json",
+        });
+        response.end(
+          JSON.stringify({ access_token: stewardToken, expires_in: 120, token_type: "Bearer" }),
+        );
         return;
       }
       const bearer = request.headers.authorization?.replace(/^Bearer /u, "") ?? "";
-      if (!/^[^.]+\.[^.]+\.[^.]+$/u.test(bearer)) {
+      if (bearer === sourceToken) observations.sourceTokenAtSteward += 1;
+      if (bearer !== stewardToken) {
         json(response, 401, { message: "invalid identity token" });
         return;
       }
+      observations.stewardTokenAtSteward += 1;
       if (request.method === "POST" && url.pathname === "/v1/tasks") {
         const createRequest: unknown = JSON.parse((await requestBody(request)).toString("utf8"));
         if (
