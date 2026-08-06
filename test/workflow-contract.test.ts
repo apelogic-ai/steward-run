@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parse } from "yaml";
 
-const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml"];
+const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml"];
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -45,7 +45,8 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(roundtrip, /status.*succeeded/);
   assert.match(roundtrip, /task-uid/);
   assert.match(roundtrip, /runtime-uid.*mock-runtime-uid/);
-  assert.match(roundtrip, /oidc-audience:\s*steward-task-api/);
+  assert.match(roundtrip, /identity-exchange-url:\s*\$\{\{ steps\.mock\.outputs\.url \}\}\/v1\/exchange/);
+  assert.doesNotMatch(roundtrip, /oidc-audience:/);
   assert.match(roundtrip, /mock-finalized/);
   assert.match(roundtrip, /in\/payload\.bin/);
   assert.match(roundtrip, /out\/payload\.bin/);
@@ -132,4 +133,65 @@ test("CI, round-trip, and release workflows enforce the product contract", async
     /uses: actions\/upload-artifact@[a-f0-9]{40}[\s\S]+?if:\s*\$\{\{ always\(\) && hashFiles\('release-metadata\.json'\) != '' \}\}/,
   );
   assert.doesNotMatch(releaseSource, /--tag[^\n]*latest/);
+});
+
+test("the reusable ARC workflow transfers artifacts around an immutable action checkout", async () => {
+  const source = await readFile(
+    new URL("../.github/workflows/steward-task.yml", import.meta.url),
+    "utf8",
+  );
+  const workflow = parse(source) as {
+    on: {
+      workflow_call: {
+        inputs: Record<string, { required?: boolean; type?: string }>;
+        outputs: Record<string, unknown>;
+      };
+    };
+    jobs: Record<string, { permissions?: Record<string, string>; "runs-on"?: string }>;
+  };
+
+  assert.ok(workflow.on.workflow_call);
+  for (const name of [
+    "action-commit",
+    "coding-agent-runtime",
+    "identity-exchange-url",
+    "input-artifact",
+    "output-artifact",
+    "runner-label",
+    "steward-api-url",
+    "workflow",
+  ]) {
+    assert.equal(workflow.on.workflow_call.inputs[name]?.type, "string", name);
+  }
+  assert.equal(workflow.on.workflow_call.inputs["action-commit"]?.required, true);
+  assert.equal(workflow.on.workflow_call.inputs["identity-exchange-url"]?.required, true);
+  assert.equal(workflow.on.workflow_call.inputs["runner-label"]?.required, true);
+  assert.deepEqual(
+    Object.keys(workflow.on.workflow_call.outputs).sort(),
+    ["runtime-uid", "status", "task-uid"],
+  );
+
+  const job = workflow.jobs.governed;
+  assert.equal(job?.permissions?.contents, "read");
+  assert.equal(job?.permissions?.["id-token"], "write");
+  assert.equal(job?.["runs-on"], "${{ inputs.runner-label }}");
+  assert.match(source, /\^\[0-9a-f\]\{40\}\$/);
+  assert.match(source, /repository:\s*apelogic-ai\/steward-run/);
+  assert.match(source, /ref:\s*\$\{\{ inputs\.action-commit \}\}/);
+  assert.match(source, /actions\/download-artifact@/);
+  assert.match(source, /name:\s*\$\{\{ inputs\.input-artifact \}\}/);
+  assert.match(source, /path:\s*in/);
+  assert.match(source, /uses:\s*\.\/\.steward-run-action/);
+  assert.match(source, /identity-exchange-url:\s*\$\{\{ inputs\.identity-exchange-url \}\}/);
+  assert.match(source, /inputs:\s*in/);
+  assert.match(source, /outputs:\s*out/);
+  assert.match(source, /actions\/upload-artifact@/);
+  assert.match(source, /name:\s*\$\{\{ inputs\.output-artifact \}\}/);
+  assert.match(source, /path:\s*out/);
+  assert.doesNotMatch(source, /oidc-audience|bearer-token|identity\.dev|cluster|secret/iu);
+
+  const download = source.indexOf("actions/download-artifact@");
+  const action = source.indexOf("uses: ./.steward-run-action");
+  const upload = source.indexOf("actions/upload-artifact@");
+  assert.ok(download >= 0 && download < action && action < upload);
 });
