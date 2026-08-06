@@ -97,19 +97,19 @@ jobs:
         run: |
           certificate_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
           cosign sign --yes \
-            --use-signing-config=false \
-            --new-bundle-format=false \
-            --registry-referrers-mode=oci-1-1 \
+            --upload=false \
             --bundle image-signature.sigstore.json \
             "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
-          cosign sign-blob --yes \
-            --bundle release-manifest.sigstore.json \
-            release-manifest.json
           cosign verify-blob \
             --bundle image-signature.sigstore.json \
             --certificate-identity "$certificate_identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "$IMAGE_DIGEST"
+          cosign sign --yes \
+            --use-signing-config=false \
+            --new-bundle-format=false \
+            --registry-referrers-mode=oci-1-1 \
+            "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
           registry_verified=false
           for attempt in {1..3}; do
             if cosign verify \
@@ -126,6 +126,9 @@ jobs:
             fi
           done
           [[ "$registry_verified" == true ]]
+          cosign sign-blob --yes \
+            --bundle release-manifest.sigstore.json \
+            release-manifest.json
           cosign verify-blob \
             --bundle release-manifest.sigstore.json \
             --certificate-identity "$certificate_identity" \
