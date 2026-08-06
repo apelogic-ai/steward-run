@@ -195,3 +195,26 @@ test("the reusable ARC workflow transfers artifacts around an immutable action c
   const upload = source.indexOf("actions/upload-artifact@");
   assert.ok(download >= 0 && download < action && action < upload);
 });
+
+test("production handoffs pin the reusable workflow to the release commit", async () => {
+  const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+  const specification = await readFile(
+    new URL("../docs/steward-run-spec.md", import.meta.url),
+    "utf8",
+  );
+  const releaseWorkflow = await readFile(
+    new URL("../.github/workflows/release.yml", import.meta.url),
+    "utf8",
+  );
+  const productionHandoffs = `${readme}\n${specification}\n${releaseWorkflow}`;
+
+  assert.doesNotMatch(productionHandoffs, /steward-task\.yml@main/u);
+  assert.match(
+    readme,
+    /apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml@<IMMUTABLE_RELEASE_COMMIT>/u,
+  );
+  assert.match(
+    releaseWorkflow,
+    /Reusable workflow:.*steward-task\.yml@\$GITHUB_SHA/u,
+  );
+});

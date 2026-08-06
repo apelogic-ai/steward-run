@@ -30,8 +30,8 @@ See `docs/steward-run-spec.md` for the product boundary.
 ## Usage
 
 The reusable workflow requires `id-token: write` and transfers caller inputs and returned outputs
-as artifacts. Use `@main` for the workflow call so GitHub emits the allowlisted
-`job_workflow_ref`; pin `action-commit` to the immutable commit published with the release.
+as artifacts. Pin both the workflow call and `action-commit` to the full commit SHA published in
+the signed release manifest. GitHub emits that exact immutable reference as `job_workflow_ref`.
 
 ```yaml
 jobs:
@@ -39,7 +39,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: apelogic-ai/steward-run/.github/workflows/steward-task.yml@main
+    uses: apelogic-ai/steward-run/.github/workflows/steward-task.yml@<IMMUTABLE_RELEASE_COMMIT>
     with:
       action-commit: <IMMUTABLE_RELEASE_COMMIT>
       runner-label: ${{ vars.STEWARD_RUNNER_LABEL }}
@@ -72,8 +72,9 @@ never be supplied as action inputs.
 
 Dispatching the release workflow with version `X.Y.Z` builds `linux/amd64` under a unique candidate
 tag and attaches provenance and an SBOM. The workflow keylessly signs the OCI index using OCI 1.1,
-verifies both the local bundle and registry referrer, and signs a manifest that binds the digest to
-the immutable action commit. Only then does it create the final `X.Y.Z` image tag and `vX.Y.Z`
-GitHub release, with the manifest and Sigstore bundles attached for GitOps consumption. `AWS_REGION`,
+verifies both the local bundle and registry referrer, and signs a manifest that binds the digest,
+action, and reusable workflow to the immutable release commit. Only then does it create the final
+`X.Y.Z` image tag and `vX.Y.Z` GitHub release, with the manifest and Sigstore bundles attached for
+GitOps consumption. `AWS_REGION`,
 `AWS_ROLE_ARN`, `ECR_REGISTRY`, and `ECR_REPOSITORY` are repository variables; release
 authentication uses GitHub OIDC.
