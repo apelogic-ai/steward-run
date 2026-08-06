@@ -66,6 +66,7 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   );
   assert.match(releaseSource, /workflow_dispatch:/);
   assert.doesNotMatch(releaseSource, /types:\s*\[published\]/);
+  assert.doesNotMatch(releaseSource, /^\s+environment:/mu);
   assert.match(releaseSource, /group:\s*release-\$\{\{ inputs\.version \}\}/);
   assert.match(releaseSource, /cancel-in-progress:\s*false/);
   assert.match(releaseSource, /cosign-release:\s*v3\.1\.2/);
@@ -93,6 +94,13 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(releaseSource, /GITHUB_SHA/);
   assert.match(releaseSource, /docker buildx imagetools create/);
   assert.match(releaseSource, /gh release create "v\$VERSION"/);
+  assert.match(releaseSource, /\[\[ "\$GITHUB_REF" == refs\/heads\/main \]\]/);
+  assert.match(releaseSource, /git\/matching-refs\/tags\/v\$REQUESTED_VERSION/);
+  assert.match(releaseSource, /require\("\.\/package\.json"\)\.version/);
+  const releaseValidation = releaseSource.indexOf("- name: Validate release request");
+  const awsCredentials = releaseSource.indexOf("aws-actions/configure-aws-credentials@");
+  assert.ok(releaseValidation >= 0);
+  assert.ok(releaseValidation < awsCredentials);
   const candidateBuild = releaseSource.indexOf('--tag "$IMAGE_REPOSITORY:$CANDIDATE_TAG"');
   const signatureVerification = releaseSource.indexOf('[[ "$registry_verified" == true ]]');
   const finalImageTag = releaseSource.indexOf("docker buildx imagetools create");
@@ -103,7 +111,7 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.ok(finalImageTag < finalReleaseTag);
   assert.match(
     releaseSource,
-    /uses: actions\/upload-artifact@[a-f0-9]{40}[\s\S]+?if:\s*always\(\)/,
+    /uses: actions\/upload-artifact@[a-f0-9]{40}[\s\S]+?if:\s*\$\{\{ always\(\) && hashFiles\('release-metadata\.json'\) != '' \}\}/,
   );
   assert.doesNotMatch(releaseSource, /--tag[^\n]*latest/);
 });
