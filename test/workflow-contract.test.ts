@@ -82,6 +82,10 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(releaseSource, /COSIGN_EXPERIMENTAL:\s*"1"/);
   assert.match(
     releaseSource,
+    /cosign sign --yes \\\n\s+--upload=false \\\n\s+--bundle image-signature\.sigstore\.json/,
+  );
+  assert.match(
+    releaseSource,
     /cosign sign --yes \\\n\s+--use-signing-config=false \\\n\s+--new-bundle-format=false \\\n\s+--registry-referrers-mode=oci-1-1/,
   );
   assert.match(
@@ -111,11 +115,17 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.ok(releaseValidation >= 0);
   assert.ok(releaseValidation < awsCredentials);
   const candidateBuild = releaseSource.indexOf('--tag "$IMAGE_REPOSITORY:$CANDIDATE_TAG"');
+  const bundleSign = releaseSource.indexOf("--upload=false");
+  const bundleVerification = releaseSource.indexOf("cosign verify-blob", bundleSign + 1);
+  const registrySign = releaseSource.indexOf("--registry-referrers-mode=oci-1-1");
   const signatureVerification = releaseSource.indexOf('[[ "$registry_verified" == true ]]');
   const finalImageTag = releaseSource.indexOf("docker buildx imagetools create");
   const finalReleaseTag = releaseSource.indexOf('gh release create "v$VERSION"');
   assert.ok(candidateBuild >= 0);
-  assert.ok(candidateBuild < signatureVerification);
+  assert.ok(candidateBuild < bundleSign);
+  assert.ok(bundleSign < bundleVerification);
+  assert.ok(bundleVerification < registrySign);
+  assert.ok(registrySign < signatureVerification);
   assert.ok(signatureVerification < finalImageTag);
   assert.ok(finalImageTag < finalReleaseTag);
   assert.match(
