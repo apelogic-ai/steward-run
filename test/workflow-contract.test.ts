@@ -82,16 +82,15 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(releaseSource, /COSIGN_EXPERIMENTAL:\s*"1"/);
   assert.match(
     releaseSource,
-    /cosign sign --yes \\\n\s+--upload=false \\\n\s+--bundle image-signature\.sigstore\.json/,
+    /cosign sign --yes \\\n\s+--bundle image-signature\.sigstore\.json \\\n\s+--registry-referrers-mode=oci-1-1/,
   );
   assert.match(
     releaseSource,
-    /cosign sign --yes \\\n\s+--use-signing-config=false \\\n\s+--new-bundle-format=false \\\n\s+--registry-referrers-mode=oci-1-1/,
+    /cosign verify \\\n\s+--experimental-oci11=true/,
   );
-  assert.match(
-    releaseSource,
-    /cosign verify \\\n\s+--new-bundle-format=false \\\n\s+--experimental-oci11=true/,
-  );
+  assert.doesNotMatch(releaseSource, /--upload=false/);
+  assert.doesNotMatch(releaseSource, /--new-bundle-format=false/);
+  assert.doesNotMatch(releaseSource, /--use-signing-config=false/);
   assert.match(
     releaseSource,
     /cosign verify-blob \\\n\s+--bundle image-signature\.sigstore\.json[\s\S]+?"\$IMAGE_DIGEST"/,
@@ -115,17 +114,17 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.ok(releaseValidation >= 0);
   assert.ok(releaseValidation < awsCredentials);
   const candidateBuild = releaseSource.indexOf('--tag "$IMAGE_REPOSITORY:$CANDIDATE_TAG"');
-  const bundleSign = releaseSource.indexOf("--upload=false");
+  const bundleSign = releaseSource.indexOf("--bundle image-signature.sigstore.json");
   const bundleVerification = releaseSource.indexOf("cosign verify-blob", bundleSign + 1);
-  const registrySign = releaseSource.indexOf("--registry-referrers-mode=oci-1-1");
+  const registryVerification = releaseSource.indexOf("--experimental-oci11=true");
   const signatureVerification = releaseSource.indexOf('[[ "$registry_verified" == true ]]');
   const finalImageTag = releaseSource.indexOf("docker buildx imagetools create");
   const finalReleaseTag = releaseSource.indexOf('gh release create "v$VERSION"');
   assert.ok(candidateBuild >= 0);
   assert.ok(candidateBuild < bundleSign);
   assert.ok(bundleSign < bundleVerification);
-  assert.ok(bundleVerification < registrySign);
-  assert.ok(registrySign < signatureVerification);
+  assert.ok(bundleVerification < registryVerification);
+  assert.ok(registryVerification < signatureVerification);
   assert.ok(signatureVerification < finalImageTag);
   assert.ok(finalImageTag < finalReleaseTag);
   assert.match(
