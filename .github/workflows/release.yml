@@ -63,12 +63,12 @@ jobs:
       - name: Reject an existing semantic image tag
         shell: bash
         run: |
-          existing_tag="$(aws ecr list-images \
+          existing_digest="$(aws ecr batch-get-image \
             --repository-name "$ECR_REPOSITORY" \
-            --filter tagStatus=TAGGED \
-            --query "imageIds[?imageTag=='$VERSION'].imageTag | [0]" \
+            --image-ids imageTag="$VERSION" \
+            --query 'images[0].imageId.imageDigest' \
             --output text)"
-          [[ "$existing_tag" == None ]]
+          [[ "$existing_digest" == None ]]
       - name: Build and publish unique candidate
         shell: bash
         run: |
@@ -134,10 +134,10 @@ jobs:
           docker buildx imagetools create \
             --tag "$IMAGE_REPOSITORY:$VERSION" \
             "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
-          published_digest="$(aws ecr describe-images \
+          published_digest="$(aws ecr batch-get-image \
             --repository-name "$ECR_REPOSITORY" \
             --image-ids imageTag="$VERSION" \
-            --query 'imageDetails[0].imageDigest' \
+            --query 'images[0].imageId.imageDigest' \
             --output text)"
           [[ "$published_digest" == "$IMAGE_DIGEST" ]]
       - name: Create verified release and immutable handoff

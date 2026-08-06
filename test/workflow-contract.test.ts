@@ -93,6 +93,9 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(releaseSource, /release-manifest\.sigstore\.json/);
   assert.match(releaseSource, /GITHUB_SHA/);
   assert.match(releaseSource, /docker buildx imagetools create/);
+  assert.match(releaseSource, /aws ecr batch-get-image/);
+  assert.doesNotMatch(releaseSource, /aws ecr list-images/);
+  assert.doesNotMatch(releaseSource, /aws ecr describe-images/);
   assert.match(releaseSource, /gh release create "v\$VERSION"/);
   assert.match(releaseSource, /\[\[ "\$GITHUB_REF" == refs\/heads\/main \]\]/);
   assert.match(releaseSource, /git\/matching-refs\/tags\/v\$REQUESTED_VERSION/);
