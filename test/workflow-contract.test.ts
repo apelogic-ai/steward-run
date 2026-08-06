@@ -96,8 +96,8 @@ test("CI, round-trip, and release workflows enforce the product contract", async
     releaseSource,
     /cosign verify-blob \\\n\s+--bundle image-signature\.sigstore\.json[\s\S]+?"\$IMAGE_DIGEST"/,
   );
-  assert.match(releaseSource, /for attempt in \{1\.\.3\}/);
-  assert.match(releaseSource, /sleep 5/);
+  assert.match(releaseSource, /for attempt in \{1\.\.6\}/);
+  assert.match(releaseSource, /sleep 10/);
   assert.match(releaseSource, /cosign sign-blob --yes/);
   assert.match(releaseSource, /release-manifest\.json/);
   assert.match(releaseSource, /release-manifest\.sigstore\.json/);
