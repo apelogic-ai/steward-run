@@ -60,6 +60,13 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
       - name: Authenticate to ECR
         run: aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+      - name: Verify governed job-container image
+        run: >-
+          docker run --rm --platform linux/amd64
+          --entrypoint /bin/bash
+          -v "${{ github.workspace }}:/workspace:ro"
+          663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61
+          -c 'test "$(id -un)" = runner && command -v node && command -v git && command -v tar && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
       - name: Reject an existing semantic image tag
         shell: bash
         run: |

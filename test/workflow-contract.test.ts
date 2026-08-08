@@ -4,6 +4,9 @@ import test from "node:test";
 import { parse } from "yaml";
 
 const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml"];
+const governedJobContainer =
+  "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
+  "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -147,7 +150,14 @@ test("the reusable ARC workflow transfers artifacts around an immutable action c
         outputs: Record<string, unknown>;
       };
     };
-    jobs: Record<string, { permissions?: Record<string, string>; "runs-on"?: string }>;
+    jobs: Record<
+      string,
+      {
+        container?: { image?: string; credentials?: unknown };
+        permissions?: Record<string, string>;
+        "runs-on"?: string;
+      }
+    >;
   };
 
   assert.ok(workflow.on.workflow_call);
@@ -175,6 +185,17 @@ test("the reusable ARC workflow transfers artifacts around an immutable action c
   assert.equal(job?.permissions?.contents, "read");
   assert.equal(job?.permissions?.["id-token"], "write");
   assert.equal(job?.["runs-on"], "${{ inputs.runner-label }}");
+  const containerImage = job?.container?.image ?? "";
+  assert.equal(containerImage, governedJobContainer);
+  assert.equal(job?.container?.credentials, undefined);
+  assert.match(
+    containerImage,
+    /^\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/u,
+  );
+  assert.doesNotMatch(containerImage, /\$\{\{/u);
+  assert.doesNotMatch(containerImage.split("@", 1)[0] ?? "", /:[^/]+$/u);
+  assert.equal(workflow.on.workflow_call.inputs["container-image"], undefined);
+  assert.equal(workflow.on.workflow_call.inputs["job-container-image"], undefined);
   assert.match(source, /\^\[0-9a-f\]\{40\}\$/);
   assert.match(source, /repository:\s*apelogic-ai\/steward-run/);
   assert.match(source, /ref:\s*\$\{\{ inputs\.action-commit \}\}/);
@@ -194,6 +215,22 @@ test("the reusable ARC workflow transfers artifacts around an immutable action c
   const action = source.indexOf("uses: ./.steward-run-action");
   const upload = source.indexOf("actions/upload-artifact@");
   assert.ok(download >= 0 && download < action && action < upload);
+});
+
+test("CI and release execute the governed job-container runtime contract", async () => {
+  const ci = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const release = await readFile(
+    new URL("../.github/workflows/release.yml", import.meta.url),
+    "utf8",
+  );
+
+  for (const capability of ["/bin/bash", "command -v node", "command -v git", "command -v tar"])
+    assert.match(ci, new RegExp(capability.replaceAll("/", "\\/"), "u"));
+  assert.match(ci, /\/home\/runner\/externals\/node20\/bin\/node --version/u);
+  assert.match(ci, /node \/workspace\/dist\/index\.cjs/u);
+  assert.match(release, new RegExp(governedJobContainer.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+  assert.match(release, /Verify governed job-container image/u);
+  assert.match(release, /node \/workspace\/dist\/index\.cjs/u);
 });
 
 test("production handoffs pin the reusable workflow to the release commit", async () => {
