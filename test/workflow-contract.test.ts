@@ -50,11 +50,7 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(roundtrip, /runtime-uid.*mock-runtime-uid/);
   assert.match(roundtrip, /identity-exchange-url:\s*\$\{\{ steps\.mock\.outputs\.url \}\}\/v1\/exchange/);
   assert.doesNotMatch(roundtrip, /oidc-audience:/);
-  assert.match(
-    roundtrip,
-    /ACTIONS_ID_TOKEN_REQUEST_URL:\s*\$\{\{ steps\.mock\.outputs\.url \}\}\/oidc\?api-version=1/u,
-  );
-  assert.match(roundtrip, /ACTIONS_ID_TOKEN_REQUEST_TOKEN:\s*request-secret/u);
+  assert.doesNotMatch(roundtrip, /ACTIONS_ID_TOKEN_REQUEST_(?:URL|TOKEN):/u);
   assert.match(roundtrip, /mock-finalized/);
   assert.match(roundtrip, /in\/payload\.bin/);
   assert.match(roundtrip, /out\/payload\.bin/);

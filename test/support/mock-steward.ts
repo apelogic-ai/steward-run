@@ -35,8 +35,9 @@ export interface MockSteward {
   close: () => Promise<void>;
 }
 
-interface MockStewardOptions {
+export interface MockStewardOptions {
   finalizationMarker?: string;
+  acceptExternalGithubOidcToken?: boolean;
 }
 
 async function requestBody(request: IncomingMessage): Promise<Buffer> {
@@ -73,6 +74,21 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 function jwt(payload: Record<string, unknown>): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
   return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.mock-signature`;
+}
+
+function hasExactAudience(token: string, audience: string): boolean {
+  const segments = token.split(".");
+  if (segments.length !== 3 || segments.some((segment) => !segment)) return false;
+  try {
+    const payload: unknown = JSON.parse(
+      Buffer.from(segments[1] ?? "", "base64url").toString("utf8"),
+    );
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+    const value = (payload as Record<string, unknown>).aud;
+    return value === audience || (Array.isArray(value) && value.length === 1 && value[0] === audience);
+  } catch {
+    return false;
+  }
 }
 
 function task(finalized: boolean, phase: "submitted" | "running" | "succeeded") {
@@ -120,6 +136,7 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
     iat: issuedAt,
     sub: "mock-corporate-user",
   });
+  const acceptedSourceTokens = new Set([sourceToken]);
   let payload: Buffer<ArrayBufferLike> | undefined;
   const server = createServer((request, response) => {
     void (async () => {
@@ -141,10 +158,13 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         observations.exchangeRequests += 1;
         const bearer = request.headers.authorization?.replace(/^Bearer /u, "") ?? "";
         if (bearer === stewardToken) observations.stewardTokenAtExchange += 1;
-        if (bearer !== sourceToken) {
+        const externalGithubOidcToken =
+          options.acceptExternalGithubOidcToken && hasExactAudience(bearer, sourceAudience);
+        if (bearer !== sourceToken && !externalGithubOidcToken) {
           json(response, 401, { error: "invalid_token" });
           return;
         }
+        acceptedSourceTokens.add(bearer);
         observations.sourceTokenAtExchange += 1;
         if ((await requestBody(request)).length !== 0) {
           json(response, 400, { error: "invalid_request" });
@@ -160,7 +180,7 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         return;
       }
       const bearer = request.headers.authorization?.replace(/^Bearer /u, "") ?? "";
-      if (bearer === sourceToken) observations.sourceTokenAtSteward += 1;
+      if (acceptedSourceTokens.has(bearer)) observations.sourceTokenAtSteward += 1;
       if (bearer !== stewardToken) {
         json(response, 401, { message: "invalid identity token" });
         return;
@@ -234,7 +254,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const finalizationMarker = process.argv[3];
   if (!portFile) throw new Error("mock server requires a port-file argument");
   if (!finalizationMarker) throw new Error("mock server requires a finalization-marker argument");
-  const mock = await startMockSteward({ finalizationMarker });
+  const mock = await startMockSteward({
+    finalizationMarker,
+    acceptExternalGithubOidcToken: true,
+  });
   await writeFile(portFile, new URL(mock.url).port, "utf8");
   const stop = () => void mock.close().then(() => process.exit(0));
   process.once("SIGINT", stop);

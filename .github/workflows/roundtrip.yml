@@ -52,9 +52,6 @@ jobs:
           echo "url=http://127.0.0.1:$(<"$RUNNER_TEMP/mock-port")" >> "$GITHUB_OUTPUT"
       - id: governed
         uses: ./
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ steps.mock.outputs.url }}/oidc?api-version=1
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: request-secret
         with:
           workflow: copy-smoke
           inputs: in

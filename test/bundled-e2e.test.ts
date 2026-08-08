@@ -6,6 +6,11 @@ import { spawn } from "node:child_process";
 import test from "node:test";
 import { startMockSteward } from "./support/mock-steward.ts";
 
+function jwt(payload: Record<string, unknown>): string {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.test-signature`;
+}
+
 test("the checked-in bundle round-trips a file through the mock Steward API", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "steward-run-bundle-"));
   const outputFile = join(workspace, "github-output");
@@ -112,5 +117,48 @@ test("the mock rejects workflows other than copy-smoke", async () => {
     assert.deepEqual(await response.json(), { message: "mock only supports workflow copy-smoke" });
   } finally {
     await mock.close();
+  }
+});
+
+test("external GitHub OIDC acceptance is audience-bound and explicitly test-only", async () => {
+  const sourceToken = jwt({
+    aud: "apelogic-github-identity-exchange",
+    sub: "github-actions-caller",
+  });
+  const wrongAudienceToken = jwt({ aud: "steward-task-api", sub: "github-actions-caller" });
+  const strictMock = await startMockSteward();
+  try {
+    const response = await fetch(`${strictMock.url}/v1/exchange`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${sourceToken}` },
+    });
+    assert.equal(response.status, 401);
+  } finally {
+    await strictMock.close();
+  }
+
+  const actionsMock = await startMockSteward({ acceptExternalGithubOidcToken: true });
+  try {
+    const wrongAudienceResponse = await fetch(`${actionsMock.url}/v1/exchange`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${wrongAudienceToken}` },
+    });
+    assert.equal(wrongAudienceResponse.status, 401);
+
+    const exchangeResponse = await fetch(`${actionsMock.url}/v1/exchange`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${sourceToken}` },
+    });
+    assert.equal(exchangeResponse.status, 200);
+
+    const stewardResponse = await fetch(`${actionsMock.url}/v1/tasks`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${sourceToken}` },
+    });
+    assert.equal(stewardResponse.status, 401);
+    assert.equal(actionsMock.observations.sourceTokenAtExchange, 1);
+    assert.equal(actionsMock.observations.sourceTokenAtSteward, 1);
+  } finally {
+    await actionsMock.close();
   }
 });
