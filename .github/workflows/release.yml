@@ -60,6 +60,13 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
       - name: Authenticate to ECR
         run: aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+      - name: Verify governed job-container image
+        run: >-
+          docker run --rm --platform linux/amd64
+          --entrypoint /bin/bash
+          -v "${{ github.workspace }}:/workspace:ro"
+          663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61
+          -c 'test "$(id -un)" = runner && command -v node && command -v git && command -v tar && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
       - name: Reject an existing semantic image tag
         shell: bash
         run: |
@@ -89,7 +96,8 @@ jobs:
             release-manifest.json \
             "$VERSION" \
             "$GITHUB_SHA" \
-            "$IMAGE_REPOSITORY"
+            "$IMAGE_REPOSITORY" \
+            "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61"
           image_digest="$(node -e 'const metadata = require("./release-metadata.json"); process.stdout.write(metadata["containerimage.digest"])')"
           echo "IMAGE_DIGEST=$image_digest" >> "$GITHUB_ENV"
       - name: Sign and verify immutable release artifacts
@@ -157,7 +165,8 @@ jobs:
             echo "## Immutable release handoff"
             echo "- Action commit: \`$GITHUB_SHA\`"
             echo "- Reusable workflow: \`$GITHUB_REPOSITORY/.github/workflows/steward-task.yml@$GITHUB_SHA\`"
-            echo "- Runner image: \`$IMAGE_REPOSITORY@$IMAGE_DIGEST\`"
+            echo "- ARC runner image: \`$IMAGE_REPOSITORY@$IMAGE_DIGEST\`"
+            echo "- Governed job-container image: \`663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ always() && hashFiles('release-metadata.json') != '' }}
