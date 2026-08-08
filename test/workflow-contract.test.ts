@@ -7,6 +7,7 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
+const actionCommit = "7e63b071d3652bc9993c545751718ae259ee0208";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -139,7 +140,7 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.doesNotMatch(releaseSource, /--tag[^\n]*latest/);
 });
 
-test("the reusable ARC workflow transfers artifacts around an immutable action checkout", async () => {
+test("the reusable ARC workflow transfers artifacts around an immutable remote action", async () => {
   const source = await readFile(
     new URL("../.github/workflows/steward-task.yml", import.meta.url),
     "utf8",
@@ -163,7 +164,6 @@ test("the reusable ARC workflow transfers artifacts around an immutable action c
 
   assert.ok(workflow.on.workflow_call);
   for (const name of [
-    "action-commit",
     "coding-agent-runtime",
     "identity-exchange-url",
     "input-artifact",
@@ -174,7 +174,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable action c
   ]) {
     assert.equal(workflow.on.workflow_call.inputs[name]?.type, "string", name);
   }
-  assert.equal(workflow.on.workflow_call.inputs["action-commit"]?.required, true);
+  assert.equal(workflow.on.workflow_call.inputs["action-commit"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["identity-exchange-url"]?.required, true);
   assert.equal(workflow.on.workflow_call.inputs["runner-label"]?.required, true);
   assert.deepEqual(
@@ -197,13 +197,12 @@ test("the reusable ARC workflow transfers artifacts around an immutable action c
   assert.doesNotMatch(containerImage.split("@", 1)[0] ?? "", /:[^/]+$/u);
   assert.equal(workflow.on.workflow_call.inputs["container-image"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["job-container-image"], undefined);
-  assert.match(source, /\^\[0-9a-f\]\{40\}\$/);
-  assert.match(source, /repository:\s*apelogic-ai\/steward-run/);
-  assert.match(source, /ref:\s*\$\{\{ inputs\.action-commit \}\}/);
+  assert.doesNotMatch(source, /actions\/checkout@|inputs\.action-commit|\.steward-run-action/u);
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /name:\s*\$\{\{ inputs\.input-artifact \}\}/);
   assert.match(source, /path:\s*in/);
-  assert.match(source, /uses:\s*\.\/\.steward-run-action/);
+  assert.match(source, new RegExp(`uses:\\s*apelogic-ai/steward-run@${actionCommit}`, "u"));
+  assert.doesNotMatch(source, /uses:\s*apelogic-ai\/steward-run@\$\{\{/u);
   assert.match(source, /identity-exchange-url:\s*\$\{\{ inputs\.identity-exchange-url \}\}/);
   assert.match(source, /inputs:\s*in/);
   assert.match(source, /outputs:\s*out/);
@@ -213,7 +212,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable action c
   assert.doesNotMatch(source, /oidc-audience|bearer-token|identity\.dev|cluster|secret/iu);
 
   const download = source.indexOf("actions/download-artifact@");
-  const action = source.indexOf("uses: ./.steward-run-action");
+  const action = source.indexOf(`uses: apelogic-ai/steward-run@${actionCommit}`);
   const upload = source.indexOf("actions/upload-artifact@");
   assert.ok(download >= 0 && download < action && action < upload);
 });
@@ -267,10 +266,13 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
   assert.doesNotMatch(productionHandoffs, /steward-task\.yml@main/u);
   assert.match(
     readme,
-    /apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml@<IMMUTABLE_RELEASE_COMMIT>/u,
+    /apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml@<WORKFLOW_COMMIT>/u,
   );
+  assert.doesNotMatch(readme, /action-commit:/u);
+  assert.match(releaseWorkflow, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));
   assert.match(
     releaseWorkflow,
     /Reusable workflow:.*steward-task\.yml@\$GITHUB_SHA/u,
   );
+  assert.match(releaseWorkflow, /Action commit:.*\$ACTION_COMMIT/u);
 });
