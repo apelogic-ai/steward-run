@@ -26,6 +26,7 @@ jobs:
       ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
       IMAGE_REPOSITORY: ${{ vars.ECR_REGISTRY }}/${{ vars.ECR_REPOSITORY }}
       COSIGN_EXPERIMENTAL: "1"
+      ACTION_COMMIT: 7e63b071d3652bc9993c545751718ae259ee0208
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Validate release request
@@ -37,6 +38,11 @@ jobs:
           [[ "$GITHUB_REF" == refs/heads/main ]]
           [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$(node -p 'require("./package.json").version')" == "$REQUESTED_VERSION" ]]
+          [[ "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ACTION_COMMIT" != "$GITHUB_SHA" ]]
+          gh api "repos/$GITHUB_REPOSITORY/commits/$ACTION_COMMIT" --silent
+          grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" \
+            .github/workflows/steward-task.yml
           existing_tags="$(gh api \
             "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v$REQUESTED_VERSION" \
             --jq 'length')"
@@ -88,13 +94,14 @@ jobs:
             --sbom=true \
             --metadata-file release-metadata.json \
             --push .
-      - name: Bind action commit and image digest
+      - name: Bind action and workflow commits to the image digest
         shell: bash
         run: |
           node scripts/write-release-manifest.mjs \
             release-metadata.json \
             release-manifest.json \
             "$VERSION" \
+            "$ACTION_COMMIT" \
             "$GITHUB_SHA" \
             "$IMAGE_REPOSITORY" \
             "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61"
@@ -163,7 +170,7 @@ jobs:
             release-metadata.json
           {
             echo "## Immutable release handoff"
-            echo "- Action commit: \`$GITHUB_SHA\`"
+            echo "- Action commit: \`$ACTION_COMMIT\`"
             echo "- Reusable workflow: \`$GITHUB_REPOSITORY/.github/workflows/steward-task.yml@$GITHUB_SHA\`"
             echo "- ARC runner image: \`$IMAGE_REPOSITORY@$IMAGE_DIGEST\`"
             echo "- Governed job-container image: \`663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61\`"

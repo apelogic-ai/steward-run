@@ -5,6 +5,7 @@ const [
   outputPath,
   version,
   actionCommit,
+  workflowCommit,
   imageRepository,
   governedJobContainerImage,
 ] = process.argv.slice(2);
@@ -14,15 +15,20 @@ if (
   !outputPath ||
   !version ||
   !actionCommit ||
+  !workflowCommit ||
   !imageRepository ||
   !governedJobContainerImage
 ) {
   throw new Error(
-    "usage: write-release-manifest <build-metadata> <output> <version> <commit> <image-repository> <governed-job-container-image>",
+    "usage: write-release-manifest <build-metadata> <output> <version> <action-commit> <workflow-commit> <image-repository> <governed-job-container-image>",
   );
 }
 if (!/^\d+\.\d+\.\d+$/u.test(version)) throw new Error("release version is invalid");
 if (!/^[a-f0-9]{40}$/u.test(actionCommit)) throw new Error("release action commit is invalid");
+if (!/^[a-f0-9]{40}$/u.test(workflowCommit)) throw new Error("release workflow commit is invalid");
+if (actionCommit === workflowCommit) {
+  throw new Error("release action and workflow commits must differ");
+}
 if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]+$/u.test(imageRepository) || imageRepository.includes("@")) {
   throw new Error("release image repository is invalid");
 }
@@ -47,15 +53,17 @@ if (typeof digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(digest)) {
 }
 
 const manifest = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   version,
+  action_commit: actionCommit,
+  workflow_commit: workflowCommit,
   action: { commit: actionCommit },
   reusableWorkflow: {
     repository: "apelogic-ai/steward-run",
     path: ".github/workflows/steward-task.yml",
-    commit: actionCommit,
+    commit: workflowCommit,
     immutableReference:
-      `apelogic-ai/steward-run/.github/workflows/steward-task.yml@${actionCommit}`,
+      `apelogic-ai/steward-run/.github/workflows/steward-task.yml@${workflowCommit}`,
   },
   runnerImage: {
     role: "arc-runner",

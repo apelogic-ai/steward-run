@@ -30,8 +30,9 @@ See `docs/steward-run-spec.md` for the product boundary.
 ## Usage
 
 The reusable workflow requires `id-token: write` and transfers caller inputs and returned outputs
-as artifacts. Pin both the workflow call and `action-commit` to the full commit SHA published in
-the signed release manifest. GitHub emits that exact immutable reference as `job_workflow_ref`.
+as artifacts. Pin the workflow call to `workflow_commit` from the signed release manifest. The
+workflow itself pins the remote action to the distinct immutable `action_commit`; callers cannot
+override it. GitHub emits the workflow SHA as `job_workflow_ref`.
 
 ```yaml
 jobs:
@@ -39,9 +40,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: apelogic-ai/steward-run/.github/workflows/steward-task.yml@<IMMUTABLE_RELEASE_COMMIT>
+    uses: apelogic-ai/steward-run/.github/workflows/steward-task.yml@<WORKFLOW_COMMIT>
     with:
-      action-commit: <IMMUTABLE_RELEASE_COMMIT>
       runner-label: ${{ vars.STEWARD_RUNNER_LABEL }}
       workflow: cve-triage
       input-artifact: request
@@ -58,7 +58,7 @@ artifact steps. All action paths are relative to `GITHUB_WORKSPACE`.
 The governed job always runs inside the signed v0.3.0 `steward-run` image pinned by its full ECR
 digest in `steward-task.yml`. The image is not a workflow input and the workflow supplies no
 registry credential; Kubernetes-mode ARC nodes use their scoped ECR pull access. The container
-provides Bash, Node, Git, and tar for checkout, artifact, and composite-action steps.
+provides Bash, Node, Git, and tar for artifact and composite-action steps.
 
 `steward-ca-certificate-file` is an optional filesystem path to a PEM CA bundle used only for
 Steward API TLS. Missing or malformed files, an untrusted chain, and hostname mismatch fail closed.
@@ -78,7 +78,7 @@ never be supplied as action inputs.
 Dispatching the release workflow with version `X.Y.Z` builds `linux/amd64` under a unique candidate
 tag and attaches provenance and an SBOM. The workflow keylessly signs the OCI index using OCI 1.1,
 verifies both the local bundle and registry referrer, and signs a manifest that distinguishes the
-reusable workflow commit, action commit, ARC runner image digest, and governed job-container image
+reusable `workflow_commit`, remote `action_commit`, ARC runner image digest, and governed job-container image
 digest. Only then does it create the final `X.Y.Z` image tag and `vX.Y.Z` GitHub release, with the
 manifest and Sigstore bundles attached for GitOps consumption. `AWS_REGION`,
 `AWS_ROLE_ARN`, `ECR_REGISTRY`, and `ECR_REPOSITORY` are repository variables; release

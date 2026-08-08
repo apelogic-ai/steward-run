@@ -140,10 +140,11 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 - **Hard dependency: Steward's Task API and identity exchange boundary.** The six-operation Task
   lifecycle and service groups are implemented. Production callers use the reusable
   `.github/workflows/steward-task.yml` workflow so GitHub emits an allowlistable
-  `job_workflow_ref`. The call is pinned to the full release commit recorded in the signed release
-  manifest; the exchange emits a short-lived `steward-task-api` token.
-- **Consumed by `gitops`** (scale set pins the image) and **by workflows** (`uses:
-  apelogic-ai/steward-run@vX`).
+  `job_workflow_ref`. The call is pinned to `workflow_commit` from the signed release manifest;
+  that workflow pins the remote action to the distinct `action_commit`, and the exchange emits a
+  short-lived `steward-task-api` token.
+- **Consumed by `gitops`** (scale set pins the image) and **by workflows** (the reusable workflow
+  internally uses `apelogic-ai/steward-run@<action_commit>`).
 - **Verified contract:** `contracts/steward-run-v1.openapi.yaml` records Steward's `/v1/tasks`
   submission, input, execute, status, output, and finalization operations. Workspace-relative
   input and output tar archives are limited to 64 MiB each.

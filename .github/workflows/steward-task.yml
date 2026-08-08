@@ -3,10 +3,6 @@ name: Governed Steward task
 on:
   workflow_call:
     inputs:
-      action-commit:
-        description: Immutable steward-run commit
-        required: true
-        type: string
       runner-label:
         description: Runner label for the governed job
         required: true
@@ -70,27 +66,12 @@ jobs:
       task-uid: ${{ steps.task.outputs.task-uid }}
       runtime-uid: ${{ steps.task.outputs.runtime-uid }}
     steps:
-      - name: Validate immutable action commit
-        shell: bash
-        env:
-          ACTION_COMMIT: ${{ inputs.action-commit }}
-        run: |
-          if [[ ! "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "action-commit must be a full lowercase commit SHA" >&2
-            exit 1
-          fi
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          repository: apelogic-ai/steward-run
-          ref: ${{ inputs.action-commit }}
-          path: .steward-run-action
-          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: ./.steward-run-action
+        uses: apelogic-ai/steward-run@7e63b071d3652bc9993c545751718ae259ee0208
         with:
           workflow: ${{ inputs.workflow }}
           inputs: in
