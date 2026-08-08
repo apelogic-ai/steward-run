@@ -37,8 +37,9 @@ jobs:
           --tag steward-run:ci .
       - name: Smoke-test ARC and governed job-container contracts
         run: >-
-          docker run --rm --platform linux/amd64 --entrypoint /bin/bash steward-run:ci
+          docker run --rm --platform linux/amd64 --entrypoint /bin/bash
           -v "${{ github.workspace }}:/workspace:ro"
+          steward-run:ci
           -c 'test "$(id -un)" = runner && test -x /home/runner/run.sh && test -d /home/runner/k8s && ! command -v curl && ! command -v docker && ! command -v dockerd && ! command -v runc && command -v node && command -v git && command -v tar && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
       - name: Export image vulnerability report
         run: >-

@@ -50,6 +50,11 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(roundtrip, /runtime-uid.*mock-runtime-uid/);
   assert.match(roundtrip, /identity-exchange-url:\s*\$\{\{ steps\.mock\.outputs\.url \}\}\/v1\/exchange/);
   assert.doesNotMatch(roundtrip, /oidc-audience:/);
+  assert.match(
+    roundtrip,
+    /ACTIONS_ID_TOKEN_REQUEST_URL:\s*\$\{\{ steps\.mock\.outputs\.url \}\}\/oidc\?api-version=1/u,
+  );
+  assert.match(roundtrip, /ACTIONS_ID_TOKEN_REQUEST_TOKEN:\s*request-secret/u);
   assert.match(roundtrip, /mock-finalized/);
   assert.match(roundtrip, /in\/payload\.bin/);
   assert.match(roundtrip, /out\/payload\.bin/);
@@ -228,9 +233,27 @@ test("CI and release execute the governed job-container runtime contract", async
     assert.match(ci, new RegExp(capability.replaceAll("/", "\\/"), "u"));
   assert.match(ci, /\/home\/runner\/externals\/node20\/bin\/node --version/u);
   assert.match(ci, /node \/workspace\/dist\/index\.cjs/u);
+  const ciContainerProbe = ci.slice(
+    ci.indexOf("- name: Smoke-test ARC and governed job-container contracts"),
+    ci.indexOf("- name: Export image vulnerability report"),
+  );
+  assert.ok(ciContainerProbe.indexOf('-v "${{ github.workspace }}:/workspace:ro"') >= 0);
+  assert.ok(ciContainerProbe.indexOf('-v "${{ github.workspace }}:/workspace:ro"') <
+    ciContainerProbe.indexOf("steward-run:ci"));
   assert.match(release, new RegExp(governedJobContainer.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
   assert.match(release, /Verify governed job-container image/u);
   assert.match(release, /node \/workspace\/dist\/index\.cjs/u);
+});
+
+test("mock OIDC routing is isolated from production workflows", async () => {
+  const productionSources = await Promise.all(
+    ["../action.yml", "../.github/workflows/ci.yml", "../.github/workflows/release.yml", "../.github/workflows/steward-task.yml"].map(
+      (path) => readFile(new URL(path, import.meta.url), "utf8"),
+    ),
+  );
+  for (const source of productionSources) {
+    assert.doesNotMatch(source, /request-secret|\/oidc\?api-version=1/u);
+  }
 });
 
 test("production handoffs pin the reusable workflow to the release commit", async () => {
