@@ -71,6 +71,11 @@ Flow: `download-artifact` (regular step) → `steward-run` (materialise in → A
 → collect out) → `upload-artifact` (regular step). The agentic step is invisible to the
 surrounding YAML; the workspace is the contract.
 
+The reusable workflow supplies a job-level container for Kubernetes-mode ARC. Its ECR image is a
+literal full digest in the workflow, cannot be selected by the caller, and relies on node-level
+pull authorization rather than workflow credentials. The container must provide Bash, Node, Git,
+and tar so JavaScript actions and the composite action run inside the enforced job container.
+
 ---
 
 ## 4. The thin-shell discipline (a CI check, not a principle)
@@ -125,7 +130,8 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
   a weld), base skills, and the `steward-run` prerequisites.
 - **No secrets, minimal packages** (the modern runner image ships lean on purpose; add only what
   the agent needs). Multi-stage build; pinned digests.
-- Published to ECR OCI by version. `gitops`' scale set pins this tag.
+- Published to ECR OCI by version. `gitops` pins the ARC runner by digest; the governed workflow
+  independently pins its job-container image by digest.
 
 ---
 

@@ -55,6 +55,11 @@ The caller first uploads `request`; the reusable job downloads it under `in/`, r
 and uploads `out/` as `result`. Direct action use remains available when another workflow owns the
 artifact steps. All action paths are relative to `GITHUB_WORKSPACE`.
 
+The governed job always runs inside the signed v0.3.0 `steward-run` image pinned by its full ECR
+digest in `steward-task.yml`. The image is not a workflow input and the workflow supplies no
+registry credential; Kubernetes-mode ARC nodes use their scoped ECR pull access. The container
+provides Bash, Node, Git, and tar for checkout, artifact, and composite-action steps.
+
 `steward-ca-certificate-file` is an optional filesystem path to a PEM CA bundle used only for
 Steward API TLS. Missing or malformed files, an untrusted chain, and hostname mismatch fail closed.
 Remote Steward URLs must use HTTPS; plaintext HTTP is accepted only for loopback tests.
@@ -72,9 +77,9 @@ never be supplied as action inputs.
 
 Dispatching the release workflow with version `X.Y.Z` builds `linux/amd64` under a unique candidate
 tag and attaches provenance and an SBOM. The workflow keylessly signs the OCI index using OCI 1.1,
-verifies both the local bundle and registry referrer, and signs a manifest that binds the digest,
-action, and reusable workflow to the immutable release commit. Only then does it create the final
-`X.Y.Z` image tag and `vX.Y.Z` GitHub release, with the manifest and Sigstore bundles attached for
-GitOps consumption. `AWS_REGION`,
+verifies both the local bundle and registry referrer, and signs a manifest that distinguishes the
+reusable workflow commit, action commit, ARC runner image digest, and governed job-container image
+digest. Only then does it create the final `X.Y.Z` image tag and `vX.Y.Z` GitHub release, with the
+manifest and Sigstore bundles attached for GitOps consumption. `AWS_REGION`,
 `AWS_ROLE_ARN`, `ECR_REGISTRY`, and `ECR_REPOSITORY` are repository variables; release
 authentication uses GitHub OIDC.
