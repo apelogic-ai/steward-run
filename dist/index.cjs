@@ -3285,7 +3285,7 @@ function writeBody(request, body) {
 function privateCaFetch(ca) {
   return async (input, init = {}) => {
     const url = new URL(input instanceof Request ? input.url : input);
-    const method = init.method ?? (input instanceof Request ? input.method : "GET");
+    const method = (init.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const requestHeaders = new Headers(
       init.headers ?? (input instanceof Request ? input.headers : void 0)
     );
@@ -3293,13 +3293,47 @@ function privateCaFetch(ca) {
       const handleResponse = (response) => {
         const status = response.statusCode ?? 500;
         const noBody = method === "HEAD" || status === 204 || status === 205 || status === 304;
-        const body = noBody ? null : import_node_stream2.Readable.toWeb(response);
+        const responseInit = {
+          status,
+          ...response.statusMessage ? { statusText: response.statusMessage } : {},
+          headers: headersFrom(response)
+        };
+        if (noBody) {
+          let settled = false;
+          const cleanup = () => {
+            response.off("end", onEnd);
+            response.off("error", onError);
+            response.off("aborted", onAborted);
+            response.off("close", onClose);
+          };
+          const onEnd = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(new Response(null, responseInit));
+          };
+          const onError = (error) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(error);
+          };
+          const onAborted = () => onError(new Error("Steward response was aborted"));
+          const onClose = () => {
+            if (!response.complete) onError(new Error("Steward response closed prematurely"));
+          };
+          response.once("end", onEnd);
+          response.once("error", onError);
+          response.once("aborted", onAborted);
+          response.once("close", onClose);
+          response.resume();
+          return;
+        }
         resolve(
-          new Response(body, {
-            status,
-            ...response.statusMessage ? { statusText: response.statusMessage } : {},
-            headers: headersFrom(response)
-          })
+          new Response(
+            import_node_stream2.Readable.toWeb(response),
+            responseInit
+          )
         );
       };
       const outgoingHeaders = {};

@@ -7,7 +7,7 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "3f1e552cebe2b8b10f4634ea041f7e029cb99155";
+const actionCommit = "4df2f115eba840dde07d9533d296015a9695608d";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -158,6 +158,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
         container?: { image?: string; credentials?: unknown };
         permissions?: Record<string, string>;
         "runs-on"?: string;
+        "timeout-minutes"?: number;
       }
     >;
   };
@@ -186,6 +187,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.equal(job?.permissions?.contents, "read");
   assert.equal(job?.permissions?.["id-token"], "write");
   assert.equal(job?.["runs-on"], "${{ inputs.runner-label }}");
+  assert.equal(job?.["timeout-minutes"], 15);
   const containerImage = job?.container?.image ?? "";
   assert.equal(containerImage, governedJobContainer);
   assert.equal(job?.container?.credentials, undefined);

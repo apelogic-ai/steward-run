@@ -56,6 +56,7 @@ on:
 jobs:
   governed:
     runs-on: ${{ inputs.runner-label }}
+    timeout-minutes: 15
     container:
       image: 663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61
     permissions:
@@ -71,7 +72,7 @@ jobs:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: apelogic-ai/steward-run@3f1e552cebe2b8b10f4634ea041f7e029cb99155
+        uses: apelogic-ai/steward-run@4df2f115eba840dde07d9533d296015a9695608d
         with:
           workflow: ${{ inputs.workflow }}
           inputs: in
