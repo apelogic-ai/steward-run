@@ -2827,11 +2827,19 @@ async function writeOutputFile(stream, workspace, relative, mode) {
 async function extractOutputArchive(archive, workspace, declaredPaths) {
   const outputs = declaredPaths.map(normalizeWorkspacePath);
   const seen = /* @__PURE__ */ new Set();
+  let sawRootDirectory = false;
   const extract = import_tar_stream.default.extract();
   extract.on("entry", (header, stream, next) => {
     stream.on("error", () => void 0);
     void (async () => {
       try {
+        if (header.name === "./" && header.type === "directory") {
+          if (sawRootDirectory) throw new Error("duplicate archive entry: ./");
+          sawRootDirectory = true;
+          stream.resume();
+          next();
+          return;
+        }
         const relative = normalizeArchivePath(header.name);
         if (!isDeclaredOutput(relative, outputs)) {
           throw new Error(`archive path is not a declared output: ${relative}`);
