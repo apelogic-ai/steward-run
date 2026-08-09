@@ -209,6 +209,37 @@ function isRetryableStatus(status: number): boolean {
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
 
+function transportErrorCategory(
+  error: unknown,
+): "network" | "request body" | "TLS" | "transport" {
+  const candidates: unknown[] = [error];
+  if (error && typeof error === "object" && "cause" in error) candidates.push(error.cause);
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const code = "code" in candidate && typeof candidate.code === "string" ? candidate.code : "";
+    if (/(?:CERT|TLS|SSL|ALTNAME|SELF_SIGNED|UNABLE_TO_VERIFY)/u.test(code)) {
+      return "TLS";
+    }
+    if (
+      [
+        "ECONNABORTED",
+        "ECONNREFUSED",
+        "ECONNRESET",
+        "ENETUNREACH",
+        "ENOTFOUND",
+        "EPIPE",
+        "ETIMEDOUT",
+      ].includes(code)
+    ) {
+      return "network";
+    }
+  }
+  if (error instanceof Error && error.message === "unsupported Steward request body") {
+    return "request body";
+  }
+  return "transport";
+}
+
 export class StewardClient {
   readonly #baseUrl: URL;
   readonly #getToken: () => Promise<string>;
@@ -245,7 +276,9 @@ export class StewardClient {
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") throw error;
         if (attempt + 1 === this.#maxAttempts) {
-          throw new Error(`Steward request ${method} ${path} failed after retries`);
+          throw new Error(
+            `Steward request ${method} ${path} failed after retries (${transportErrorCategory(error)})`,
+          );
         }
         await this.#sleep(retryDelay(undefined, attempt));
         continue;
