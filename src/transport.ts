@@ -37,6 +37,18 @@ function headersFrom(response: IncomingMessage): Headers {
   return headers;
 }
 
+function pipeBody(
+  body: Readable,
+  request: ReturnType<typeof httpsRequest>,
+): void {
+  body.once("error", (error) => request.destroy(error));
+  body.pipe(request);
+}
+
+function isAsyncIterableBody(value: object): value is AsyncIterable<Uint8Array | string> {
+  return Symbol.asyncIterator in value && typeof value[Symbol.asyncIterator] === "function";
+}
+
 function writeBody(request: ReturnType<typeof httpsRequest>, body: unknown): void {
   if (body === undefined || body === null) {
     request.end();
@@ -49,9 +61,16 @@ function writeBody(request: ReturnType<typeof httpsRequest>, body: unknown): voi
   } else if (body instanceof URLSearchParams) {
     request.end(body.toString());
   } else if (body instanceof Readable) {
-    body.pipe(request);
+    pipeBody(body, request);
+  } else if (typeof body === "object" && isAsyncIterableBody(body)) {
+    // tar-stream Pack objects are backed by streamx. They satisfy the Node
+    // async-iterable stream contract, but are not instanceof node:stream.Readable.
+    pipeBody(Readable.from(body), request);
   } else if (typeof body === "object" && "getReader" in body) {
-    Readable.fromWeb(body as import("node:stream/web").ReadableStream).pipe(request);
+    pipeBody(
+      Readable.fromWeb(body as import("node:stream/web").ReadableStream),
+      request,
+    );
   } else {
     request.destroy(new Error("unsupported Steward request body"));
   }

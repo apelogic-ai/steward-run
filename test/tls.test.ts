@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import type { RequestListener } from "node:http";
 import { createServer, type Server } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
+import tar from "tar-stream";
+import { createInputArchive } from "../src/archive.ts";
 import { StewardClient, type Task } from "../src/steward-client.ts";
 import { createStewardFetch } from "../src/transport.ts";
 
@@ -103,13 +106,15 @@ async function issueServerCertificate(
 async function startTlsServer(
   certificatePath: string,
   keyPath: string,
+  listener?: RequestListener,
 ): Promise<{ server: Server; url: string }> {
   const server = createServer(
     { cert: await readFile(certificatePath), key: await readFile(keyPath) },
-    (_request, response) => {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify(task));
-    },
+    listener ??
+      ((_request, response) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(task));
+      }),
   );
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -118,6 +123,32 @@ async function startTlsServer(
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("TLS test server has no address");
   return { server, url: `https://127.0.0.1:${address.port}` };
+}
+
+async function collectRequest(request: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+async function readArchiveFiles(archive: Buffer): Promise<Map<string, Buffer>> {
+  const files = new Map<string, Buffer>();
+  const extract = tar.extract();
+  extract.on("entry", (header, stream, next) => {
+    const chunks: Buffer[] = [];
+    stream.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+    stream.on("end", () => {
+      if (header.type === "file") files.set(header.name, Buffer.concat(chunks));
+      next();
+    });
+    stream.resume();
+  });
+  await new Promise<void>((resolve, reject) => {
+    extract.once("finish", resolve);
+    extract.once("error", reject);
+    extract.end(archive);
+  });
+  return files;
 }
 
 function close(server: Server): Promise<void> {
@@ -149,7 +180,7 @@ test("a trusted private CA succeeds while a wrong CA and hostname mismatch fail 
       fetch: await createStewardFetch(wrongAuthority.certificate),
       maxAttempts: 1,
     });
-    await assert.rejects(wrongCaClient.getTask(task.taskUid), /failed after retries/);
+    await assert.rejects(wrongCaClient.getTask(task.taskUid), /failed after retries \(TLS\)/);
 
     const hostnameClient = new StewardClient({
       baseUrl: mismatchServer.url,
@@ -157,9 +188,67 @@ test("a trusted private CA succeeds while a wrong CA and hostname mismatch fail 
       fetch: await createStewardFetch(authority.certificate),
       maxAttempts: 1,
     });
-    await assert.rejects(hostnameClient.getTask(task.taskUid), /failed after retries/);
+    await assert.rejects(hostnameClient.getTask(task.taskUid), /failed after retries \(TLS\)/);
   } finally {
     await Promise.all([close(trustedServer.server), close(mismatchServer.server)]);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("private-CA uploads stream real input archives and recreate them for retries", async () => {
+  const root = await mkdtemp(join(tmpdir(), "steward-run-tls-upload-"));
+  const workspace = join(root, "workspace");
+  const authority = await createCertificateAuthority(root, "upload");
+  const matching = await issueServerCertificate(root, authority, "matching", "IP:127.0.0.1");
+  const received: Buffer[] = [];
+  let resolveServerError: ((error: unknown) => void) | undefined;
+  const serverError = new Promise<unknown>((resolve) => {
+    resolveServerError = resolve;
+  });
+  const tlsServer = await startTlsServer(
+    matching.certificate,
+    matching.key,
+    (request, response) => {
+      void collectRequest(request)
+        .then((body) => {
+          received.push(body);
+          response.writeHead(received.length === 1 ? 503 : 204);
+          response.end();
+        })
+        .catch((error: unknown) => {
+          resolveServerError?.(error);
+          response.destroy();
+        });
+    },
+  );
+  try {
+    await mkdir(join(workspace, "in"), { recursive: true });
+    const payload = Buffer.from("private CA archive payload\n", "utf8");
+    await writeFile(join(workspace, "in", "payload.bin"), payload);
+    let archiveCreations = 0;
+    const client = new StewardClient({
+      baseUrl: tlsServer.url,
+      getToken: async () => "token",
+      fetch: await createStewardFetch(authority.certificate),
+      sleep: async () => undefined,
+      maxAttempts: 2,
+    });
+
+    await Promise.race([
+      client.uploadTaskInputs(task.taskUid, async () => {
+        archiveCreations += 1;
+        return createInputArchive(workspace, ["in"]);
+      }),
+      serverError.then((error) => Promise.reject(error)),
+    ]);
+
+    assert.equal(archiveCreations, 2);
+    assert.equal(received.length, 2);
+    assert.deepEqual(received[0], received[1]);
+    const files = await readArchiveFiles(received[1] ?? Buffer.alloc(0));
+    assert.deepEqual(files.get("in/payload.bin"), payload);
+  } finally {
+    await close(tlsServer.server);
     await rm(root, { recursive: true, force: true });
   }
 });
