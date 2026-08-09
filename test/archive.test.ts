@@ -67,9 +67,27 @@ test("declared outputs round-trip without writing elsewhere", async () => {
   }
 });
 
+test("output extraction accepts only the canonical tar root directory entry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "steward-run-root-entry-"));
+  try {
+    const input = await archive([
+      { name: "./", type: "directory" },
+      { name: "./out", type: "directory" },
+      { name: "./out/payload.bin", body: "governed" },
+    ]);
+    await extractOutputArchive(input, root, ["out"]);
+    assert.equal(await readFile(join(root, "out", "payload.bin"), "utf8"), "governed");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("output extraction rejects traversal, undeclared paths, links, and symlink parents", async () => {
   const cases = [
+    { entry: { name: "./", body: "bad" }, error: /unsafe archive path/ },
+    { entry: { name: ".", type: "directory" as const }, error: /unsafe archive path/ },
     { entry: { name: "../escape", body: "bad" }, error: /unsafe archive path/ },
+    { entry: { name: "/absolute", body: "bad" }, error: /unsafe archive path/ },
     { entry: { name: "other/file", body: "bad" }, error: /not a declared output/ },
     { entry: { name: "results/link", type: "symlink" as const }, error: /archive entry type/ },
   ];
@@ -83,6 +101,23 @@ test("output extraction rejects traversal, undeclared paths, links, and symlink 
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  }
+
+  const duplicateRoot = await mkdtemp(join(tmpdir(), "steward-run-duplicate-root-"));
+  try {
+    await assert.rejects(
+      extractOutputArchive(
+        await archive([
+          { name: "./", type: "directory" },
+          { name: "./", type: "directory" },
+        ]),
+        duplicateRoot,
+        ["results"],
+      ),
+      /duplicate archive entry/,
+    );
+  } finally {
+    await rm(duplicateRoot, { recursive: true, force: true });
   }
 
   const root = await mkdtemp(join(tmpdir(), "steward-run-parent-"));
@@ -102,4 +137,3 @@ test("output extraction rejects traversal, undeclared paths, links, and symlink 
     await rm(outside, { recursive: true, force: true });
   }
 });
-

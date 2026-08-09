@@ -217,6 +217,7 @@ export async function extractOutputArchive(
 ): Promise<void> {
   const outputs = declaredPaths.map(normalizeWorkspacePath);
   const seen = new Set<string>();
+  let sawRootDirectory = false;
   const extract = tar.extract();
   extract.on("entry", (header, stream, next) => {
     // The extractor destroys the active entry stream when `next(error)` fails the
@@ -224,6 +225,17 @@ export async function extractOutputArchive(
     stream.on("error", () => undefined);
     void (async () => {
       try {
+        // GNU tar and compatible producers commonly emit this harmless root
+        // directory header before the actual output entries. Accept only its
+        // canonical spelling and only as a directory; all other empty/root-like
+        // names still pass through the normal unsafe-path rejection below.
+        if (header.name === "./" && header.type === "directory") {
+          if (sawRootDirectory) throw new Error("duplicate archive entry: ./");
+          sawRootDirectory = true;
+          stream.resume();
+          next();
+          return;
+        }
         const relative = normalizeArchivePath(header.name);
         if (!isDeclaredOutput(relative, outputs)) {
           throw new Error(`archive path is not a declared output: ${relative}`);
