@@ -56,6 +56,7 @@ on:
 jobs:
   governed:
     runs-on: ${{ inputs.runner-label }}
+    timeout-minutes: 15
     container:
       image: 663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61
     permissions:

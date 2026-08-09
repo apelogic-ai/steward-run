@@ -158,6 +158,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
         container?: { image?: string; credentials?: unknown };
         permissions?: Record<string, string>;
         "runs-on"?: string;
+        "timeout-minutes"?: number;
       }
     >;
   };
@@ -186,6 +187,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.equal(job?.permissions?.contents, "read");
   assert.equal(job?.permissions?.["id-token"], "write");
   assert.equal(job?.["runs-on"], "${{ inputs.runner-label }}");
+  assert.equal(job?.["timeout-minutes"], 15);
   const containerImage = job?.container?.image ?? "";
   assert.equal(containerImage, governedJobContainer);
   assert.equal(job?.container?.credentials, undefined);

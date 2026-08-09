@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { RequestListener } from "node:http";
 import { createServer, type Server } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 import tar from "tar-stream";
@@ -248,6 +249,63 @@ test("private-CA uploads stream real input archives and recreate them for retrie
     const files = await readArchiveFiles(received[1] ?? Buffer.alloc(0));
     assert.deepEqual(files.get("in/payload.bin"), payload);
   } finally {
+    await close(tlsServer.server);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a private-CA 204 response does not keep a failed action process alive", async () => {
+  const root = await mkdtemp(join(tmpdir(), "steward-run-tls-liveness-"));
+  const authority = await createCertificateAuthority(root, "liveness");
+  const matching = await issueServerCertificate(root, authority, "matching", "IP:127.0.0.1");
+  const tlsServer = await startTlsServer(
+    matching.certificate,
+    matching.key,
+    (request, response) => {
+      void collectRequest(request)
+        .then(() => response.writeHead(204).end())
+        .catch(() => response.destroy());
+    },
+  );
+  let timeout: NodeJS.Timeout | undefined;
+  let timedOut = false;
+  try {
+    const child = spawn(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        fileURLToPath(new URL("support/private-ca-204-child.ts", import.meta.url)),
+        tlsServer.url,
+        authority.certificate,
+      ],
+      { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    const result = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+      (resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", (code, signal) => resolve({ code, signal }));
+      },
+    );
+    timeout = setTimeout(() => {
+      timedOut = true;
+      // Release the deliberately external server-side connection so a broken
+      // child can still terminate without process.exit() or a kill signal.
+      tlsServer.server.closeAllConnections();
+    }, 3_000);
+    const exited = await result;
+
+    assert.equal(timedOut, false, "child retained the private-CA response socket");
+    assert.equal(exited.code, 23);
+    assert.equal(exited.signal, null);
+    assert.match(stderr, /deliberate post-upload failure/u);
+  } finally {
+    if (timeout) clearTimeout(timeout);
     await close(tlsServer.server);
     await rm(root, { recursive: true, force: true });
   }
