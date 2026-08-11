@@ -2532,6 +2532,109 @@ function readActionConfig(environment) {
   };
 }
 
+// src/failure-metadata.ts
+var FAILURE_METADATA_VERSION = "steward-run.failure/v1";
+var failurePhases = ["succeeded", "failed", "cancelled", "unavailable"];
+var failureCategories = [
+  "provider-connection",
+  "provider-token-grant",
+  "provider-authorization",
+  "provider-upstream",
+  "assertion-mismatch",
+  "workflow-cleanup",
+  "authentication",
+  "authorization",
+  "configuration",
+  "dependency",
+  "input-output",
+  "runtime",
+  "timeout",
+  "execution",
+  "cancelled",
+  "unknown"
+];
+var cleanupCategories = [
+  "confirmed",
+  "not-required",
+  "request-failed",
+  "confirmation-timeout",
+  "identity-mismatch",
+  "unknown"
+];
+var agentExitCategories = /* @__PURE__ */ new Map([
+  [70, "provider-connection"],
+  [71, "provider-token-grant"],
+  [72, "provider-authorization"],
+  [73, "provider-upstream"],
+  [74, "assertion-mismatch"],
+  [75, "workflow-cleanup"]
+]);
+function classifyFailureReason(reason) {
+  if (reason === void 0) return "unknown";
+  const normalized = reason.trim().toLowerCase();
+  const agentExit = /^task agent exited with code ([0-9]+)$/u.exec(normalized);
+  if (agentExit) {
+    const code = Number(agentExit[1]);
+    return agentExitCategories.get(code) ?? "execution";
+  }
+  if (/\b(timeout|timed out|deadline)\b/u.test(normalized)) return "timeout";
+  if (/\b(unauthenticated|authentication|oidc|token|credential)\b/u.test(normalized)) {
+    return "authentication";
+  }
+  if (/\b(unauthorized|authorization|forbidden|denied|policy|grant)\b/u.test(normalized)) {
+    return "authorization";
+  }
+  if (/\b(config|configuration|profile|catalog|workflow)\b/u.test(normalized)) {
+    return "configuration";
+  }
+  if (/\b(upstream|unavailable|connection|gateway|provider)\b/u.test(normalized)) {
+    return "dependency";
+  }
+  if (/\b(input|output|archive|artifact)\b/u.test(normalized)) return "input-output";
+  if (/\b(runtime|sandbox|openshell|agent)\b/u.test(normalized)) return "runtime";
+  if (/\b(execution|command|process|exit|exited)\b/u.test(normalized)) return "execution";
+  return "unknown";
+}
+function allowed(values, value) {
+  return typeof value === "string" && values.includes(value);
+}
+function sanitizeFailureMetadata(value) {
+  return {
+    version: FAILURE_METADATA_VERSION,
+    phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
+    failureCategory: allowed(failureCategories, value.failureCategory) ? value.failureCategory : "unknown",
+    cleanupCategory: allowed(cleanupCategories, value.cleanupCategory) ? value.cleanupCategory : "unknown"
+  };
+}
+function compact(metadata) {
+  return `${FAILURE_METADATA_VERSION} phase=${metadata.phase} failure-category=${metadata.failureCategory} cleanup-category=${metadata.cleanupCategory}`;
+}
+async function publishFailureMetadata(metadata, sink) {
+  const safe = sanitizeFailureMetadata(metadata);
+  await sink.writeAnnotation(compact(safe));
+  await sink.writeStepSummary(
+    [
+      "## Steward governed Task failure",
+      "",
+      "| Contract | Phase | Failure category | Cleanup category |",
+      "| --- | --- | --- | --- |",
+      `| ${FAILURE_METADATA_VERSION} | ${safe.phase} | ${safe.failureCategory} | ${safe.cleanupCategory} |`,
+      ""
+    ].join("\n")
+  );
+}
+var StewardRunFailure = class extends Error {
+  metadata;
+  constructor(metadata) {
+    const safe = sanitizeFailureMetadata(metadata);
+    super(
+      `Steward governed Task failed (phase=${safe.phase}, failure-category=${safe.failureCategory}, cleanup-category=${safe.cleanupCategory})`
+    );
+    this.name = "StewardRunFailure";
+    this.metadata = safe;
+  }
+};
+
 // src/oidc.ts
 async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImplementation = fetch) {
   if (!requestUrl || !requestToken) {
@@ -2901,24 +3004,54 @@ async function pollUntilTerminal(initial, client, sleep, signal) {
   }
   return current;
 }
-function errorMessage(error) {
-  return error instanceof Error ? error.message : String(error);
-}
-async function finalizeAndConfirm(task, client, sleep) {
-  let current = await client.finalizeTask(task.taskUid);
-  for (let attempt = 0; !current.finalized && attempt < 120; attempt += 1) {
-    await sleep(Math.min(250 * 2 ** attempt, 2e3));
-    current = await client.getTask(task.taskUid);
-    if (current.taskUid !== task.taskUid || current.runtimeUid !== task.runtimeUid) {
-      throw new Error("Steward changed Task identity during finalization");
-    }
+var FinalizationFailure = class extends Error {
+  category;
+  constructor(category) {
+    super("Steward Task finalization failed");
+    this.name = "FinalizationFailure";
+    this.category = category;
   }
-  if (!current.finalized) throw new Error("Steward did not confirm Task finalization");
+};
+async function finalizeAndConfirm(task, client, sleep) {
+  try {
+    let current = await client.finalizeTask(task.taskUid);
+    for (let attempt = 0; !current.finalized && attempt < 120; attempt += 1) {
+      await sleep(Math.min(250 * 2 ** attempt, 2e3));
+      current = await client.getTask(task.taskUid);
+      if (current.taskUid !== task.taskUid || current.runtimeUid !== task.runtimeUid) {
+        throw new FinalizationFailure("identity-mismatch");
+      }
+    }
+    if (!current.finalized) throw new FinalizationFailure("confirmation-timeout");
+  } catch (error) {
+    if (error instanceof FinalizationFailure) throw error;
+    throw new FinalizationFailure("request-failed");
+  }
+}
+function taskFailurePhase(task) {
+  if (task?.phase === "succeeded" || task?.phase === "failed" || task?.phase === "cancelled") {
+    return task.phase;
+  }
+  return "unavailable";
+}
+function stageFailureCategory(stage, error) {
+  if (error instanceof Error && error.name === "AbortError") return "cancelled";
+  switch (stage) {
+    case "input":
+    case "upload":
+    case "output":
+      return "input-output";
+    case "execute":
+      return "execution";
+    case "submit":
+    case "poll":
+      return "dependency";
+  }
 }
 async function runWorkflow(config, workspace, dependencies) {
-  const inputPaths = parseWorkspacePaths(config.inputPaths);
-  const outputPaths = parseWorkspacePaths(config.outputPaths);
-  let initialArchive = await createInputArchive(workspace, inputPaths);
+  let initialArchive;
+  let inputPaths = [];
+  let outputPaths = [];
   const createArchive = async () => {
     if (initialArchive) {
       const archive = initialArchive;
@@ -2929,8 +3062,17 @@ async function runWorkflow(config, workspace, dependencies) {
   };
   const sleep = dependencies.sleep ?? (async (milliseconds, signal) => (0, import_promises4.setTimeout)(milliseconds, void 0, { signal }));
   let created;
-  let primaryError;
+  let terminal;
+  let result;
+  let failurePhase = "unavailable";
+  let failureCategory = "unknown";
+  let failed = false;
+  let stage = "input";
   try {
+    inputPaths = parseWorkspacePaths(config.inputPaths);
+    outputPaths = parseWorkspacePaths(config.outputPaths);
+    initialArchive = await createInputArchive(workspace, inputPaths);
+    stage = "submit";
     created = await dependencies.client.submitTask(
       {
         workflow: config.workflow,
@@ -2941,47 +3083,65 @@ async function runWorkflow(config, workspace, dependencies) {
     );
     await dependencies.setOutput("task-uid", created.taskUid);
     await dependencies.setOutput("runtime-uid", created.runtimeUid);
+    stage = "upload";
     await dependencies.client.uploadTaskInputs(created.taskUid, createArchive);
+    stage = "execute";
     const executing = await dependencies.client.executeTask(created.taskUid);
-    const terminal = await pollUntilTerminal(
+    stage = "poll";
+    terminal = await pollUntilTerminal(
       executing,
       dependencies.client,
       sleep,
       dependencies.signal
     );
+    failurePhase = taskFailurePhase(terminal);
+    if (terminal.phase !== "succeeded") {
+      failed = true;
+      failureCategory = terminal.phase === "cancelled" ? "cancelled" : classifyFailureReason(terminal.failureReason);
+    }
     await dependencies.setOutput("status", terminal.phase);
-    if (terminal.phase === "succeeded") {
+    if (!failed) {
+      stage = "output";
       await extractOutputArchive(
         await dependencies.client.downloadTaskOutputs(terminal.taskUid),
         workspace,
         outputPaths
       );
-      return terminal;
+      result = terminal;
     }
-    throw new Error(
-      `Steward Task ${terminal.phase}${terminal.failureReason ? `: ${terminal.failureReason}` : ""}`
-    );
   } catch (error) {
-    primaryError = error;
-    if (created && error instanceof Error && error.name === "AbortError") {
-      await dependencies.setOutput("status", "cancelled");
+    if (!failed) {
+      failed = true;
+      failurePhase = terminal ? taskFailurePhase(terminal) : error instanceof Error && error.name === "AbortError" ? "cancelled" : "unavailable";
+      failureCategory = stageFailureCategory(stage, error);
     }
-    throw error;
-  } finally {
-    if (created) {
+    if (created && error instanceof Error && error.name === "AbortError") {
       try {
-        await finalizeAndConfirm(created, dependencies.client, sleep);
-      } catch (cleanupError) {
-        if (primaryError) {
-          throw new AggregateError(
-            [primaryError, cleanupError],
-            `Steward Task failed and cleanup failed: ${errorMessage(cleanupError)}`
-          );
-        }
-        throw cleanupError;
+        await dependencies.setOutput("status", "cancelled");
+      } catch {
       }
     }
   }
+  let cleanupCategory = "not-required";
+  if (created) {
+    try {
+      await finalizeAndConfirm(created, dependencies.client, sleep);
+      cleanupCategory = "confirmed";
+    } catch (error) {
+      cleanupCategory = error instanceof FinalizationFailure ? error.category : "unknown";
+      failed = true;
+      failurePhase = terminal ? taskFailurePhase(terminal) : failurePhase;
+    }
+  }
+  if (failed || !result) {
+    throw new StewardRunFailure({
+      version: FAILURE_METADATA_VERSION,
+      phase: failurePhase,
+      failureCategory,
+      cleanupCategory
+    });
+  }
+  return result;
 }
 
 // src/steward-client.ts
@@ -3000,8 +3160,8 @@ function record(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
 }
 function hasOnlyKeys(value, keys) {
-  const allowed = new Set(keys);
-  return Object.keys(value).every((key) => allowed.has(key));
+  const allowed2 = new Set(keys);
+  return Object.keys(value).every((key) => allowed2.has(key));
 }
 function parseModelRef(value) {
   const item = record(value);
@@ -3382,13 +3542,39 @@ async function setActionOutput(name, value) {
     encoding: "utf8"
   });
 }
+function safeFailure(error) {
+  if (error instanceof StewardRunFailure) return error;
+  const metadata = {
+    version: FAILURE_METADATA_VERSION,
+    phase: "unavailable",
+    failureCategory: "unknown",
+    cleanupCategory: "not-required"
+  };
+  return new StewardRunFailure(metadata);
+}
+async function reportActionFailure(failure) {
+  await publishFailureMetadata(failure.metadata, {
+    writeAnnotation: async (value) => {
+      process.stdout.write(`::error title=Steward governed Task failed::${value}
+`);
+    },
+    writeStepSummary: async (value) => {
+      const path = process.env.GITHUB_STEP_SUMMARY?.trim();
+      if (!path) return;
+      try {
+        await (0, import_promises7.appendFile)(path, value, { encoding: "utf8" });
+      } catch {
+      }
+    }
+  });
+}
 async function main() {
-  const config = readActionConfig(process.env);
   const controller = new AbortController();
   const cancel = () => controller.abort();
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
+    const config = readActionConfig(process.env);
     const getToken = (() => {
       switch (config.authentication.kind) {
         case "github-oidc-exchange":
@@ -3410,6 +3596,10 @@ async function main() {
       setOutput: setActionOutput,
       signal: controller.signal
     });
+  } catch (error) {
+    const failure = safeFailure(error);
+    await reportActionFailure(failure);
+    throw failure;
   } finally {
     process.off("SIGINT", cancel);
     process.off("SIGTERM", cancel);
@@ -3417,8 +3607,7 @@ async function main() {
 }
 if (process.env.STEWARD_RUN_WORKFLOW !== void 0) {
   main().catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`steward-run: ${message}
+    process.stderr.write(`steward-run: ${safeFailure(error).message}
 `);
     process.exitCode = 1;
   });

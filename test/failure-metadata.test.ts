@@ -1,0 +1,160 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  FAILURE_METADATA_VERSION,
+  StewardRunFailure,
+  classifyFailureReason,
+  cleanupCategories,
+  failureCategories,
+  failurePhases,
+  publishFailureMetadata,
+  type FailureMetadata,
+} from "../src/failure-metadata.ts";
+
+const terminalFailure: FailureMetadata = {
+  version: FAILURE_METADATA_VERSION,
+  phase: "failed",
+  failureCategory: "runtime",
+  cleanupCategory: "confirmed",
+};
+
+test("failure metadata uses a versioned bounded category allowlist", () => {
+  assert.equal(FAILURE_METADATA_VERSION, "steward-run.failure/v1");
+  assert.deepEqual(failurePhases, ["succeeded", "failed", "cancelled", "unavailable"]);
+  assert.deepEqual(failureCategories, [
+    "provider-connection",
+    "provider-token-grant",
+    "provider-authorization",
+    "provider-upstream",
+    "assertion-mismatch",
+    "workflow-cleanup",
+    "authentication",
+    "authorization",
+    "configuration",
+    "dependency",
+    "input-output",
+    "runtime",
+    "timeout",
+    "execution",
+    "cancelled",
+    "unknown",
+  ]);
+  assert.deepEqual(cleanupCategories, [
+    "confirmed",
+    "not-required",
+    "request-failed",
+    "confirmation-timeout",
+    "identity-mismatch",
+    "unknown",
+  ]);
+  assert.equal(classifyFailureReason("task agent exited with code 70"), "provider-connection");
+  assert.equal(classifyFailureReason("task agent exited with code 71"), "provider-token-grant");
+  assert.equal(classifyFailureReason("task agent exited with code 72"), "provider-authorization");
+  assert.equal(classifyFailureReason("task agent exited with code 73"), "provider-upstream");
+  assert.equal(classifyFailureReason("task agent exited with code 74"), "assertion-mismatch");
+  assert.equal(classifyFailureReason("task agent exited with code 75"), "workflow-cleanup");
+  assert.equal(classifyFailureReason("task agent exited with code 76"), "execution");
+  assert.equal(classifyFailureReason("OpenShell sandbox runtime failed"), "runtime");
+  assert.equal(classifyFailureReason("provider request deadline exceeded"), "timeout");
+  assert.equal(classifyFailureReason("OIDC token rejected"), "authentication");
+  assert.equal(classifyFailureReason("policy denied the requested tool"), "authorization");
+  assert.equal(classifyFailureReason("MCP gateway unavailable"), "dependency");
+  assert.equal(classifyFailureReason("model profile is invalid"), "configuration");
+  assert.equal(classifyFailureReason("output archive was rejected"), "input-output");
+  assert.equal(classifyFailureReason("command exited unsuccessfully"), "execution");
+  assert.equal(classifyFailureReason("unrecognized server detail"), "unknown");
+  assert.equal(classifyFailureReason(undefined), "unknown");
+});
+
+test("GitHub annotation and step summary contain only the safe contract", async () => {
+  const annotations: string[] = [];
+  const summaries: string[] = [];
+  await publishFailureMetadata(terminalFailure, {
+    writeAnnotation: async (value) => void annotations.push(value),
+    writeStepSummary: async (value) => void summaries.push(value),
+  });
+
+  assert.deepEqual(annotations, [
+    "steward-run.failure/v1 phase=failed failure-category=runtime cleanup-category=confirmed",
+  ]);
+  assert.equal(summaries.length, 1);
+  assert.match(summaries[0] ?? "", /steward-run\.failure\/v1/u);
+  assert.match(summaries[0] ?? "", /\| failed \| runtime \| confirmed \|/u);
+});
+
+test("unknown hostile server data cannot escape the allowlist", async () => {
+  const hostile = [
+    "stdout=customer payload",
+    "stderr=private stack trace",
+    "header: Bearer jwt-secret",
+    "set-cookie: session=private-session",
+    "api_key=secret-value",
+    "response body with assertion",
+  ].join("\n");
+  const metadata: FailureMetadata = {
+    version: FAILURE_METADATA_VERSION,
+    phase: "failed",
+    failureCategory: classifyFailureReason(hostile),
+    cleanupCategory: "unknown",
+  };
+  const visible: string[] = [];
+  await publishFailureMetadata(metadata, {
+    writeAnnotation: async (value) => void visible.push(value),
+    writeStepSummary: async (value) => void visible.push(value),
+  });
+  const rendered = visible.join("\n");
+
+  assert.match(rendered, /failure-category=unknown/u);
+  for (const forbidden of [
+    "customer payload",
+    "private stack trace",
+    "jwt-secret",
+    "session=private-session",
+    "secret-value",
+    "assertion",
+  ]) {
+    assert.doesNotMatch(rendered, new RegExp(forbidden, "u"));
+  }
+});
+
+test("primary and cleanup failures remain independently visible", () => {
+  const failure = new StewardRunFailure({
+    version: FAILURE_METADATA_VERSION,
+    phase: "failed",
+    failureCategory: "dependency",
+    cleanupCategory: "request-failed",
+  });
+
+  assert.equal(
+    failure.message,
+    "Steward governed Task failed (phase=failed, failure-category=dependency, cleanup-category=request-failed)",
+  );
+  assert.deepEqual(failure.metadata, {
+    version: FAILURE_METADATA_VERSION,
+    phase: "failed",
+    failureCategory: "dependency",
+    cleanupCategory: "request-failed",
+  });
+});
+
+test("runtime-invalid metadata values fail closed to fixed generic literals", async () => {
+  const visible: string[] = [];
+  await publishFailureMetadata(
+    {
+      version: "private-version",
+      phase: "private-phase",
+      failureCategory: "private-failure",
+      cleanupCategory: "private-cleanup",
+    } as unknown as FailureMetadata,
+    {
+      writeAnnotation: async (value) => void visible.push(value),
+      writeStepSummary: async (value) => void visible.push(value),
+    },
+  );
+  const rendered = visible.join("\n");
+  assert.match(
+    rendered,
+    /steward-run\.failure\/v1 phase=unavailable failure-category=unknown cleanup-category=unknown/u,
+  );
+  assert.doesNotMatch(rendered, /private-version|private-phase|private-failure|private-cleanup/u);
+});

@@ -7,7 +7,7 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "3f83e76b48bb3de1dd125357f9a78ae3ad70223d";
+const actionCommit = "8dfbf30a5ea423991b275e7bab0a27eac676c05d";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -277,4 +277,24 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
     /Reusable workflow:.*steward-task\.yml@\$GITHUB_SHA/u,
   );
   assert.match(releaseWorkflow, /Action commit:.*\$ACTION_COMMIT/u);
+});
+
+test("failure diagnostics are versioned, bounded, and GitHub-visible", async () => {
+  const [readme, specification, main, metadata] = await Promise.all([
+    readFile(new URL("../README.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/steward-run-spec.md", import.meta.url), "utf8"),
+    readFile(new URL("../src/main.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/failure-metadata.ts", import.meta.url), "utf8"),
+  ]);
+  for (const document of [readme, specification]) {
+    assert.match(document, /steward-run\.failure\/v1/u);
+    assert.match(document, /provider-connection/u);
+    assert.match(document, /workflow-cleanup/u);
+    assert.match(document, /confirmation-timeout/u);
+    assert.match(document, /Raw Steward reasons|Arbitrary failure reasons/u);
+  }
+  assert.match(main, /GITHUB_STEP_SUMMARY/u);
+  assert.match(main, /::error title=Steward governed Task failed::/u);
+  assert.doesNotMatch(main, /error instanceof Error \? error\.message : String\(error\)/u);
+  assert.match(metadata, /FAILURE_METADATA_VERSION = "steward-run\.failure\/v1"/u);
 });

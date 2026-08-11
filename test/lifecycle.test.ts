@@ -6,6 +6,7 @@ import { Readable } from "node:stream";
 import test from "node:test";
 import tar from "tar-stream";
 import type { WorkflowConfig } from "../src/config.ts";
+import { StewardRunFailure } from "../src/failure-metadata.ts";
 import {
   createIdempotencyKey,
   runWorkflow,
@@ -45,6 +46,7 @@ class FakeClient implements TaskClient {
   phases: Task["phase"][] = ["running", "succeeded"];
   ownership: Task["runtimeOwnership"] = "provisioned";
   archivePath = "results/report.txt";
+  failureReason?: string;
   finalizeError?: Error;
 
   async submitTask(request: TaskSubmissionRequest): Promise<Task> {
@@ -68,6 +70,7 @@ class FakeClient implements TaskClient {
       ...baseTask,
       phase: this.phases.shift() ?? "succeeded",
       runtimeOwnership: this.ownership,
+      ...(this.failureReason === undefined ? {} : { failureReason: this.failureReason }),
     };
   }
   async downloadTaskOutputs(): Promise<Readable> {
@@ -152,7 +155,13 @@ test("Task failure and corrupt outputs still finalize and fail the action", asyn
     try {
       await assert.rejects(
         runWorkflow(config, root, dependencies(client, outputs)),
-        mode === "failed" ? /Steward Task failed/ : /not a declared output/,
+        (error: unknown) => {
+          assert.ok(error instanceof StewardRunFailure);
+          assert.equal(error.metadata.phase, mode === "failed" ? "failed" : "succeeded");
+          assert.equal(error.metadata.failureCategory, mode === "failed" ? "unknown" : "input-output");
+          assert.equal(error.metadata.cleanupCategory, "confirmed");
+          return true;
+        },
       );
       assert.equal(client.calls.at(-1), "finalize");
       assert.equal(outputs["runtime-uid"], "runtime-uid-1");
@@ -162,13 +171,81 @@ test("Task failure and corrupt outputs still finalize and fail the action", asyn
   }
 });
 
+test("terminal Task and cleanup failures expose only independent allowlisted metadata", async () => {
+  const root = await fixture();
+  try {
+    const failed = new FakeClient();
+    failed.phases = ["failed"];
+    failed.failureReason = "task agent exited with code 71";
+    await assert.rejects(runWorkflow(config, root, dependencies(failed, {})), (error: unknown) => {
+      assert.ok(error instanceof StewardRunFailure);
+      assert.deepEqual(error.metadata, {
+        version: "steward-run.failure/v1",
+        phase: "failed",
+        failureCategory: "provider-token-grant",
+        cleanupCategory: "confirmed",
+      });
+      assert.doesNotMatch(error.message, /task agent exited/u);
+      return true;
+    });
+
+    const failedWithOutputError = new FakeClient();
+    failedWithOutputError.phases = ["failed"];
+    failedWithOutputError.failureReason = "task agent exited with code 72";
+    const outputErrorDependencies = dependencies(failedWithOutputError, {});
+    outputErrorDependencies.setOutput = async (name: string) => {
+      if (name === "status") throw new Error("output contained private response data");
+    };
+    await assert.rejects(
+      runWorkflow(config, root, outputErrorDependencies),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.equal(error.metadata.failureCategory, "provider-authorization");
+        assert.equal(error.metadata.cleanupCategory, "confirmed");
+        assert.doesNotMatch(error.message, /private response data/u);
+        return true;
+      },
+    );
+
+    const failedWithCleanup = new FakeClient();
+    failedWithCleanup.phases = ["failed"];
+    failedWithCleanup.failureReason = "task agent exited with code 70";
+    failedWithCleanup.finalizeError = new Error("response body contained secret-value");
+    await assert.rejects(
+      runWorkflow(config, root, dependencies(failedWithCleanup, {})),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.deepEqual(error.metadata, {
+          version: "steward-run.failure/v1",
+          phase: "failed",
+          failureCategory: "provider-connection",
+          cleanupCategory: "request-failed",
+        });
+        assert.doesNotMatch(error.message, /secret-value|response body/u);
+        return true;
+      },
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("missing inputs fail before any Steward request and Task cleanup failure is fatal", async () => {
   const root = await fixture();
   try {
     const missingClient = new FakeClient();
     await assert.rejects(
       runWorkflow({ ...config, inputPaths: "missing" }, root, dependencies(missingClient, {})),
-      /declared input does not exist/,
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.deepEqual(error.metadata, {
+          version: "steward-run.failure/v1",
+          phase: "unavailable",
+          failureCategory: "input-output",
+          cleanupCategory: "not-required",
+        });
+        return true;
+      },
     );
     assert.deepEqual(missingClient.calls, []);
 
@@ -176,7 +253,16 @@ test("missing inputs fail before any Steward request and Task cleanup failure is
     cleanupClient.finalizeError = new Error("cleanup unavailable");
     await assert.rejects(
       runWorkflow(config, root, dependencies(cleanupClient, {})),
-      /cleanup unavailable/,
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.deepEqual(error.metadata, {
+          version: "steward-run.failure/v1",
+          phase: "succeeded",
+          failureCategory: "unknown",
+          cleanupCategory: "request-failed",
+        });
+        return true;
+      },
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -219,6 +305,63 @@ test("finalization tolerates real sandbox teardown latency and cancellation repo
     );
     assert.equal(outputs.status, "cancelled");
     assert.equal(cancelling.calls.at(-1), "finalize");
+
+    const cancellingWithOutputError = new FakeClient();
+    cancellingWithOutputError.phases = ["running"];
+    const outputController = new AbortController();
+    const outputDeps = dependencies(cancellingWithOutputError, {});
+    outputDeps.sleep = async () => void outputController.abort();
+    outputDeps.setOutput = async (name: string) => {
+      if (name === "status") throw new Error("private cancellation output error");
+    };
+    await assert.rejects(
+      runWorkflow(config, root, { ...outputDeps, signal: outputController.signal }),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.equal(error.metadata.phase, "cancelled");
+        assert.equal(error.metadata.failureCategory, "cancelled");
+        assert.equal(error.metadata.cleanupCategory, "confirmed");
+        assert.doesNotMatch(error.message, /private cancellation output/u);
+        return true;
+      },
+    );
+    assert.equal(cancellingWithOutputError.calls.at(-1), "finalize");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("finalization identity and timeout failures use distinct bounded cleanup categories", async () => {
+  const root = await fixture();
+  try {
+    for (const mode of ["identity", "timeout"] as const) {
+      const client = new FakeClient();
+      let finalizationStarted = false;
+      client.finalizeTask = async () => {
+        client.calls.push("finalize");
+        finalizationStarted = true;
+        return { ...baseTask, phase: "succeeded", finalized: false };
+      };
+      const originalGet = client.getTask.bind(client);
+      client.getTask = async () => {
+        if (!finalizationStarted) return originalGet();
+        client.calls.push("cleanup-poll");
+        return mode === "identity"
+          ? { ...baseTask, taskUid: "changed-task", phase: "succeeded", finalized: false }
+          : { ...baseTask, phase: "succeeded", finalized: false };
+      };
+
+      await assert.rejects(runWorkflow(config, root, dependencies(client, {})), (error: unknown) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.equal(error.metadata.phase, "succeeded");
+        assert.equal(error.metadata.failureCategory, "unknown");
+        assert.equal(
+          error.metadata.cleanupCategory,
+          mode === "identity" ? "identity-mismatch" : "confirmation-timeout",
+        );
+        return true;
+      });
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

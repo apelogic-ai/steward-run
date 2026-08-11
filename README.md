@@ -9,6 +9,19 @@ The client implements Steward's six-operation `/v1/tasks` lifecycle documented i
 requests execution, polls through approval parking to a terminal phase, downloads declared
 outputs, and always requests finalization.
 
+Failed runs publish the bounded `steward-run.failure/v1` contract as both a GitHub error
+annotation and step summary. The visible fields are only terminal phase, an allowlisted failure
+category, and an independent finalization category. Raw Steward reasons, response data,
+stdout/stderr, headers, tokens, assertions, credentials, and Secret values are never copied into
+GitHub metadata or the terminal error. Unknown details map to `unknown`; successful runs do not
+publish failure metadata.
+
+Governed smoke workflows may use the exact agent exit codes 70–75 for
+`provider-connection`, `provider-token-grant`, `provider-authorization`, `provider-upstream`,
+`assertion-mismatch`, and `workflow-cleanup`, respectively. Any other numeric agent exit maps to
+`execution`. Steward finalization is reported separately as `confirmed`, `not-required`,
+`request-failed`, `confirmation-timeout`, `identity-mismatch`, or `unknown`.
+
 Production authentication exchanges a GitHub OIDC token with audience
 `apelogic-github-identity-exchange` for a short-lived token whose sole audience is
 `steward-task-api`. The exchange validates the caller and resolves the actor before Steward sees
