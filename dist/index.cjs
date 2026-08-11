@@ -2930,11 +2930,19 @@ async function writeOutputFile(stream, workspace, relative, mode) {
 async function extractOutputArchive(archive, workspace, declaredPaths) {
   const outputs = declaredPaths.map(normalizeWorkspacePath);
   const seen = /* @__PURE__ */ new Set();
+  let sawRootDirectory = false;
   const extract = import_tar_stream.default.extract();
   extract.on("entry", (header, stream, next) => {
     stream.on("error", () => void 0);
     void (async () => {
       try {
+        if (header.name === "./" && header.type === "directory") {
+          if (sawRootDirectory) throw new Error("duplicate archive entry: ./");
+          sawRootDirectory = true;
+          stream.resume();
+          next();
+          return;
+        }
         const relative = normalizeArchivePath(header.name);
         if (!isDeclaredOutput(relative, outputs)) {
           throw new Error(`archive path is not a declared output: ${relative}`);
@@ -3242,6 +3250,32 @@ function retryDelay(response, attempt) {
 function isRetryableStatus(status) {
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
+function transportErrorCategory(error) {
+  const candidates = [error];
+  if (error && typeof error === "object" && "cause" in error) candidates.push(error.cause);
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const code = "code" in candidate && typeof candidate.code === "string" ? candidate.code : "";
+    if (/(?:CERT|TLS|SSL|ALTNAME|SELF_SIGNED|UNABLE_TO_VERIFY)/u.test(code)) {
+      return "TLS";
+    }
+    if ([
+      "ECONNABORTED",
+      "ECONNREFUSED",
+      "ECONNRESET",
+      "ENETUNREACH",
+      "ENOTFOUND",
+      "EPIPE",
+      "ETIMEDOUT"
+    ].includes(code)) {
+      return "network";
+    }
+  }
+  if (error instanceof Error && error.message === "unsupported Steward request body") {
+    return "request body";
+  }
+  return "transport";
+}
 var StewardClient = class {
   #baseUrl;
   #getToken;
@@ -3275,7 +3309,9 @@ var StewardClient = class {
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") throw error;
         if (attempt + 1 === this.#maxAttempts) {
-          throw new Error(`Steward request ${method} ${path} failed after retries`);
+          throw new Error(
+            `Steward request ${method} ${path} failed after retries (${transportErrorCategory(error)})`
+          );
         }
         await this.#sleep(retryDelay(void 0, attempt));
         continue;
@@ -3387,6 +3423,13 @@ function headersFrom(response) {
   }
   return headers;
 }
+function pipeBody(body, request) {
+  body.once("error", (error) => request.destroy(error));
+  body.pipe(request);
+}
+function isAsyncIterableBody(value) {
+  return Symbol.asyncIterator in value && typeof value[Symbol.asyncIterator] === "function";
+}
 function writeBody(request, body) {
   if (body === void 0 || body === null) {
     request.end();
@@ -3395,9 +3438,14 @@ function writeBody(request, body) {
   } else if (body instanceof URLSearchParams) {
     request.end(body.toString());
   } else if (body instanceof import_node_stream2.Readable) {
-    body.pipe(request);
+    pipeBody(body, request);
+  } else if (typeof body === "object" && isAsyncIterableBody(body)) {
+    pipeBody(import_node_stream2.Readable.from(body), request);
   } else if (typeof body === "object" && "getReader" in body) {
-    import_node_stream2.Readable.fromWeb(body).pipe(request);
+    pipeBody(
+      import_node_stream2.Readable.fromWeb(body),
+      request
+    );
   } else {
     request.destroy(new Error("unsupported Steward request body"));
   }
@@ -3405,7 +3453,7 @@ function writeBody(request, body) {
 function privateCaFetch(ca) {
   return async (input, init = {}) => {
     const url = new URL(input instanceof Request ? input.url : input);
-    const method = init.method ?? (input instanceof Request ? input.method : "GET");
+    const method = (init.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const requestHeaders = new Headers(
       init.headers ?? (input instanceof Request ? input.headers : void 0)
     );
@@ -3413,13 +3461,47 @@ function privateCaFetch(ca) {
       const handleResponse = (response) => {
         const status = response.statusCode ?? 500;
         const noBody = method === "HEAD" || status === 204 || status === 205 || status === 304;
-        const body = noBody ? null : import_node_stream2.Readable.toWeb(response);
+        const responseInit = {
+          status,
+          ...response.statusMessage ? { statusText: response.statusMessage } : {},
+          headers: headersFrom(response)
+        };
+        if (noBody) {
+          let settled = false;
+          const cleanup = () => {
+            response.off("end", onEnd);
+            response.off("error", onError);
+            response.off("aborted", onAborted);
+            response.off("close", onClose);
+          };
+          const onEnd = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(new Response(null, responseInit));
+          };
+          const onError = (error) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(error);
+          };
+          const onAborted = () => onError(new Error("Steward response was aborted"));
+          const onClose = () => {
+            if (!response.complete) onError(new Error("Steward response closed prematurely"));
+          };
+          response.once("end", onEnd);
+          response.once("error", onError);
+          response.once("aborted", onAborted);
+          response.once("close", onClose);
+          response.resume();
+          return;
+        }
         resolve(
-          new Response(body, {
-            status,
-            ...response.statusMessage ? { statusText: response.statusMessage } : {},
-            headers: headersFrom(response)
-          })
+          new Response(
+            import_node_stream2.Readable.toWeb(response),
+            responseInit
+          )
         );
       };
       const outgoingHeaders = {};

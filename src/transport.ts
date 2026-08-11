@@ -37,6 +37,18 @@ function headersFrom(response: IncomingMessage): Headers {
   return headers;
 }
 
+function pipeBody(
+  body: Readable,
+  request: ReturnType<typeof httpsRequest>,
+): void {
+  body.once("error", (error) => request.destroy(error));
+  body.pipe(request);
+}
+
+function isAsyncIterableBody(value: object): value is AsyncIterable<Uint8Array | string> {
+  return Symbol.asyncIterator in value && typeof value[Symbol.asyncIterator] === "function";
+}
+
 function writeBody(request: ReturnType<typeof httpsRequest>, body: unknown): void {
   if (body === undefined || body === null) {
     request.end();
@@ -49,9 +61,16 @@ function writeBody(request: ReturnType<typeof httpsRequest>, body: unknown): voi
   } else if (body instanceof URLSearchParams) {
     request.end(body.toString());
   } else if (body instanceof Readable) {
-    body.pipe(request);
+    pipeBody(body, request);
+  } else if (typeof body === "object" && isAsyncIterableBody(body)) {
+    // tar-stream Pack objects are backed by streamx. They satisfy the Node
+    // async-iterable stream contract, but are not instanceof node:stream.Readable.
+    pipeBody(Readable.from(body), request);
   } else if (typeof body === "object" && "getReader" in body) {
-    Readable.fromWeb(body as import("node:stream/web").ReadableStream).pipe(request);
+    pipeBody(
+      Readable.fromWeb(body as import("node:stream/web").ReadableStream),
+      request,
+    );
   } else {
     request.destroy(new Error("unsupported Steward request body"));
   }
@@ -60,7 +79,7 @@ function writeBody(request: ReturnType<typeof httpsRequest>, body: unknown): voi
 function privateCaFetch(ca: string): FetchLike {
   return async (input, init = {}) => {
     const url = new URL(input instanceof Request ? input.url : input);
-    const method = init.method ?? (input instanceof Request ? input.method : "GET");
+    const method = (init.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const requestHeaders = new Headers(
       init.headers ?? (input instanceof Request ? input.headers : undefined),
     );
@@ -68,15 +87,47 @@ function privateCaFetch(ca: string): FetchLike {
       const handleResponse = (response: IncomingMessage): void => {
         const status = response.statusCode ?? 500;
         const noBody = method === "HEAD" || status === 204 || status === 205 || status === 304;
-        const body = noBody
-          ? null
-          : (Readable.toWeb(response) as import("node:stream/web").ReadableStream);
+        const responseInit = {
+          status,
+          ...(response.statusMessage ? { statusText: response.statusMessage } : {}),
+          headers: headersFrom(response),
+        };
+        if (noBody) {
+          let settled = false;
+          const cleanup = (): void => {
+            response.off("end", onEnd);
+            response.off("error", onError);
+            response.off("aborted", onAborted);
+            response.off("close", onClose);
+          };
+          const onEnd = (): void => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(new Response(null, responseInit));
+          };
+          const onError = (error: Error): void => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(error);
+          };
+          const onAborted = (): void => onError(new Error("Steward response was aborted"));
+          const onClose = (): void => {
+            if (!response.complete) onError(new Error("Steward response closed prematurely"));
+          };
+          response.once("end", onEnd);
+          response.once("error", onError);
+          response.once("aborted", onAborted);
+          response.once("close", onClose);
+          response.resume();
+          return;
+        }
         resolve(
-          new Response(body, {
-            status,
-            ...(response.statusMessage ? { statusText: response.statusMessage } : {}),
-            headers: headersFrom(response),
-          }),
+          new Response(
+            Readable.toWeb(response) as import("node:stream/web").ReadableStream,
+            responseInit,
+          ),
         );
       };
       const outgoingHeaders: Record<string, string> = {};

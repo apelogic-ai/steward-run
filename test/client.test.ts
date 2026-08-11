@@ -166,6 +166,23 @@ test("input upload retries recreate the archive stream", async () => {
   assert.equal(archives, 2);
 });
 
+test("transport failures retain only a safe error category", async () => {
+  const secret = "not-for-error-output";
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () => {
+      throw Object.assign(new Error(secret), { code: "ECONNRESET" });
+    },
+    maxAttempts: 1,
+  });
+  await assert.rejects(client.getTask(task.taskUid), (error: Error) => {
+    assert.match(error.message, /failed after retries \(network\)/u);
+    assert.doesNotMatch(error.message, new RegExp(secret, "u"));
+    return true;
+  });
+});
+
 test("the Steward client fails closed on incompatible payloads and unsafe base URLs", async () => {
   assert.throws(
     () =>
