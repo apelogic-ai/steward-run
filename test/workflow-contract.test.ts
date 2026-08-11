@@ -276,3 +276,23 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
   );
   assert.match(releaseWorkflow, /Action commit:.*\$ACTION_COMMIT/u);
 });
+
+test("failure diagnostics are versioned, bounded, and GitHub-visible", async () => {
+  const [readme, specification, main, metadata] = await Promise.all([
+    readFile(new URL("../README.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/steward-run-spec.md", import.meta.url), "utf8"),
+    readFile(new URL("../src/main.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/failure-metadata.ts", import.meta.url), "utf8"),
+  ]);
+  for (const document of [readme, specification]) {
+    assert.match(document, /steward-run\.failure\/v1/u);
+    assert.match(document, /provider-connection/u);
+    assert.match(document, /workflow-cleanup/u);
+    assert.match(document, /confirmation-timeout/u);
+    assert.match(document, /Raw Steward reasons|Arbitrary failure reasons/u);
+  }
+  assert.match(main, /GITHUB_STEP_SUMMARY/u);
+  assert.match(main, /::error title=Steward governed Task failed::/u);
+  assert.doesNotMatch(main, /error instanceof Error \? error\.message : String\(error\)/u);
+  assert.match(metadata, /FAILURE_METADATA_VERSION = "steward-run\.failure\/v1"/u);
+});

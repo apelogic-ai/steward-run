@@ -1,6 +1,12 @@
 import { appendFile } from "node:fs/promises";
 import { shortLivedBearerTokenFileProvider } from "./auth.js";
 import { readActionConfig } from "./config.js";
+import {
+  FAILURE_METADATA_VERSION,
+  StewardRunFailure,
+  publishFailureMetadata,
+  type FailureMetadata,
+} from "./failure-metadata.js";
 import { identityExchangeTokenProvider } from "./identity-exchange.js";
 import { runWorkflow } from "./lifecycle.js";
 import { oidcTokenProvider } from "./oidc.js";
@@ -22,13 +28,41 @@ async function setActionOutput(name: string, value: string): Promise<void> {
   });
 }
 
+function safeFailure(error: unknown): StewardRunFailure {
+  if (error instanceof StewardRunFailure) return error;
+  const metadata: FailureMetadata = {
+    version: FAILURE_METADATA_VERSION,
+    phase: "unavailable",
+    failureCategory: "unknown",
+    cleanupCategory: "not-required",
+  };
+  return new StewardRunFailure(metadata);
+}
+
+async function reportActionFailure(failure: StewardRunFailure): Promise<void> {
+  await publishFailureMetadata(failure.metadata, {
+    writeAnnotation: async (value) => {
+      process.stdout.write(`::error title=Steward governed Task failed::${value}\n`);
+    },
+    writeStepSummary: async (value) => {
+      const path = process.env.GITHUB_STEP_SUMMARY?.trim();
+      if (!path) return;
+      try {
+        await appendFile(path, value, { encoding: "utf8" });
+      } catch {
+        // Diagnostics must never replace or disclose the primary governed failure.
+      }
+    },
+  });
+}
+
 export async function main(): Promise<void> {
-  const config = readActionConfig(process.env);
   const controller = new AbortController();
   const cancel = () => controller.abort();
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
+    const config = readActionConfig(process.env);
     const getToken = (() => {
       switch (config.authentication.kind) {
         case "github-oidc-exchange":
@@ -50,6 +84,10 @@ export async function main(): Promise<void> {
       setOutput: setActionOutput,
       signal: controller.signal,
     });
+  } catch (error) {
+    const failure = safeFailure(error);
+    await reportActionFailure(failure);
+    throw failure;
   } finally {
     process.off("SIGINT", cancel);
     process.off("SIGTERM", cancel);
@@ -58,8 +96,7 @@ export async function main(): Promise<void> {
 
 if (process.env.STEWARD_RUN_WORKFLOW !== undefined) {
   main().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`steward-run: ${message}\n`);
+    process.stderr.write(`steward-run: ${safeFailure(error).message}\n`);
     process.exitCode = 1;
   });
 }

@@ -118,6 +118,26 @@ exchanged token with sole audience `steward-task-api`.
 | `task-uid` | The Steward Task UID (for audit correlation) |
 | `runtime-uid` | The provisioned/adopted `AgentRuntime` UID (for audit correlation) |
 
+On failure, the action writes one GitHub error annotation and one step-summary entry using the
+versioned `steward-run.failure/v1` diagnostic contract. It contains exactly:
+
+- terminal phase: `succeeded`, `failed`, `cancelled`, or `unavailable`;
+- a bounded failure category;
+- an independent finalization category.
+
+The failure allowlist is `provider-connection`, `provider-token-grant`,
+`provider-authorization`, `provider-upstream`, `assertion-mismatch`, `workflow-cleanup`,
+`authentication`, `authorization`, `configuration`, `dependency`, `input-output`, `runtime`,
+`timeout`, `execution`, `cancelled`, and `unknown`. Exact agent exit codes 70 through 75 map in
+order to the first six categories; every other numeric agent exit maps to `execution`.
+Finalization categories are `confirmed`, `not-required`, `request-failed`,
+`confirmation-timeout`, `identity-mismatch`, and `unknown`.
+
+Only those literals are rendered. Arbitrary failure reasons and command output, HTTP bodies or
+headers, JWTs, assertions, provider tokens, API keys, cookies, credentials, and Kubernetes Secret
+values are neither rendered nor persisted. A finalization failure never replaces the primary
+failure category. Successful runs retain their existing outputs and publish no failure metadata.
+
 `action.yml` is `runs: composite`. No `<form>`-style ambient config; everything is an input or
 env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 
