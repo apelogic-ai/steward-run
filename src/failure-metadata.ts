@@ -6,6 +6,7 @@ export type FailurePhase = (typeof failurePhases)[number];
 export const failureCategories = [
   "provider-connection",
   "provider-token-grant",
+  "provider-grant",
   "provider-authorization",
   "provider-upstream",
   "assertion-mismatch",
@@ -52,6 +53,7 @@ const agentExitCategories = new Map<number, FailureCategory>([
   [73, "provider-upstream"],
   [74, "assertion-mismatch"],
   [75, "workflow-cleanup"],
+  [76, "provider-grant"],
 ]);
 
 export function classifyFailureReason(reason: string | undefined): FailureCategory {

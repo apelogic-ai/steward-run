@@ -125,11 +125,13 @@ versioned `steward-run.failure/v1` diagnostic contract. It contains exactly:
 - a bounded failure category;
 - an independent finalization category.
 
-The failure allowlist is `provider-connection`, `provider-token-grant`,
+The failure allowlist is `provider-connection`, `provider-token-grant`, `provider-grant`,
 `provider-authorization`, `provider-upstream`, `assertion-mismatch`, `workflow-cleanup`,
 `authentication`, `authorization`, `configuration`, `dependency`, `input-output`, `runtime`,
-`timeout`, `execution`, `cancelled`, and `unknown`. Exact agent exit codes 70 through 75 map in
-order to the first six categories; every other numeric agent exit maps to `execution`.
+`timeout`, `execution`, `cancelled`, and `unknown`. Exact agent exit codes 70 through 75 map to
+`provider-connection`, `provider-token-grant`, `provider-authorization`, `provider-upstream`,
+`assertion-mismatch`, and `workflow-cleanup`, respectively. Exact agent exit 76 maps to
+`provider-grant`; every other numeric agent exit maps to `execution`.
 Finalization categories are `confirmed`, `not-required`, `request-failed`,
 `confirmation-timeout`, `identity-mismatch`, and `unknown`.
 

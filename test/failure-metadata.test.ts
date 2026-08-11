@@ -24,6 +24,7 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
   assert.deepEqual(failureCategories, [
     "provider-connection",
     "provider-token-grant",
+    "provider-grant",
     "provider-authorization",
     "provider-upstream",
     "assertion-mismatch",
@@ -53,7 +54,7 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
   assert.equal(classifyFailureReason("task agent exited with code 73"), "provider-upstream");
   assert.equal(classifyFailureReason("task agent exited with code 74"), "assertion-mismatch");
   assert.equal(classifyFailureReason("task agent exited with code 75"), "workflow-cleanup");
-  assert.equal(classifyFailureReason("task agent exited with code 76"), "execution");
+  assert.equal(classifyFailureReason("task agent exited with code 76"), "provider-grant");
   assert.equal(classifyFailureReason("OpenShell sandbox runtime failed"), "runtime");
   assert.equal(classifyFailureReason("provider request deadline exceeded"), "timeout");
   assert.equal(classifyFailureReason("OIDC token rejected"), "authentication");
@@ -64,6 +65,59 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
   assert.equal(classifyFailureReason("command exited unsuccessfully"), "execution");
   assert.equal(classifyFailureReason("unrecognized server detail"), "unknown");
   assert.equal(classifyFailureReason(undefined), "unknown");
+});
+
+test("provider-grant requires the exact anchored exit-76 reason", async () => {
+  const hostileReasons = [
+    "task agent exited with code 76; token=private-token",
+    "task agent exited with code 76\nheader: Bearer private-bearer",
+    "prefix task agent exited with code 76",
+    "task agent exited with code 760",
+  ];
+
+  for (const reason of hostileReasons) {
+    assert.notEqual(classifyFailureReason(reason), "provider-grant");
+    const visible: string[] = [];
+    await publishFailureMetadata(
+      {
+        version: FAILURE_METADATA_VERSION,
+        phase: "failed",
+        failureCategory: classifyFailureReason(reason),
+        cleanupCategory: "confirmed",
+      },
+      {
+        writeAnnotation: async (value) => void visible.push(value),
+        writeStepSummary: async (value) => void visible.push(value),
+      },
+    );
+    const rendered = visible.join("\n");
+    assert.doesNotMatch(rendered, /private-token|private-bearer|Bearer|header:/u);
+  }
+});
+
+test("provider-grant annotation and summary contain only the bounded contract", async () => {
+  const visible: string[] = [];
+  await publishFailureMetadata(
+    {
+      version: FAILURE_METADATA_VERSION,
+      phase: "failed",
+      failureCategory: classifyFailureReason("task agent exited with code 76"),
+      cleanupCategory: "confirmed",
+    },
+    {
+      writeAnnotation: async (value) => void visible.push(value),
+      writeStepSummary: async (value) => void visible.push(value),
+    },
+  );
+
+  assert.equal(
+    visible[0],
+    "steward-run.failure/v1 phase=failed failure-category=provider-grant cleanup-category=confirmed",
+  );
+  assert.match(
+    visible[1] ?? "",
+    /\| steward-run\.failure\/v1 \| failed \| provider-grant \| confirmed \|/u,
+  );
 });
 
 test("GitHub annotation and step summary contain only the safe contract", async () => {

@@ -135,6 +135,84 @@ test("the checked-in bundle emits only bounded GitHub failure metadata", async (
   }
 });
 
+test("the checked-in bundle publishes exact provider-grant metadata without reason leakage", async () => {
+  for (const fixture of [
+    {
+      reason: "task agent exited with code 76",
+      expectedCategory: "provider-grant",
+    },
+    {
+      reason: "task agent exited with code 76; header: Bearer bundle-private-token",
+      expectedCategory: "authentication",
+    },
+  ]) {
+    const workspace = await mkdtemp(join(tmpdir(), "steward-run-bundle-provider-grant-"));
+    const outputFile = join(workspace, "github-output");
+    const summaryFile = join(workspace, "github-summary");
+    const finalizationMarker = join(workspace, "mock-finalized");
+    const mock = await startMockSteward({
+      finalizationMarker,
+      terminalFailureReason: fixture.reason,
+    });
+    try {
+      await mkdir(join(workspace, "in"));
+      await writeFile(join(workspace, "in", "payload.bin"), Buffer.from("fixture"));
+      await writeFile(outputFile, "");
+      await writeFile(summaryFile, "");
+      const child = spawn(process.execPath, ["dist/index.cjs"], {
+        cwd: new URL("..", import.meta.url),
+        env: {
+          ...process.env,
+          ACTIONS_ID_TOKEN_REQUEST_URL: `${mock.url}/oidc?api-version=1`,
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-secret",
+          GITHUB_JOB: "agent",
+          GITHUB_OUTPUT: outputFile,
+          GITHUB_REPOSITORY: "apelogic-ai/example",
+          GITHUB_RUN_ATTEMPT: "1",
+          GITHUB_RUN_ID: "123",
+          GITHUB_STEP_SUMMARY: summaryFile,
+          GITHUB_WORKSPACE: workspace,
+          STEWARD_RUN_API_URL: mock.url,
+          STEWARD_RUN_CODING_AGENT_RUNTIME: "claude-code@2.1.220",
+          STEWARD_RUN_IDENTITY_EXCHANGE_URL: `${mock.url}/v1/exchange`,
+          STEWARD_RUN_INPUTS: "in",
+          STEWARD_RUN_OUTPUTS: "out",
+          STEWARD_RUN_WORKFLOW: "copy-smoke",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += String(chunk)));
+      child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
+      const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+      const summary = await readFile(summaryFile, "utf8");
+      const visible = `${stdout}\n${stderr}\n${summary}`;
+
+      assert.equal(code, 1);
+      assert.match(
+        visible,
+        new RegExp(
+          `steward-run\\.failure/v1 phase=failed failure-category=${fixture.expectedCategory} cleanup-category=confirmed`,
+          "u",
+        ),
+      );
+      assert.match(
+        summary,
+        new RegExp(
+          `\\| steward-run\\.failure/v1 \\| failed \\| ${fixture.expectedCategory} \\| confirmed \\|`,
+          "u",
+        ),
+      );
+      assert.doesNotMatch(visible, /task agent exited|bundle-private-token|Bearer|header:/u);
+      assert.match(await readFile(finalizationMarker, "utf8"), /^[0-9a-f-]+\n$/u);
+    } finally {
+      await mock.close();
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }
+});
+
 test("the mock rejects workflows other than copy-smoke", async () => {
   const mock = await startMockSteward();
   try {
