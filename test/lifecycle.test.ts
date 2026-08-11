@@ -189,6 +189,24 @@ test("terminal Task and cleanup failures expose only independent allowlisted met
       return true;
     });
 
+    const missingProviderGrant = new FakeClient();
+    missingProviderGrant.phases = ["failed"];
+    missingProviderGrant.failureReason = "task agent exited with code 76";
+    await assert.rejects(
+      runWorkflow(config, root, dependencies(missingProviderGrant, {})),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.deepEqual(error.metadata, {
+          version: "steward-run.failure/v1",
+          phase: "failed",
+          failureCategory: "provider-grant",
+          cleanupCategory: "confirmed",
+        });
+        assert.doesNotMatch(error.message, /task agent exited|provider response/u);
+        return true;
+      },
+    );
+
     const failedWithOutputError = new FakeClient();
     failedWithOutputError.phases = ["failed"];
     failedWithOutputError.failureReason = "task agent exited with code 72";

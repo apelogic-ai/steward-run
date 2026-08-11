@@ -38,6 +38,7 @@ export interface MockSteward {
 export interface MockStewardOptions {
   finalizationMarker?: string;
   acceptExternalGithubOidcToken?: boolean;
+  terminalFailureReason?: string;
 }
 
 async function requestBody(request: IncomingMessage): Promise<Buffer> {
@@ -91,7 +92,11 @@ function hasExactAudience(token: string, audience: string): boolean {
   }
 }
 
-function task(finalized: boolean, phase: "submitted" | "running" | "succeeded") {
+function task(
+  finalized: boolean,
+  phase: "submitted" | "running" | "succeeded" | "failed",
+  failureReason?: string,
+) {
   return {
     taskUid,
     runtimeUid,
@@ -99,6 +104,7 @@ function task(finalized: boolean, phase: "submitted" | "running" | "succeeded") 
     runtimeOwnership: "provisioned",
     finalized,
     deltas: [],
+    ...(failureReason === undefined ? {} : { failureReason }),
   };
 }
 
@@ -212,7 +218,13 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
       } else if (request.method === "GET" && url.pathname === `/v1/tasks/${taskUid}`) {
         observations.polled = true;
         observations.operations.push("poll");
-        json(response, 200, task(observations.finalized, "succeeded"));
+        json(
+          response,
+          200,
+          options.terminalFailureReason === undefined
+            ? task(observations.finalized, "succeeded")
+            : task(observations.finalized, "failed", options.terminalFailureReason),
+        );
       } else if (request.method === "GET" && url.pathname === `/v1/tasks/${taskUid}/outputs`) {
         if (!payload) throw new Error("mock output requested before input upload");
         observations.downloaded = true;
@@ -225,7 +237,13 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         }
         observations.finalized = true;
         observations.operations.push("finalize");
-        json(response, 202, task(true, "succeeded"));
+        json(
+          response,
+          202,
+          options.terminalFailureReason === undefined
+            ? task(true, "succeeded")
+            : task(true, "failed", options.terminalFailureReason),
+        );
       } else {
         json(response, 404, { message: "not found" });
       }

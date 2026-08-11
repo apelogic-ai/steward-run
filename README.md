@@ -18,8 +18,10 @@ publish failure metadata.
 
 Governed smoke workflows may use the exact agent exit codes 70–75 for
 `provider-connection`, `provider-token-grant`, `provider-authorization`, `provider-upstream`,
-`assertion-mismatch`, and `workflow-cleanup`, respectively. Any other numeric agent exit maps to
-`execution`. Steward finalization is reported separately as `confirmed`, `not-required`,
+`assertion-mismatch`, and `workflow-cleanup`, respectively. Exact agent exit 76 maps to
+`provider-grant`, which identifies an absent or incomplete local provider OAuth grant before a
+provider-backed request. Any other numeric agent exit maps to `execution`. Steward finalization is
+reported separately as `confirmed`, `not-required`,
 `request-failed`, `confirmation-timeout`, `identity-mismatch`, or `unknown`.
 
 Production authentication exchanges a GitHub OIDC token with audience

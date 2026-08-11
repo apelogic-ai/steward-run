@@ -2538,6 +2538,7 @@ var failurePhases = ["succeeded", "failed", "cancelled", "unavailable"];
 var failureCategories = [
   "provider-connection",
   "provider-token-grant",
+  "provider-grant",
   "provider-authorization",
   "provider-upstream",
   "assertion-mismatch",
@@ -2567,7 +2568,8 @@ var agentExitCategories = /* @__PURE__ */ new Map([
   [72, "provider-authorization"],
   [73, "provider-upstream"],
   [74, "assertion-mismatch"],
-  [75, "workflow-cleanup"]
+  [75, "workflow-cleanup"],
+  [76, "provider-grant"]
 ]);
 function classifyFailureReason(reason) {
   if (reason === void 0) return "unknown";
