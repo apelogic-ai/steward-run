@@ -126,12 +126,15 @@ versioned `steward-run.failure/v1` diagnostic contract. It contains exactly:
 - an independent finalization category.
 
 The failure allowlist is `provider-connection`, `provider-token-grant`, `provider-grant`,
+`provider-protocol`,
 `provider-authorization`, `provider-upstream`, `assertion-mismatch`, `workflow-cleanup`,
 `authentication`, `authorization`, `configuration`, `dependency`, `input-output`, `runtime`,
 `timeout`, `execution`, `cancelled`, and `unknown`. Exact agent exit codes 70 through 75 map to
 `provider-connection`, `provider-token-grant`, `provider-authorization`, `provider-upstream`,
 `assertion-mismatch`, and `workflow-cleanup`, respectively. Exact agent exit 76 maps to
-`provider-grant`; every other numeric agent exit maps to `execution`.
+`provider-grant`; exact agent exit 77 maps to `provider-protocol`; every other numeric agent exit
+maps to `execution`. `provider-protocol` is limited to a local MCP framing, JSON-RPC, or
+session-contract failure after provider authentication; response data never becomes metadata.
 Finalization categories are `confirmed`, `not-required`, `request-failed`,
 `confirmation-timeout`, `identity-mismatch`, and `unknown`.
 

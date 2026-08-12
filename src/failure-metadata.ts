@@ -7,6 +7,7 @@ export const failureCategories = [
   "provider-connection",
   "provider-token-grant",
   "provider-grant",
+  "provider-protocol",
   "provider-authorization",
   "provider-upstream",
   "assertion-mismatch",
@@ -54,14 +55,21 @@ const agentExitCategories = new Map<number, FailureCategory>([
   [74, "assertion-mismatch"],
   [75, "workflow-cleanup"],
   [76, "provider-grant"],
+  [77, "provider-protocol"],
 ]);
 
 export function classifyFailureReason(reason: string | undefined): FailureCategory {
   if (reason === undefined) return "unknown";
+  const exactAgentExit = /^task agent exited with code ([0-9]+)$/u.exec(reason.toLowerCase());
+  if (exactAgentExit) {
+    const code = Number(exactAgentExit[1]);
+    return agentExitCategories.get(code) ?? "execution";
+  }
   const normalized = reason.trim().toLowerCase();
   const agentExit = /^task agent exited with code ([0-9]+)$/u.exec(normalized);
   if (agentExit) {
     const code = Number(agentExit[1]);
+    if (code === 77) return "execution";
     return agentExitCategories.get(code) ?? "execution";
   }
   if (/\b(timeout|timed out|deadline)\b/u.test(normalized)) return "timeout";

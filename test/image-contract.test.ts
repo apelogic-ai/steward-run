@@ -33,9 +33,9 @@ test("the package metadata identifies the in-cluster integration release", async
     await readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   ) as { version: string; packages: Record<string, { version?: string }> };
 
-  assert.equal(packageJson.version, "0.3.7");
-  assert.equal(packageLock.version, "0.3.7");
-  assert.equal(packageLock.packages[""]?.version, "0.3.7");
+  assert.equal(packageJson.version, "0.3.8");
+  assert.equal(packageLock.version, "0.3.8");
+  assert.equal(packageLock.packages[""]?.version, "0.3.8");
 });
 
 test("the thin-shell security check is a required build gate", async () => {

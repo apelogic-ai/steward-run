@@ -25,6 +25,7 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
     "provider-connection",
     "provider-token-grant",
     "provider-grant",
+    "provider-protocol",
     "provider-authorization",
     "provider-upstream",
     "assertion-mismatch",
@@ -55,6 +56,8 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
   assert.equal(classifyFailureReason("task agent exited with code 74"), "assertion-mismatch");
   assert.equal(classifyFailureReason("task agent exited with code 75"), "workflow-cleanup");
   assert.equal(classifyFailureReason("task agent exited with code 76"), "provider-grant");
+  assert.equal(classifyFailureReason("task agent exited with code 77"), "provider-protocol");
+  assert.equal(classifyFailureReason("task agent exited with code 78"), "execution");
   assert.equal(classifyFailureReason("OpenShell sandbox runtime failed"), "runtime");
   assert.equal(classifyFailureReason("provider request deadline exceeded"), "timeout");
   assert.equal(classifyFailureReason("OIDC token rejected"), "authentication");
@@ -65,6 +68,67 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
   assert.equal(classifyFailureReason("command exited unsuccessfully"), "execution");
   assert.equal(classifyFailureReason("unrecognized server detail"), "unknown");
   assert.equal(classifyFailureReason(undefined), "unknown");
+});
+
+test("provider-protocol requires the exact unadorned exit-77 reason", async () => {
+  const hostileReasons = [
+    "task agent exited with code 77; token=private-token",
+    "task agent exited with code 77\nheader: Bearer private-bearer",
+    "task agent exited with code 77\nbody: private-response",
+    "task agent exited with code 77\nsession: private-session",
+    "prefix task agent exited with code 77",
+    "task agent exited with code 77 suffix",
+    "task agent exited with code 77\n",
+    "\ttask agent exited with code 77",
+    "task agent exited with code 770",
+  ];
+
+  for (const reason of hostileReasons) {
+    assert.notEqual(classifyFailureReason(reason), "provider-protocol");
+    const visible: string[] = [];
+    await publishFailureMetadata(
+      {
+        version: FAILURE_METADATA_VERSION,
+        phase: "failed",
+        failureCategory: classifyFailureReason(reason),
+        cleanupCategory: "confirmed",
+      },
+      {
+        writeAnnotation: async (value) => void visible.push(value),
+        writeStepSummary: async (value) => void visible.push(value),
+      },
+    );
+    const rendered = visible.join("\n");
+    assert.doesNotMatch(
+      rendered,
+      /private-token|private-bearer|private-response|private-session|Bearer|header:|body:|session:/u,
+    );
+  }
+});
+
+test("provider-protocol annotation and summary contain only the bounded contract", async () => {
+  const visible: string[] = [];
+  await publishFailureMetadata(
+    {
+      version: FAILURE_METADATA_VERSION,
+      phase: "failed",
+      failureCategory: classifyFailureReason("task agent exited with code 77"),
+      cleanupCategory: "confirmed",
+    },
+    {
+      writeAnnotation: async (value) => void visible.push(value),
+      writeStepSummary: async (value) => void visible.push(value),
+    },
+  );
+
+  assert.equal(
+    visible[0],
+    "steward-run.failure/v1 phase=failed failure-category=provider-protocol cleanup-category=confirmed",
+  );
+  assert.match(
+    visible[1] ?? "",
+    /\| steward-run\.failure\/v1 \| failed \| provider-protocol \| confirmed \|/u,
+  );
 });
 
 test("provider-grant requires the exact anchored exit-76 reason", async () => {

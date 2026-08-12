@@ -207,6 +207,36 @@ test("terminal Task and cleanup failures expose only independent allowlisted met
       },
     );
 
+    const providerProtocolFailure = new FakeClient();
+    providerProtocolFailure.phases = ["failed"];
+    providerProtocolFailure.failureReason = "task agent exited with code 77";
+    await assert.rejects(
+      runWorkflow(config, root, dependencies(providerProtocolFailure, {})),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.deepEqual(error.metadata, {
+          version: "steward-run.failure/v1",
+          phase: "failed",
+          failureCategory: "provider-protocol",
+          cleanupCategory: "confirmed",
+        });
+        assert.doesNotMatch(error.message, /task agent exited|provider response/u);
+        return true;
+      },
+    );
+
+    const unknownAgentExit = new FakeClient();
+    unknownAgentExit.phases = ["failed"];
+    unknownAgentExit.failureReason = "task agent exited with code 78";
+    await assert.rejects(
+      runWorkflow(config, root, dependencies(unknownAgentExit, {})),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.equal(error.metadata.failureCategory, "execution");
+        return true;
+      },
+    );
+
     const failedWithOutputError = new FakeClient();
     failedWithOutputError.phases = ["failed"];
     failedWithOutputError.failureReason = "task agent exited with code 72";

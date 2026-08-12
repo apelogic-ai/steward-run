@@ -290,6 +290,7 @@ test("failure diagnostics are versioned, bounded, and GitHub-visible", async () 
     assert.match(document, /steward-run\.failure\/v1/u);
     assert.match(document, /provider-connection/u);
     assert.match(document, /provider-grant/u);
+    assert.match(document, /provider-protocol/u);
     assert.match(document, /workflow-cleanup/u);
     assert.match(document, /confirmation-timeout/u);
     assert.match(document, /Raw Steward reasons|Arbitrary failure reasons/u);
