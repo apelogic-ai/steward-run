@@ -7,7 +7,7 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "b26790e29ce9c243c6a7aa00450a2a1a98fbd250";
+const actionCommit = "c40185d1d8af187dcd9dd95698f4e8ddfec6f872";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -290,6 +290,7 @@ test("failure diagnostics are versioned, bounded, and GitHub-visible", async () 
     assert.match(document, /steward-run\.failure\/v1/u);
     assert.match(document, /provider-connection/u);
     assert.match(document, /provider-grant/u);
+    assert.match(document, /provider-protocol/u);
     assert.match(document, /workflow-cleanup/u);
     assert.match(document, /confirmation-timeout/u);
     assert.match(document, /Raw Steward reasons|Arbitrary failure reasons/u);

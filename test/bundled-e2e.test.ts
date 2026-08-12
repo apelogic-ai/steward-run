@@ -135,18 +135,34 @@ test("the checked-in bundle emits only bounded GitHub failure metadata", async (
   }
 });
 
-test("the checked-in bundle publishes exact provider-grant metadata without reason leakage", async () => {
+test("the checked-in bundle preserves exact bounded provider failure metadata without reason leakage", async () => {
   for (const fixture of [
     {
       reason: "task agent exited with code 76",
       expectedCategory: "provider-grant",
     },
     {
+      reason: "task agent exited with code 77",
+      expectedCategory: "provider-protocol",
+    },
+    {
+      reason: "task agent exited with code 78",
+      expectedCategory: "execution",
+    },
+    {
       reason: "task agent exited with code 76; header: Bearer bundle-private-token",
       expectedCategory: "authentication",
     },
+    {
+      reason: "task agent exited with code 77\nheader: Bearer bundle-private-token",
+      expectedCategory: "authentication",
+    },
+    {
+      reason: "task agent exited with code 77\n",
+      expectedCategory: "execution",
+    },
   ]) {
-    const workspace = await mkdtemp(join(tmpdir(), "steward-run-bundle-provider-grant-"));
+    const workspace = await mkdtemp(join(tmpdir(), "steward-run-bundle-provider-failure-"));
     const outputFile = join(workspace, "github-output");
     const summaryFile = join(workspace, "github-summary");
     const finalizationMarker = join(workspace, "mock-finalized");
