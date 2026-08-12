@@ -26,7 +26,7 @@ jobs:
       ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
       IMAGE_REPOSITORY: ${{ vars.ECR_REGISTRY }}/${{ vars.ECR_REPOSITORY }}
       COSIGN_EXPERIMENTAL: "1"
-      ACTION_COMMIT: b26790e29ce9c243c6a7aa00450a2a1a98fbd250
+      ACTION_COMMIT: c40185d1d8af187dcd9dd95698f4e8ddfec6f872
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Validate release request
