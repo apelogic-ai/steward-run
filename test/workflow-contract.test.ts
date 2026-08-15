@@ -288,6 +288,7 @@ test("failure diagnostics are versioned, bounded, and GitHub-visible", async () 
   ]);
   for (const document of [readme, specification]) {
     assert.match(document, /steward-run\.failure\/v1/u);
+    assert.match(document, /steward-run\.assertion-stage\/v1/u);
     assert.match(document, /provider-connection/u);
     assert.match(document, /provider-grant/u);
     assert.match(document, /provider-protocol/u);
@@ -299,4 +300,8 @@ test("failure diagnostics are versioned, bounded, and GitHub-visible", async () 
   assert.match(main, /::error title=Steward governed Task failed::/u);
   assert.doesNotMatch(main, /error instanceof Error \? error\.message : String\(error\)/u);
   assert.match(metadata, /FAILURE_METADATA_VERSION = "steward-run\.failure\/v1"/u);
+  assert.match(
+    metadata,
+    /ASSERTION_STAGE_METADATA_VERSION = "steward-run\.assertion-stage\/v1"/u,
+  );
 });

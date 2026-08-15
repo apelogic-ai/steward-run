@@ -135,8 +135,12 @@ test("the checked-in bundle emits only bounded GitHub failure metadata", async (
   }
 });
 
-test("the checked-in bundle preserves exact bounded provider failure metadata without reason leakage", async () => {
-  for (const fixture of [
+test("the checked-in bundle preserves exact bounded failure metadata without reason leakage", async () => {
+  const fixtures: Array<{
+    reason: string;
+    expectedCategory: string;
+    expectedStage?: string;
+  }> = [
     {
       reason: "task agent exited with code 76",
       expectedCategory: "provider-grant",
@@ -147,6 +151,26 @@ test("the checked-in bundle preserves exact bounded provider failure metadata wi
     },
     {
       reason: "task agent exited with code 78",
+      expectedCategory: "assertion-mismatch",
+      expectedStage: "input-request",
+    },
+    {
+      reason: "task agent exited with code 79",
+      expectedCategory: "assertion-mismatch",
+      expectedStage: "runtime-toolchain",
+    },
+    {
+      reason: "task agent exited with code 80",
+      expectedCategory: "assertion-mismatch",
+      expectedStage: "model-result",
+    },
+    {
+      reason: "task agent exited with code 81",
+      expectedCategory: "assertion-mismatch",
+      expectedStage: "mcp-tool-event",
+    },
+    {
+      reason: "task agent exited with code 82",
       expectedCategory: "execution",
     },
     {
@@ -161,7 +185,8 @@ test("the checked-in bundle preserves exact bounded provider failure metadata wi
       reason: "task agent exited with code 77\n",
       expectedCategory: "execution",
     },
-  ]) {
+  ];
+  for (const fixture of fixtures) {
     const workspace = await mkdtemp(join(tmpdir(), "steward-run-bundle-provider-failure-"));
     const outputFile = join(workspace, "github-output");
     const summaryFile = join(workspace, "github-summary");
@@ -220,6 +245,24 @@ test("the checked-in bundle preserves exact bounded provider failure metadata wi
           "u",
         ),
       );
+      if (fixture.expectedStage === undefined) {
+        assert.doesNotMatch(visible, /steward-run\.assertion-stage\/v1/u);
+      } else {
+        assert.match(
+          visible,
+          new RegExp(
+            `steward-run\\.assertion-stage/v1 stage=${fixture.expectedStage}`,
+            "u",
+          ),
+        );
+        assert.match(
+          summary,
+          new RegExp(
+            `\\| steward-run\\.assertion-stage/v1 \\| ${fixture.expectedStage} \\|`,
+            "u",
+          ),
+        );
+      }
       assert.doesNotMatch(visible, /task agent exited|bundle-private-token|Bearer|header:/u);
       assert.match(await readFile(finalizationMarker, "utf8"), /^[0-9a-f-]+\n$/u);
     } finally {

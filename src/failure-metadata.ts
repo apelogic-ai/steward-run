@@ -1,4 +1,5 @@
 export const FAILURE_METADATA_VERSION = "steward-run.failure/v1" as const;
+export const ASSERTION_STAGE_METADATA_VERSION = "steward-run.assertion-stage/v1" as const;
 
 export const failurePhases = ["succeeded", "failed", "cancelled", "unavailable"] as const;
 export type FailurePhase = (typeof failurePhases)[number];
@@ -25,6 +26,14 @@ export const failureCategories = [
 ] as const;
 export type FailureCategory = (typeof failureCategories)[number];
 
+export const assertionStages = [
+  "input-request",
+  "runtime-toolchain",
+  "model-result",
+  "mcp-tool-event",
+] as const;
+export type AssertionStage = (typeof assertionStages)[number];
+
 export const cleanupCategories = [
   "confirmed",
   "not-required",
@@ -40,6 +49,7 @@ export interface FailureMetadata {
   phase: FailurePhase;
   failureCategory: FailureCategory;
   cleanupCategory: CleanupCategory;
+  assertionStage?: AssertionStage;
 }
 
 export interface FailureMetadataSink {
@@ -56,13 +66,35 @@ const agentExitCategories = new Map<number, FailureCategory>([
   [75, "workflow-cleanup"],
   [76, "provider-grant"],
   [77, "provider-protocol"],
+  [78, "assertion-mismatch"],
+  [79, "assertion-mismatch"],
+  [80, "assertion-mismatch"],
+  [81, "assertion-mismatch"],
 ]);
+
+const agentExitAssertionStages = new Map<number, AssertionStage>([
+  [78, "input-request"],
+  [79, "runtime-toolchain"],
+  [80, "model-result"],
+  [81, "mcp-tool-event"],
+]);
+
+function exactAgentExitCode(reason: string | undefined): number | undefined {
+  if (reason === undefined) return undefined;
+  const exactAgentExit = /^task agent exited with code ([0-9]+)$/u.exec(reason.toLowerCase());
+  return exactAgentExit ? Number(exactAgentExit[1]) : undefined;
+}
+
+export function classifyAssertionStage(reason: string | undefined): AssertionStage | undefined {
+  const code = exactAgentExitCode(reason);
+  return code === undefined ? undefined : agentExitAssertionStages.get(code);
+}
 
 export function classifyFailureReason(reason: string | undefined): FailureCategory {
   if (reason === undefined) return "unknown";
-  const exactAgentExit = /^task agent exited with code ([0-9]+)$/u.exec(reason.toLowerCase());
-  if (exactAgentExit) {
-    const code = Number(exactAgentExit[1]);
+  const exactAgentExit = exactAgentExitCode(reason);
+  if (exactAgentExit !== undefined) {
+    const code = exactAgentExit;
     return agentExitCategories.get(code) ?? "execution";
   }
   const normalized = reason.trim().toLowerCase();
@@ -96,15 +128,21 @@ function allowed<T extends string>(values: readonly T[], value: unknown): value 
 }
 
 export function sanitizeFailureMetadata(value: FailureMetadata): FailureMetadata {
+  const failureCategory = allowed(failureCategories, value.failureCategory)
+    ? value.failureCategory
+    : "unknown";
+  const assertionStage = failureCategory === "assertion-mismatch" &&
+      allowed(assertionStages, value.assertionStage)
+    ? value.assertionStage
+    : undefined;
   return {
     version: FAILURE_METADATA_VERSION,
     phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
-    failureCategory: allowed(failureCategories, value.failureCategory)
-      ? value.failureCategory
-      : "unknown",
+    failureCategory,
     cleanupCategory: allowed(cleanupCategories, value.cleanupCategory)
       ? value.cleanupCategory
       : "unknown",
+    ...(assertionStage === undefined ? {} : { assertionStage }),
   };
 }
 
@@ -118,15 +156,29 @@ export async function publishFailureMetadata(
 ): Promise<void> {
   const safe = sanitizeFailureMetadata(metadata);
   await sink.writeAnnotation(compact(safe));
+  if (safe.assertionStage !== undefined) {
+    await sink.writeAnnotation(
+      `${ASSERTION_STAGE_METADATA_VERSION} stage=${safe.assertionStage}`,
+    );
+  }
+  const summary = [
+    "## Steward governed Task failure",
+    "",
+    "| Contract | Phase | Failure category | Cleanup category |",
+    "| --- | --- | --- | --- |",
+    `| ${FAILURE_METADATA_VERSION} | ${safe.phase} | ${safe.failureCategory} | ${safe.cleanupCategory} |`,
+  ];
+  if (safe.assertionStage !== undefined) {
+    summary.push(
+      "",
+      "| Contract | Assertion stage |",
+      "| --- | --- |",
+      `| ${ASSERTION_STAGE_METADATA_VERSION} | ${safe.assertionStage} |`,
+    );
+  }
+  summary.push("");
   await sink.writeStepSummary(
-    [
-      "## Steward governed Task failure",
-      "",
-      "| Contract | Phase | Failure category | Cleanup category |",
-      "| --- | --- | --- | --- |",
-      `| ${FAILURE_METADATA_VERSION} | ${safe.phase} | ${safe.failureCategory} | ${safe.cleanupCategory} |`,
-      "",
-    ].join("\n"),
+    summary.join("\n"),
   );
 }
 

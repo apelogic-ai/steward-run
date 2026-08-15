@@ -132,11 +132,20 @@ The failure allowlist is `provider-connection`, `provider-token-grant`, `provide
 `timeout`, `execution`, `cancelled`, and `unknown`. Exact agent exit codes 70 through 75 map to
 `provider-connection`, `provider-token-grant`, `provider-authorization`, `provider-upstream`,
 `assertion-mismatch`, and `workflow-cleanup`, respectively. Exact agent exit 76 maps to
-`provider-grant`; exact agent exit 77 maps to `provider-protocol`; every other numeric agent exit
-maps to `execution`. `provider-protocol` is limited to a local MCP framing, JSON-RPC, or
-session-contract failure after provider authentication; response data never becomes metadata.
+`provider-grant`; exact agent exit 77 maps to `provider-protocol`. Except for the staged assertion
+exits described below, every other numeric agent exit maps to `execution`. `provider-protocol` is
+limited to a local MCP framing, JSON-RPC, or session-contract failure after provider
+authentication; response data never becomes metadata.
 Finalization categories are `confirmed`, `not-required`, `request-failed`,
 `confirmation-timeout`, `identity-mismatch`, and `unknown`.
+
+Exact agent exits 78 through 81 are the sole exception to the generic numeric-exit rule. They all
+retain `assertion-mismatch` and add one independently versioned, allowlisted
+`steward-run.assertion-stage/v1` signal: 78 is `input-request`, 79 is `runtime-toolchain`, 80 is
+`model-result`, and 81 is `mcp-tool-event`. The original `steward-run.failure/v1` annotation and
+summary row remain byte-for-byte compatible; a staged assertion adds a second bounded annotation
+and a second summary table. Legacy exact exit 74 remains `assertion-mismatch` with no stage.
+Malformed or decorated reasons, unknown codes, and runtime-supplied text cannot select a stage.
 
 Only those literals are rendered. Arbitrary failure reasons and command output, HTTP bodies or
 headers, JWTs, assertions, provider tokens, API keys, cookies, credentials, and Kubernetes Secret

@@ -225,9 +225,35 @@ test("terminal Task and cleanup failures expose only independent allowlisted met
       },
     );
 
+    for (const [exitCode, assertionStage] of [
+      [78, "input-request"],
+      [79, "runtime-toolchain"],
+      [80, "model-result"],
+      [81, "mcp-tool-event"],
+    ] as const) {
+      const stagedAssertionFailure = new FakeClient();
+      stagedAssertionFailure.phases = ["failed"];
+      stagedAssertionFailure.failureReason = `task agent exited with code ${exitCode}`;
+      await assert.rejects(
+        runWorkflow(config, root, dependencies(stagedAssertionFailure, {})),
+        (error: unknown) => {
+          assert.ok(error instanceof StewardRunFailure);
+          assert.deepEqual(error.metadata, {
+            version: "steward-run.failure/v1",
+            phase: "failed",
+            failureCategory: "assertion-mismatch",
+            cleanupCategory: "confirmed",
+            assertionStage,
+          });
+          assert.doesNotMatch(error.message, /task agent exited|assertion-stage/u);
+          return true;
+        },
+      );
+    }
+
     const unknownAgentExit = new FakeClient();
     unknownAgentExit.phases = ["failed"];
-    unknownAgentExit.failureReason = "task agent exited with code 78";
+    unknownAgentExit.failureReason = "task agent exited with code 82";
     await assert.rejects(
       runWorkflow(config, root, dependencies(unknownAgentExit, {})),
       (error: unknown) => {

@@ -6,7 +6,9 @@ import type { WorkflowConfig } from "./config.js";
 import {
   FAILURE_METADATA_VERSION,
   StewardRunFailure,
+  classifyAssertionStage,
   classifyFailureReason,
+  type AssertionStage,
   type CleanupCategory,
   type FailureCategory,
   type FailurePhase,
@@ -158,6 +160,7 @@ export async function runWorkflow(
   let result: Task | undefined;
   let failurePhase: FailurePhase = "unavailable";
   let failureCategory: FailureCategory = "unknown";
+  let assertionStage: AssertionStage | undefined;
   let failed = false;
   let stage: WorkflowStage = "input";
   try {
@@ -192,6 +195,9 @@ export async function runWorkflow(
       failureCategory = terminal.phase === "cancelled"
         ? "cancelled"
         : classifyFailureReason(terminal.failureReason);
+      assertionStage = terminal.phase === "cancelled"
+        ? undefined
+        : classifyAssertionStage(terminal.failureReason);
     }
     await dependencies.setOutput("status", terminal.phase);
     if (!failed) {
@@ -238,6 +244,7 @@ export async function runWorkflow(
       phase: failurePhase,
       failureCategory,
       cleanupCategory,
+      ...(assertionStage === undefined ? {} : { assertionStage }),
     });
   }
   return result;
