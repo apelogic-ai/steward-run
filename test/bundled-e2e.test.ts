@@ -140,6 +140,7 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
     reason: string;
     expectedCategory: string;
     expectedStage?: string;
+    expectedProviderStage?: string;
   }> = [
     {
       reason: "task agent exited with code 76",
@@ -171,6 +172,11 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
     },
     {
       reason: "task agent exited with code 82",
+      expectedCategory: "provider-connection",
+      expectedProviderStage: "model-proxy-start",
+    },
+    {
+      reason: "task agent exited with code 86",
       expectedCategory: "execution",
     },
     {
@@ -259,6 +265,24 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
           summary,
           new RegExp(
             `\\| steward-run\\.assertion-stage/v1 \\| ${fixture.expectedStage} \\|`,
+            "u",
+          ),
+        );
+      }
+      if (fixture.expectedProviderStage === undefined) {
+        assert.doesNotMatch(visible, /steward-run\.provider-connection-stage\/v1/u);
+      } else {
+        assert.match(
+          visible,
+          new RegExp(
+            `steward-run\\.provider-connection-stage/v1 stage=${fixture.expectedProviderStage}`,
+            "u",
+          ),
+        );
+        assert.match(
+          summary,
+          new RegExp(
+            `\\| steward-run\\.provider-connection-stage/v1 \\| ${fixture.expectedProviderStage} \\|`,
             "u",
           ),
         );

@@ -2535,6 +2535,7 @@ function readActionConfig(environment) {
 // src/failure-metadata.ts
 var FAILURE_METADATA_VERSION = "steward-run.failure/v1";
 var ASSERTION_STAGE_METADATA_VERSION = "steward-run.assertion-stage/v1";
+var PROVIDER_CONNECTION_STAGE_METADATA_VERSION = "steward-run.provider-connection-stage/v1";
 var failurePhases = ["succeeded", "failed", "cancelled", "unavailable"];
 var failureCategories = [
   "provider-connection",
@@ -2562,6 +2563,12 @@ var assertionStages = [
   "model-result",
   "mcp-tool-event"
 ];
+var providerConnectionStages = [
+  "model-proxy-start",
+  "model-request",
+  "model-gateway",
+  "agent-after-model"
+];
 var cleanupCategories = [
   "confirmed",
   "not-required",
@@ -2582,13 +2589,23 @@ var agentExitCategories = /* @__PURE__ */ new Map([
   [78, "assertion-mismatch"],
   [79, "assertion-mismatch"],
   [80, "assertion-mismatch"],
-  [81, "assertion-mismatch"]
+  [81, "assertion-mismatch"],
+  [82, "provider-connection"],
+  [83, "provider-connection"],
+  [84, "provider-connection"],
+  [85, "provider-connection"]
 ]);
 var agentExitAssertionStages = /* @__PURE__ */ new Map([
   [78, "input-request"],
   [79, "runtime-toolchain"],
   [80, "model-result"],
   [81, "mcp-tool-event"]
+]);
+var agentExitProviderConnectionStages = /* @__PURE__ */ new Map([
+  [82, "model-proxy-start"],
+  [83, "model-request"],
+  [84, "model-gateway"],
+  [85, "agent-after-model"]
 ]);
 function exactAgentExitCode(reason) {
   if (reason === void 0) return void 0;
@@ -2598,6 +2615,10 @@ function exactAgentExitCode(reason) {
 function classifyAssertionStage(reason) {
   const code = exactAgentExitCode(reason);
   return code === void 0 ? void 0 : agentExitAssertionStages.get(code);
+}
+function classifyProviderConnectionStage(reason) {
+  const code = exactAgentExitCode(reason);
+  return code === void 0 ? void 0 : agentExitProviderConnectionStages.get(code);
 }
 function classifyFailureReason(reason) {
   if (reason === void 0) return "unknown";
@@ -2637,12 +2658,14 @@ function allowed(values, value) {
 function sanitizeFailureMetadata(value) {
   const failureCategory = allowed(failureCategories, value.failureCategory) ? value.failureCategory : "unknown";
   const assertionStage = failureCategory === "assertion-mismatch" && allowed(assertionStages, value.assertionStage) ? value.assertionStage : void 0;
+  const providerConnectionStage = failureCategory === "provider-connection" && allowed(providerConnectionStages, value.providerConnectionStage) ? value.providerConnectionStage : void 0;
   return {
     version: FAILURE_METADATA_VERSION,
     phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
     failureCategory,
     cleanupCategory: allowed(cleanupCategories, value.cleanupCategory) ? value.cleanupCategory : "unknown",
-    ...assertionStage === void 0 ? {} : { assertionStage }
+    ...assertionStage === void 0 ? {} : { assertionStage },
+    ...providerConnectionStage === void 0 ? {} : { providerConnectionStage }
   };
 }
 function compact(metadata) {
@@ -2654,6 +2677,11 @@ async function publishFailureMetadata(metadata, sink) {
   if (safe.assertionStage !== void 0) {
     await sink.writeAnnotation(
       `${ASSERTION_STAGE_METADATA_VERSION} stage=${safe.assertionStage}`
+    );
+  }
+  if (safe.providerConnectionStage !== void 0) {
+    await sink.writeAnnotation(
+      `${PROVIDER_CONNECTION_STAGE_METADATA_VERSION} stage=${safe.providerConnectionStage}`
     );
   }
   const summary = [
@@ -2669,6 +2697,14 @@ async function publishFailureMetadata(metadata, sink) {
       "| Contract | Assertion stage |",
       "| --- | --- |",
       `| ${ASSERTION_STAGE_METADATA_VERSION} | ${safe.assertionStage} |`
+    );
+  }
+  if (safe.providerConnectionStage !== void 0) {
+    summary.push(
+      "",
+      "| Contract | Provider connection stage |",
+      "| --- | --- |",
+      `| ${PROVIDER_CONNECTION_STAGE_METADATA_VERSION} | ${safe.providerConnectionStage} |`
     );
   }
   summary.push("");
@@ -3120,6 +3156,7 @@ async function runWorkflow(config, workspace, dependencies) {
   let failurePhase = "unavailable";
   let failureCategory = "unknown";
   let assertionStage;
+  let providerConnectionStage;
   let failed = false;
   let stage = "input";
   try {
@@ -3153,6 +3190,7 @@ async function runWorkflow(config, workspace, dependencies) {
       failed = true;
       failureCategory = terminal.phase === "cancelled" ? "cancelled" : classifyFailureReason(terminal.failureReason);
       assertionStage = terminal.phase === "cancelled" ? void 0 : classifyAssertionStage(terminal.failureReason);
+      providerConnectionStage = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStage(terminal.failureReason);
     }
     await dependencies.setOutput("status", terminal.phase);
     if (!failed) {
@@ -3194,7 +3232,8 @@ async function runWorkflow(config, workspace, dependencies) {
       phase: failurePhase,
       failureCategory,
       cleanupCategory,
-      ...assertionStage === void 0 ? {} : { assertionStage }
+      ...assertionStage === void 0 ? {} : { assertionStage },
+      ...providerConnectionStage === void 0 ? {} : { providerConnectionStage }
     });
   }
   return result;

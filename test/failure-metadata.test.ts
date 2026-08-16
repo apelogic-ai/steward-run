@@ -3,14 +3,17 @@ import test from "node:test";
 import {
   ASSERTION_STAGE_METADATA_VERSION,
   FAILURE_METADATA_VERSION,
+  PROVIDER_CONNECTION_STAGE_METADATA_VERSION,
   StewardRunFailure,
   assertionStages,
   classifyAssertionStage,
   classifyFailureReason,
+  classifyProviderConnectionStage,
   cleanupCategories,
   failureCategories,
   failurePhases,
   publishFailureMetadata,
+  providerConnectionStages,
   type FailureMetadata,
 } from "../src/failure-metadata.ts";
 
@@ -60,7 +63,7 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
   assert.equal(classifyFailureReason("task agent exited with code 75"), "workflow-cleanup");
   assert.equal(classifyFailureReason("task agent exited with code 76"), "provider-grant");
   assert.equal(classifyFailureReason("task agent exited with code 77"), "provider-protocol");
-  assert.equal(classifyFailureReason("task agent exited with code 82"), "execution");
+  assert.equal(classifyFailureReason("task agent exited with code 82"), "provider-connection");
   assert.equal(classifyFailureReason("OpenShell sandbox runtime failed"), "runtime");
   assert.equal(classifyFailureReason("provider request deadline exceeded"), "timeout");
   assert.equal(classifyFailureReason("OIDC token rejected"), "authentication");
@@ -71,6 +74,47 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
   assert.equal(classifyFailureReason("command exited unsuccessfully"), "execution");
   assert.equal(classifyFailureReason("unrecognized server detail"), "unknown");
   assert.equal(classifyFailureReason(undefined), "unknown");
+});
+
+test("provider-connection exits map to an independently versioned bounded signal", async () => {
+  assert.equal(PROVIDER_CONNECTION_STAGE_METADATA_VERSION, "steward-run.provider-connection-stage/v1");
+  assert.deepEqual(providerConnectionStages, [
+    "model-proxy-start",
+    "model-request",
+    "model-gateway",
+    "agent-after-model",
+  ]);
+  const fixtures = [
+    [82, "model-proxy-start"],
+    [83, "model-request"],
+    [84, "model-gateway"],
+    [85, "agent-after-model"],
+  ] as const;
+  for (const [exitCode, stage] of fixtures) {
+    const reason = `task agent exited with code ${exitCode}`;
+    assert.equal(classifyFailureReason(reason), "provider-connection");
+    assert.equal(classifyProviderConnectionStage(reason), stage);
+    const annotations: string[] = [];
+    await publishFailureMetadata(
+      {
+        version: FAILURE_METADATA_VERSION,
+        phase: "failed",
+        failureCategory: "provider-connection",
+        cleanupCategory: "confirmed",
+        providerConnectionStage: stage,
+      },
+      {
+        writeAnnotation: async (value) => void annotations.push(value),
+        writeStepSummary: async () => undefined,
+      },
+    );
+    assert.deepEqual(annotations, [
+      "steward-run.failure/v1 phase=failed failure-category=provider-connection cleanup-category=confirmed",
+      `steward-run.provider-connection-stage/v1 stage=${stage}`,
+    ]);
+  }
+  assert.equal(classifyProviderConnectionStage("task agent exited with code 70"), undefined);
+  assert.equal(classifyProviderConnectionStage("task agent exited with code 82; token=private"), undefined);
 });
 
 test("assertion-stage exits map to an independently versioned bounded signal", async () => {

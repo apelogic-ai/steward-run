@@ -253,7 +253,7 @@ test("terminal Task and cleanup failures expose only independent allowlisted met
 
     const unknownAgentExit = new FakeClient();
     unknownAgentExit.phases = ["failed"];
-    unknownAgentExit.failureReason = "task agent exited with code 82";
+    unknownAgentExit.failureReason = "task agent exited with code 86";
     await assert.rejects(
       runWorkflow(config, root, dependencies(unknownAgentExit, {})),
       (error: unknown) => {

@@ -1,5 +1,6 @@
 export const FAILURE_METADATA_VERSION = "steward-run.failure/v1" as const;
 export const ASSERTION_STAGE_METADATA_VERSION = "steward-run.assertion-stage/v1" as const;
+export const PROVIDER_CONNECTION_STAGE_METADATA_VERSION = "steward-run.provider-connection-stage/v1" as const;
 
 export const failurePhases = ["succeeded", "failed", "cancelled", "unavailable"] as const;
 export type FailurePhase = (typeof failurePhases)[number];
@@ -34,6 +35,14 @@ export const assertionStages = [
 ] as const;
 export type AssertionStage = (typeof assertionStages)[number];
 
+export const providerConnectionStages = [
+  "model-proxy-start",
+  "model-request",
+  "model-gateway",
+  "agent-after-model",
+] as const;
+export type ProviderConnectionStage = (typeof providerConnectionStages)[number];
+
 export const cleanupCategories = [
   "confirmed",
   "not-required",
@@ -50,6 +59,7 @@ export interface FailureMetadata {
   failureCategory: FailureCategory;
   cleanupCategory: CleanupCategory;
   assertionStage?: AssertionStage;
+  providerConnectionStage?: ProviderConnectionStage;
 }
 
 export interface FailureMetadataSink {
@@ -70,6 +80,10 @@ const agentExitCategories = new Map<number, FailureCategory>([
   [79, "assertion-mismatch"],
   [80, "assertion-mismatch"],
   [81, "assertion-mismatch"],
+  [82, "provider-connection"],
+  [83, "provider-connection"],
+  [84, "provider-connection"],
+  [85, "provider-connection"],
 ]);
 
 const agentExitAssertionStages = new Map<number, AssertionStage>([
@@ -77,6 +91,13 @@ const agentExitAssertionStages = new Map<number, AssertionStage>([
   [79, "runtime-toolchain"],
   [80, "model-result"],
   [81, "mcp-tool-event"],
+]);
+
+const agentExitProviderConnectionStages = new Map<number, ProviderConnectionStage>([
+  [82, "model-proxy-start"],
+  [83, "model-request"],
+  [84, "model-gateway"],
+  [85, "agent-after-model"],
 ]);
 
 function exactAgentExitCode(reason: string | undefined): number | undefined {
@@ -88,6 +109,11 @@ function exactAgentExitCode(reason: string | undefined): number | undefined {
 export function classifyAssertionStage(reason: string | undefined): AssertionStage | undefined {
   const code = exactAgentExitCode(reason);
   return code === undefined ? undefined : agentExitAssertionStages.get(code);
+}
+
+export function classifyProviderConnectionStage(reason: string | undefined): ProviderConnectionStage | undefined {
+  const code = exactAgentExitCode(reason);
+  return code === undefined ? undefined : agentExitProviderConnectionStages.get(code);
 }
 
 export function classifyFailureReason(reason: string | undefined): FailureCategory {
@@ -135,6 +161,10 @@ export function sanitizeFailureMetadata(value: FailureMetadata): FailureMetadata
       allowed(assertionStages, value.assertionStage)
     ? value.assertionStage
     : undefined;
+  const providerConnectionStage = failureCategory === "provider-connection" &&
+      allowed(providerConnectionStages, value.providerConnectionStage)
+    ? value.providerConnectionStage
+    : undefined;
   return {
     version: FAILURE_METADATA_VERSION,
     phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
@@ -143,6 +173,7 @@ export function sanitizeFailureMetadata(value: FailureMetadata): FailureMetadata
       ? value.cleanupCategory
       : "unknown",
     ...(assertionStage === undefined ? {} : { assertionStage }),
+    ...(providerConnectionStage === undefined ? {} : { providerConnectionStage }),
   };
 }
 
@@ -161,6 +192,11 @@ export async function publishFailureMetadata(
       `${ASSERTION_STAGE_METADATA_VERSION} stage=${safe.assertionStage}`,
     );
   }
+  if (safe.providerConnectionStage !== undefined) {
+    await sink.writeAnnotation(
+      `${PROVIDER_CONNECTION_STAGE_METADATA_VERSION} stage=${safe.providerConnectionStage}`,
+    );
+  }
   const summary = [
     "## Steward governed Task failure",
     "",
@@ -174,6 +210,14 @@ export async function publishFailureMetadata(
       "| Contract | Assertion stage |",
       "| --- | --- |",
       `| ${ASSERTION_STAGE_METADATA_VERSION} | ${safe.assertionStage} |`,
+    );
+  }
+  if (safe.providerConnectionStage !== undefined) {
+    summary.push(
+      "",
+      "| Contract | Provider connection stage |",
+      "| --- | --- |",
+      `| ${PROVIDER_CONNECTION_STAGE_METADATA_VERSION} | ${safe.providerConnectionStage} |`,
     );
   }
   summary.push("");
