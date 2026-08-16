@@ -4,16 +4,19 @@ import {
   ASSERTION_STAGE_METADATA_VERSION,
   FAILURE_METADATA_VERSION,
   PROVIDER_CONNECTION_STAGE_METADATA_VERSION,
+  PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION,
   StewardRunFailure,
   assertionStages,
   classifyAssertionStage,
   classifyFailureReason,
   classifyProviderConnectionStage,
+  classifyProviderConnectionStageV2,
   cleanupCategories,
   failureCategories,
   failurePhases,
   publishFailureMetadata,
   providerConnectionStages,
+  providerConnectionStagesV2,
   type FailureMetadata,
 } from "../src/failure-metadata.ts";
 
@@ -115,6 +118,48 @@ test("provider-connection exits map to an independently versioned bounded signal
   }
   assert.equal(classifyProviderConnectionStage("task agent exited with code 70"), undefined);
   assert.equal(classifyProviderConnectionStage("task agent exited with code 82; token=private"), undefined);
+});
+
+test("provider-connection v2 distinguishes a local proxy rejection from LiteLLM HTTP", async () => {
+  assert.equal(PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION, "steward-run.provider-connection-stage/v2");
+  assert.deepEqual(providerConnectionStagesV2, [
+    "model-proxy-start",
+    "model-request",
+    "model-proxy-contract",
+    "litellm-http",
+    "agent-after-model",
+  ]);
+  const fixtures = [
+    [82, "model-proxy-start"],
+    [83, "model-request"],
+    [84, "model-proxy-contract"],
+    [85, "litellm-http"],
+    [86, "agent-after-model"],
+  ] as const;
+  for (const [exitCode, stage] of fixtures) {
+    const annotations: string[] = [];
+    const reason = `task agent exited with code ${exitCode}`;
+    const providerConnectionStage = classifyProviderConnectionStage(reason);
+    assert.equal(classifyProviderConnectionStageV2(reason), stage);
+    await publishFailureMetadata(
+      {
+        version: FAILURE_METADATA_VERSION,
+        phase: "failed",
+        failureCategory: "provider-connection",
+        cleanupCategory: "confirmed",
+        providerConnectionStageV2: stage,
+        ...(providerConnectionStage === undefined
+          ? {}
+          : { providerConnectionStage }),
+      },
+      {
+        writeAnnotation: async (value) => void annotations.push(value),
+        writeStepSummary: async () => undefined,
+      },
+    );
+    assert.equal(annotations.at(-1), `steward-run.provider-connection-stage/v2 stage=${stage}`);
+  }
+  assert.equal(classifyProviderConnectionStageV2("task agent exited with code 84; body=private"), undefined);
 });
 
 test("assertion-stage exits map to an independently versioned bounded signal", async () => {

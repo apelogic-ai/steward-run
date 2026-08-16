@@ -135,12 +135,13 @@ test("the checked-in bundle emits only bounded GitHub failure metadata", async (
   }
 });
 
-test("the checked-in bundle preserves exact bounded failure metadata without reason leakage", async () => {
+test("the checked-in bundle preserves exact bounded failure metadata without reason leakage", { timeout: 30_000 }, async () => {
   const fixtures: Array<{
     reason: string;
     expectedCategory: string;
     expectedStage?: string;
     expectedProviderStage?: string;
+    expectedProviderStageV2?: string;
   }> = [
     {
       reason: "task agent exited with code 76",
@@ -174,10 +175,13 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
       reason: "task agent exited with code 82",
       expectedCategory: "provider-connection",
       expectedProviderStage: "model-proxy-start",
+      expectedProviderStageV2: "model-proxy-start",
     },
     {
       reason: "task agent exited with code 86",
-      expectedCategory: "execution",
+      expectedCategory: "provider-connection",
+      expectedProviderStage: "agent-after-model",
+      expectedProviderStageV2: "agent-after-model",
     },
     {
       reason: "task agent exited with code 76; header: Bearer bundle-private-token",
@@ -283,6 +287,17 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
           summary,
           new RegExp(
             `\\| steward-run\\.provider-connection-stage/v1 \\| ${fixture.expectedProviderStage} \\|`,
+            "u",
+          ),
+        );
+      }
+      if (fixture.expectedProviderStageV2 === undefined) {
+        assert.doesNotMatch(visible, /steward-run\.provider-connection-stage\/v2/u);
+      } else {
+        assert.match(
+          visible,
+          new RegExp(
+            `steward-run\\.provider-connection-stage/v2 stage=${fixture.expectedProviderStageV2}`,
             "u",
           ),
         );

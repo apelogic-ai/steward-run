@@ -1,6 +1,10 @@
 export const FAILURE_METADATA_VERSION = "steward-run.failure/v1" as const;
 export const ASSERTION_STAGE_METADATA_VERSION = "steward-run.assertion-stage/v1" as const;
 export const PROVIDER_CONNECTION_STAGE_METADATA_VERSION = "steward-run.provider-connection-stage/v1" as const;
+// v1 remains stable for the already-published coarse signal. v2 distinguishes
+// a local proxy rejection from an upstream LiteLLM HTTP response without
+// exposing request or response data.
+export const PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION = "steward-run.provider-connection-stage/v2" as const;
 
 export const failurePhases = ["succeeded", "failed", "cancelled", "unavailable"] as const;
 export type FailurePhase = (typeof failurePhases)[number];
@@ -43,6 +47,15 @@ export const providerConnectionStages = [
 ] as const;
 export type ProviderConnectionStage = (typeof providerConnectionStages)[number];
 
+export const providerConnectionStagesV2 = [
+  "model-proxy-start",
+  "model-request",
+  "model-proxy-contract",
+  "litellm-http",
+  "agent-after-model",
+] as const;
+export type ProviderConnectionStageV2 = (typeof providerConnectionStagesV2)[number];
+
 export const cleanupCategories = [
   "confirmed",
   "not-required",
@@ -60,6 +73,7 @@ export interface FailureMetadata {
   cleanupCategory: CleanupCategory;
   assertionStage?: AssertionStage;
   providerConnectionStage?: ProviderConnectionStage;
+  providerConnectionStageV2?: ProviderConnectionStageV2;
 }
 
 export interface FailureMetadataSink {
@@ -84,6 +98,7 @@ const agentExitCategories = new Map<number, FailureCategory>([
   [83, "provider-connection"],
   [84, "provider-connection"],
   [85, "provider-connection"],
+  [86, "provider-connection"],
 ]);
 
 const agentExitAssertionStages = new Map<number, AssertionStage>([
@@ -98,6 +113,15 @@ const agentExitProviderConnectionStages = new Map<number, ProviderConnectionStag
   [83, "model-request"],
   [84, "model-gateway"],
   [85, "agent-after-model"],
+  [86, "agent-after-model"],
+]);
+
+const agentExitProviderConnectionStagesV2 = new Map<number, ProviderConnectionStageV2>([
+  [82, "model-proxy-start"],
+  [83, "model-request"],
+  [84, "model-proxy-contract"],
+  [85, "litellm-http"],
+  [86, "agent-after-model"],
 ]);
 
 function exactAgentExitCode(reason: string | undefined): number | undefined {
@@ -114,6 +138,11 @@ export function classifyAssertionStage(reason: string | undefined): AssertionSta
 export function classifyProviderConnectionStage(reason: string | undefined): ProviderConnectionStage | undefined {
   const code = exactAgentExitCode(reason);
   return code === undefined ? undefined : agentExitProviderConnectionStages.get(code);
+}
+
+export function classifyProviderConnectionStageV2(reason: string | undefined): ProviderConnectionStageV2 | undefined {
+  const code = exactAgentExitCode(reason);
+  return code === undefined ? undefined : agentExitProviderConnectionStagesV2.get(code);
 }
 
 export function classifyFailureReason(reason: string | undefined): FailureCategory {
@@ -165,6 +194,10 @@ export function sanitizeFailureMetadata(value: FailureMetadata): FailureMetadata
       allowed(providerConnectionStages, value.providerConnectionStage)
     ? value.providerConnectionStage
     : undefined;
+  const providerConnectionStageV2 = failureCategory === "provider-connection" &&
+      allowed(providerConnectionStagesV2, value.providerConnectionStageV2)
+    ? value.providerConnectionStageV2
+    : undefined;
   return {
     version: FAILURE_METADATA_VERSION,
     phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
@@ -174,6 +207,7 @@ export function sanitizeFailureMetadata(value: FailureMetadata): FailureMetadata
       : "unknown",
     ...(assertionStage === undefined ? {} : { assertionStage }),
     ...(providerConnectionStage === undefined ? {} : { providerConnectionStage }),
+    ...(providerConnectionStageV2 === undefined ? {} : { providerConnectionStageV2 }),
   };
 }
 
@@ -197,6 +231,11 @@ export async function publishFailureMetadata(
       `${PROVIDER_CONNECTION_STAGE_METADATA_VERSION} stage=${safe.providerConnectionStage}`,
     );
   }
+  if (safe.providerConnectionStageV2 !== undefined) {
+    await sink.writeAnnotation(
+      `${PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION} stage=${safe.providerConnectionStageV2}`,
+    );
+  }
   const summary = [
     "## Steward governed Task failure",
     "",
@@ -218,6 +257,14 @@ export async function publishFailureMetadata(
       "| Contract | Provider connection stage |",
       "| --- | --- |",
       `| ${PROVIDER_CONNECTION_STAGE_METADATA_VERSION} | ${safe.providerConnectionStage} |`,
+    );
+  }
+  if (safe.providerConnectionStageV2 !== undefined) {
+    summary.push(
+      "",
+      "| Contract | Provider connection stage |",
+      "| --- | --- |",
+      `| ${PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION} | ${safe.providerConnectionStageV2} |`,
     );
   }
   summary.push("");

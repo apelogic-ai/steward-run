@@ -9,11 +9,13 @@ import {
   classifyAssertionStage,
   classifyFailureReason,
   classifyProviderConnectionStage,
+  classifyProviderConnectionStageV2,
   type AssertionStage,
   type CleanupCategory,
   type FailureCategory,
   type FailurePhase,
   type ProviderConnectionStage,
+  type ProviderConnectionStageV2,
 } from "./failure-metadata.js";
 import type { Task, TaskSubmissionRequest } from "./steward-client.js";
 
@@ -164,6 +166,7 @@ export async function runWorkflow(
   let failureCategory: FailureCategory = "unknown";
   let assertionStage: AssertionStage | undefined;
   let providerConnectionStage: ProviderConnectionStage | undefined;
+  let providerConnectionStageV2: ProviderConnectionStageV2 | undefined;
   let failed = false;
   let stage: WorkflowStage = "input";
   try {
@@ -204,6 +207,9 @@ export async function runWorkflow(
       providerConnectionStage = terminal.phase === "cancelled"
         ? undefined
         : classifyProviderConnectionStage(terminal.failureReason);
+      providerConnectionStageV2 = terminal.phase === "cancelled"
+        ? undefined
+        : classifyProviderConnectionStageV2(terminal.failureReason);
     }
     await dependencies.setOutput("status", terminal.phase);
     if (!failed) {
@@ -252,6 +258,7 @@ export async function runWorkflow(
       cleanupCategory,
       ...(assertionStage === undefined ? {} : { assertionStage }),
       ...(providerConnectionStage === undefined ? {} : { providerConnectionStage }),
+      ...(providerConnectionStageV2 === undefined ? {} : { providerConnectionStageV2 }),
     });
   }
   return result;

@@ -2536,6 +2536,7 @@ function readActionConfig(environment) {
 var FAILURE_METADATA_VERSION = "steward-run.failure/v1";
 var ASSERTION_STAGE_METADATA_VERSION = "steward-run.assertion-stage/v1";
 var PROVIDER_CONNECTION_STAGE_METADATA_VERSION = "steward-run.provider-connection-stage/v1";
+var PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION = "steward-run.provider-connection-stage/v2";
 var failurePhases = ["succeeded", "failed", "cancelled", "unavailable"];
 var failureCategories = [
   "provider-connection",
@@ -2569,6 +2570,13 @@ var providerConnectionStages = [
   "model-gateway",
   "agent-after-model"
 ];
+var providerConnectionStagesV2 = [
+  "model-proxy-start",
+  "model-request",
+  "model-proxy-contract",
+  "litellm-http",
+  "agent-after-model"
+];
 var cleanupCategories = [
   "confirmed",
   "not-required",
@@ -2593,7 +2601,8 @@ var agentExitCategories = /* @__PURE__ */ new Map([
   [82, "provider-connection"],
   [83, "provider-connection"],
   [84, "provider-connection"],
-  [85, "provider-connection"]
+  [85, "provider-connection"],
+  [86, "provider-connection"]
 ]);
 var agentExitAssertionStages = /* @__PURE__ */ new Map([
   [78, "input-request"],
@@ -2605,7 +2614,15 @@ var agentExitProviderConnectionStages = /* @__PURE__ */ new Map([
   [82, "model-proxy-start"],
   [83, "model-request"],
   [84, "model-gateway"],
-  [85, "agent-after-model"]
+  [85, "agent-after-model"],
+  [86, "agent-after-model"]
+]);
+var agentExitProviderConnectionStagesV2 = /* @__PURE__ */ new Map([
+  [82, "model-proxy-start"],
+  [83, "model-request"],
+  [84, "model-proxy-contract"],
+  [85, "litellm-http"],
+  [86, "agent-after-model"]
 ]);
 function exactAgentExitCode(reason) {
   if (reason === void 0) return void 0;
@@ -2619,6 +2636,10 @@ function classifyAssertionStage(reason) {
 function classifyProviderConnectionStage(reason) {
   const code = exactAgentExitCode(reason);
   return code === void 0 ? void 0 : agentExitProviderConnectionStages.get(code);
+}
+function classifyProviderConnectionStageV2(reason) {
+  const code = exactAgentExitCode(reason);
+  return code === void 0 ? void 0 : agentExitProviderConnectionStagesV2.get(code);
 }
 function classifyFailureReason(reason) {
   if (reason === void 0) return "unknown";
@@ -2659,13 +2680,15 @@ function sanitizeFailureMetadata(value) {
   const failureCategory = allowed(failureCategories, value.failureCategory) ? value.failureCategory : "unknown";
   const assertionStage = failureCategory === "assertion-mismatch" && allowed(assertionStages, value.assertionStage) ? value.assertionStage : void 0;
   const providerConnectionStage = failureCategory === "provider-connection" && allowed(providerConnectionStages, value.providerConnectionStage) ? value.providerConnectionStage : void 0;
+  const providerConnectionStageV2 = failureCategory === "provider-connection" && allowed(providerConnectionStagesV2, value.providerConnectionStageV2) ? value.providerConnectionStageV2 : void 0;
   return {
     version: FAILURE_METADATA_VERSION,
     phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
     failureCategory,
     cleanupCategory: allowed(cleanupCategories, value.cleanupCategory) ? value.cleanupCategory : "unknown",
     ...assertionStage === void 0 ? {} : { assertionStage },
-    ...providerConnectionStage === void 0 ? {} : { providerConnectionStage }
+    ...providerConnectionStage === void 0 ? {} : { providerConnectionStage },
+    ...providerConnectionStageV2 === void 0 ? {} : { providerConnectionStageV2 }
   };
 }
 function compact(metadata) {
@@ -2682,6 +2705,11 @@ async function publishFailureMetadata(metadata, sink) {
   if (safe.providerConnectionStage !== void 0) {
     await sink.writeAnnotation(
       `${PROVIDER_CONNECTION_STAGE_METADATA_VERSION} stage=${safe.providerConnectionStage}`
+    );
+  }
+  if (safe.providerConnectionStageV2 !== void 0) {
+    await sink.writeAnnotation(
+      `${PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION} stage=${safe.providerConnectionStageV2}`
     );
   }
   const summary = [
@@ -2705,6 +2733,14 @@ async function publishFailureMetadata(metadata, sink) {
       "| Contract | Provider connection stage |",
       "| --- | --- |",
       `| ${PROVIDER_CONNECTION_STAGE_METADATA_VERSION} | ${safe.providerConnectionStage} |`
+    );
+  }
+  if (safe.providerConnectionStageV2 !== void 0) {
+    summary.push(
+      "",
+      "| Contract | Provider connection stage |",
+      "| --- | --- |",
+      `| ${PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION} | ${safe.providerConnectionStageV2} |`
     );
   }
   summary.push("");
@@ -3157,6 +3193,7 @@ async function runWorkflow(config, workspace, dependencies) {
   let failureCategory = "unknown";
   let assertionStage;
   let providerConnectionStage;
+  let providerConnectionStageV2;
   let failed = false;
   let stage = "input";
   try {
@@ -3191,6 +3228,7 @@ async function runWorkflow(config, workspace, dependencies) {
       failureCategory = terminal.phase === "cancelled" ? "cancelled" : classifyFailureReason(terminal.failureReason);
       assertionStage = terminal.phase === "cancelled" ? void 0 : classifyAssertionStage(terminal.failureReason);
       providerConnectionStage = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStage(terminal.failureReason);
+      providerConnectionStageV2 = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStageV2(terminal.failureReason);
     }
     await dependencies.setOutput("status", terminal.phase);
     if (!failed) {
@@ -3233,7 +3271,8 @@ async function runWorkflow(config, workspace, dependencies) {
       failureCategory,
       cleanupCategory,
       ...assertionStage === void 0 ? {} : { assertionStage },
-      ...providerConnectionStage === void 0 ? {} : { providerConnectionStage }
+      ...providerConnectionStage === void 0 ? {} : { providerConnectionStage },
+      ...providerConnectionStageV2 === void 0 ? {} : { providerConnectionStageV2 }
     });
   }
   return result;
