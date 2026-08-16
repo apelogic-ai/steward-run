@@ -5,18 +5,21 @@ import {
   FAILURE_METADATA_VERSION,
   PROVIDER_CONNECTION_STAGE_METADATA_VERSION,
   PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION,
+  PROVIDER_CONNECTION_STAGE_V3_METADATA_VERSION,
   StewardRunFailure,
   assertionStages,
   classifyAssertionStage,
   classifyFailureReason,
   classifyProviderConnectionStage,
   classifyProviderConnectionStageV2,
+  classifyProviderConnectionStageV3,
   cleanupCategories,
   failureCategories,
   failurePhases,
   publishFailureMetadata,
   providerConnectionStages,
   providerConnectionStagesV2,
+  providerConnectionStagesV3,
   type FailureMetadata,
 } from "../src/failure-metadata.ts";
 
@@ -160,6 +163,69 @@ test("provider-connection v2 distinguishes a local proxy rejection from LiteLLM 
     assert.equal(annotations.at(-1), `steward-run.provider-connection-stage/v2 stage=${stage}`);
   }
   assert.equal(classifyProviderConnectionStageV2("task agent exited with code 84; body=private"), undefined);
+});
+
+test("provider-connection v3 distinguishes LiteLLM transport from HTTP", async () => {
+  assert.equal(PROVIDER_CONNECTION_STAGE_V3_METADATA_VERSION, "steward-run.provider-connection-stage/v3");
+  assert.deepEqual(providerConnectionStagesV3, [
+    "model-proxy-start",
+    "model-request",
+    "model-proxy-contract",
+    "litellm-transport",
+    "litellm-http",
+    "agent-after-model",
+  ]);
+  const fixtures = [
+    [82, "model-proxy-start"],
+    [83, "model-request"],
+    [84, "model-proxy-contract"],
+    [85, "litellm-http"],
+    [86, "agent-after-model"],
+    [87, "litellm-transport"],
+  ] as const;
+  for (const [exitCode, stage] of fixtures) {
+    const annotations: string[] = [];
+    const reason = `task agent exited with code ${exitCode}`;
+    const providerConnectionStage = classifyProviderConnectionStage(reason);
+    const providerConnectionStageV2 = classifyProviderConnectionStageV2(reason);
+    assert.equal(classifyFailureReason(reason), "provider-connection");
+    assert.equal(classifyProviderConnectionStageV3(reason), stage);
+    await publishFailureMetadata(
+      {
+        version: FAILURE_METADATA_VERSION,
+        phase: "failed",
+        failureCategory: "provider-connection",
+        cleanupCategory: "confirmed",
+        ...(providerConnectionStage === undefined ? {} : { providerConnectionStage }),
+        ...(providerConnectionStageV2 === undefined ? {} : { providerConnectionStageV2 }),
+        providerConnectionStageV3: stage,
+      },
+      {
+        writeAnnotation: async (value) => void annotations.push(value),
+        writeStepSummary: async () => undefined,
+      },
+    );
+    assert.equal(annotations.at(-1), `steward-run.provider-connection-stage/v3 stage=${stage}`);
+  }
+  assert.equal(classifyProviderConnectionStage("task agent exited with code 87"), "model-gateway");
+  assert.equal(classifyProviderConnectionStageV2("task agent exited with code 87"), "litellm-http");
+  assert.equal(classifyProviderConnectionStageV3("task agent exited with code 87; body=private"), undefined);
+
+  const hostileVisible: string[] = [];
+  await publishFailureMetadata(
+    {
+      version: FAILURE_METADATA_VERSION,
+      phase: "failed",
+      failureCategory: "provider-connection",
+      cleanupCategory: "confirmed",
+      providerConnectionStageV3: "litellm-transport token=private",
+    } as unknown as FailureMetadata,
+    {
+      writeAnnotation: async (value) => void hostileVisible.push(value),
+      writeStepSummary: async (value) => void hostileVisible.push(value),
+    },
+  );
+  assert.doesNotMatch(hostileVisible.join("\n"), /provider-connection-stage\/v3|private/u);
 });
 
 test("assertion-stage exits map to an independently versioned bounded signal", async () => {

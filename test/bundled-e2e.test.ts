@@ -142,6 +142,7 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
     expectedStage?: string;
     expectedProviderStage?: string;
     expectedProviderStageV2?: string;
+    expectedProviderStageV3?: string;
   }> = [
     {
       reason: "task agent exited with code 76",
@@ -176,12 +177,35 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
       expectedCategory: "provider-connection",
       expectedProviderStage: "model-proxy-start",
       expectedProviderStageV2: "model-proxy-start",
+      expectedProviderStageV3: "model-proxy-start",
+    },
+    {
+      reason: "task agent exited with code 84",
+      expectedCategory: "provider-connection",
+      expectedProviderStage: "model-gateway",
+      expectedProviderStageV2: "model-proxy-contract",
+      expectedProviderStageV3: "model-proxy-contract",
+    },
+    {
+      reason: "task agent exited with code 85",
+      expectedCategory: "provider-connection",
+      expectedProviderStage: "agent-after-model",
+      expectedProviderStageV2: "litellm-http",
+      expectedProviderStageV3: "litellm-http",
     },
     {
       reason: "task agent exited with code 86",
       expectedCategory: "provider-connection",
       expectedProviderStage: "agent-after-model",
       expectedProviderStageV2: "agent-after-model",
+      expectedProviderStageV3: "agent-after-model",
+    },
+    {
+      reason: "task agent exited with code 87",
+      expectedCategory: "provider-connection",
+      expectedProviderStage: "model-gateway",
+      expectedProviderStageV2: "litellm-http",
+      expectedProviderStageV3: "litellm-transport",
     },
     {
       reason: "task agent exited with code 76; header: Bearer bundle-private-token",
@@ -298,6 +322,24 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
           visible,
           new RegExp(
             `steward-run\\.provider-connection-stage/v2 stage=${fixture.expectedProviderStageV2}`,
+            "u",
+          ),
+        );
+      }
+      if (fixture.expectedProviderStageV3 === undefined) {
+        assert.doesNotMatch(visible, /steward-run\.provider-connection-stage\/v3/u);
+      } else {
+        assert.match(
+          visible,
+          new RegExp(
+            `steward-run\\.provider-connection-stage/v3 stage=${fixture.expectedProviderStageV3}`,
+            "u",
+          ),
+        );
+        assert.match(
+          summary,
+          new RegExp(
+            `\\| steward-run\\.provider-connection-stage/v3 \\| ${fixture.expectedProviderStageV3} \\|`,
             "u",
           ),
         );

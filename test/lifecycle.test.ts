@@ -251,14 +251,23 @@ test("terminal Task and cleanup failures expose only independent allowlisted met
       );
     }
 
-    const unknownAgentExit = new FakeClient();
-    unknownAgentExit.phases = ["failed"];
-    unknownAgentExit.failureReason = "task agent exited with code 86";
+    const upstreamTransportFailure = new FakeClient();
+    upstreamTransportFailure.phases = ["failed"];
+    upstreamTransportFailure.failureReason = "task agent exited with code 87";
     await assert.rejects(
-      runWorkflow(config, root, dependencies(unknownAgentExit, {})),
+      runWorkflow(config, root, dependencies(upstreamTransportFailure, {})),
       (error: unknown) => {
         assert.ok(error instanceof StewardRunFailure);
-        assert.equal(error.metadata.failureCategory, "execution");
+        assert.deepEqual(error.metadata, {
+          version: "steward-run.failure/v1",
+          phase: "failed",
+          failureCategory: "provider-connection",
+          cleanupCategory: "confirmed",
+          providerConnectionStage: "model-gateway",
+          providerConnectionStageV2: "litellm-http",
+          providerConnectionStageV3: "litellm-transport",
+        });
+        assert.doesNotMatch(error.message, /task agent exited|transport|http/u);
         return true;
       },
     );
