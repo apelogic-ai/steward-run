@@ -21,10 +21,19 @@ Governed smoke workflows may use the exact agent exit codes 70–75 for
 `assertion-mismatch`, and `workflow-cleanup`, respectively. Exact agent exit 76 maps to
 `provider-grant`, which identifies an absent or incomplete local provider OAuth grant before a
 provider-backed request. Exact agent exit 77 maps to `provider-protocol`, which identifies a local
-MCP framing, JSON-RPC, or session-contract failure after the provider has authenticated. Any other
-numeric agent exit maps to `execution`. Steward finalization is reported separately as `confirmed`,
+MCP framing, JSON-RPC, or session-contract failure after the provider has authenticated. Except
+for the staged assertion exits described below, any other numeric agent exit maps to `execution`.
+Steward finalization is reported separately as `confirmed`,
 `not-required`,
 `request-failed`, `confirmation-timeout`, `identity-mismatch`, or `unknown`.
+
+Assertion failures may use exact agent exits 78 through 81. They retain the existing
+`assertion-mismatch` failure category and additionally publish one bounded
+`steward-run.assertion-stage/v1` signal: 78 is `input-request`, 79 is
+`runtime-toolchain`, 80 is `model-result`, and 81 is `mcp-tool-event`. Legacy exact exit 74 remains
+`assertion-mismatch` without a stage signal. The original `steward-run.failure/v1` annotation and
+summary row remain unchanged; a staged assertion adds a second bounded annotation and summary
+row. Malformed reasons and any other numeric exits cannot select an assertion stage.
 
 Production authentication exchanges a GitHub OIDC token with audience
 `apelogic-github-identity-exchange` for a short-lived token whose sole audience is

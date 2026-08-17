@@ -6,10 +6,18 @@ import type { WorkflowConfig } from "./config.js";
 import {
   FAILURE_METADATA_VERSION,
   StewardRunFailure,
+  classifyAssertionStage,
   classifyFailureReason,
+  classifyProviderConnectionStage,
+  classifyProviderConnectionStageV2,
+  classifyProviderConnectionStageV3,
+  type AssertionStage,
   type CleanupCategory,
   type FailureCategory,
   type FailurePhase,
+  type ProviderConnectionStage,
+  type ProviderConnectionStageV2,
+  type ProviderConnectionStageV3,
 } from "./failure-metadata.js";
 import type { Task, TaskSubmissionRequest } from "./steward-client.js";
 
@@ -158,6 +166,10 @@ export async function runWorkflow(
   let result: Task | undefined;
   let failurePhase: FailurePhase = "unavailable";
   let failureCategory: FailureCategory = "unknown";
+  let assertionStage: AssertionStage | undefined;
+  let providerConnectionStage: ProviderConnectionStage | undefined;
+  let providerConnectionStageV2: ProviderConnectionStageV2 | undefined;
+  let providerConnectionStageV3: ProviderConnectionStageV3 | undefined;
   let failed = false;
   let stage: WorkflowStage = "input";
   try {
@@ -192,6 +204,18 @@ export async function runWorkflow(
       failureCategory = terminal.phase === "cancelled"
         ? "cancelled"
         : classifyFailureReason(terminal.failureReason);
+      assertionStage = terminal.phase === "cancelled"
+        ? undefined
+        : classifyAssertionStage(terminal.failureReason);
+      providerConnectionStage = terminal.phase === "cancelled"
+        ? undefined
+        : classifyProviderConnectionStage(terminal.failureReason);
+      providerConnectionStageV2 = terminal.phase === "cancelled"
+        ? undefined
+        : classifyProviderConnectionStageV2(terminal.failureReason);
+      providerConnectionStageV3 = terminal.phase === "cancelled"
+        ? undefined
+        : classifyProviderConnectionStageV3(terminal.failureReason);
     }
     await dependencies.setOutput("status", terminal.phase);
     if (!failed) {
@@ -238,6 +262,10 @@ export async function runWorkflow(
       phase: failurePhase,
       failureCategory,
       cleanupCategory,
+      ...(assertionStage === undefined ? {} : { assertionStage }),
+      ...(providerConnectionStage === undefined ? {} : { providerConnectionStage }),
+      ...(providerConnectionStageV2 === undefined ? {} : { providerConnectionStageV2 }),
+      ...(providerConnectionStageV3 === undefined ? {} : { providerConnectionStageV3 }),
     });
   }
   return result;

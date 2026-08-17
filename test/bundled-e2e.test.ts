@@ -135,8 +135,15 @@ test("the checked-in bundle emits only bounded GitHub failure metadata", async (
   }
 });
 
-test("the checked-in bundle preserves exact bounded provider failure metadata without reason leakage", async () => {
-  for (const fixture of [
+test("the checked-in bundle preserves exact bounded failure metadata without reason leakage", { timeout: 30_000 }, async () => {
+  const fixtures: Array<{
+    reason: string;
+    expectedCategory: string;
+    expectedStage?: string;
+    expectedProviderStage?: string;
+    expectedProviderStageV2?: string;
+    expectedProviderStageV3?: string;
+  }> = [
     {
       reason: "task agent exited with code 76",
       expectedCategory: "provider-grant",
@@ -147,7 +154,58 @@ test("the checked-in bundle preserves exact bounded provider failure metadata wi
     },
     {
       reason: "task agent exited with code 78",
-      expectedCategory: "execution",
+      expectedCategory: "assertion-mismatch",
+      expectedStage: "input-request",
+    },
+    {
+      reason: "task agent exited with code 79",
+      expectedCategory: "assertion-mismatch",
+      expectedStage: "runtime-toolchain",
+    },
+    {
+      reason: "task agent exited with code 80",
+      expectedCategory: "assertion-mismatch",
+      expectedStage: "model-result",
+    },
+    {
+      reason: "task agent exited with code 81",
+      expectedCategory: "assertion-mismatch",
+      expectedStage: "mcp-tool-event",
+    },
+    {
+      reason: "task agent exited with code 82",
+      expectedCategory: "provider-connection",
+      expectedProviderStage: "model-proxy-start",
+      expectedProviderStageV2: "model-proxy-start",
+      expectedProviderStageV3: "model-proxy-start",
+    },
+    {
+      reason: "task agent exited with code 84",
+      expectedCategory: "provider-connection",
+      expectedProviderStage: "model-gateway",
+      expectedProviderStageV2: "model-proxy-contract",
+      expectedProviderStageV3: "model-proxy-contract",
+    },
+    {
+      reason: "task agent exited with code 85",
+      expectedCategory: "provider-connection",
+      expectedProviderStage: "agent-after-model",
+      expectedProviderStageV2: "litellm-http",
+      expectedProviderStageV3: "litellm-http",
+    },
+    {
+      reason: "task agent exited with code 86",
+      expectedCategory: "provider-connection",
+      expectedProviderStage: "agent-after-model",
+      expectedProviderStageV2: "agent-after-model",
+      expectedProviderStageV3: "agent-after-model",
+    },
+    {
+      reason: "task agent exited with code 87",
+      expectedCategory: "provider-connection",
+      expectedProviderStage: "model-gateway",
+      expectedProviderStageV2: "litellm-http",
+      expectedProviderStageV3: "litellm-transport",
     },
     {
       reason: "task agent exited with code 76; header: Bearer bundle-private-token",
@@ -161,7 +219,8 @@ test("the checked-in bundle preserves exact bounded provider failure metadata wi
       reason: "task agent exited with code 77\n",
       expectedCategory: "execution",
     },
-  ]) {
+  ];
+  for (const fixture of fixtures) {
     const workspace = await mkdtemp(join(tmpdir(), "steward-run-bundle-provider-failure-"));
     const outputFile = join(workspace, "github-output");
     const summaryFile = join(workspace, "github-summary");
@@ -220,6 +279,71 @@ test("the checked-in bundle preserves exact bounded provider failure metadata wi
           "u",
         ),
       );
+      if (fixture.expectedStage === undefined) {
+        assert.doesNotMatch(visible, /steward-run\.assertion-stage\/v1/u);
+      } else {
+        assert.match(
+          visible,
+          new RegExp(
+            `steward-run\\.assertion-stage/v1 stage=${fixture.expectedStage}`,
+            "u",
+          ),
+        );
+        assert.match(
+          summary,
+          new RegExp(
+            `\\| steward-run\\.assertion-stage/v1 \\| ${fixture.expectedStage} \\|`,
+            "u",
+          ),
+        );
+      }
+      if (fixture.expectedProviderStage === undefined) {
+        assert.doesNotMatch(visible, /steward-run\.provider-connection-stage\/v1/u);
+      } else {
+        assert.match(
+          visible,
+          new RegExp(
+            `steward-run\\.provider-connection-stage/v1 stage=${fixture.expectedProviderStage}`,
+            "u",
+          ),
+        );
+        assert.match(
+          summary,
+          new RegExp(
+            `\\| steward-run\\.provider-connection-stage/v1 \\| ${fixture.expectedProviderStage} \\|`,
+            "u",
+          ),
+        );
+      }
+      if (fixture.expectedProviderStageV2 === undefined) {
+        assert.doesNotMatch(visible, /steward-run\.provider-connection-stage\/v2/u);
+      } else {
+        assert.match(
+          visible,
+          new RegExp(
+            `steward-run\\.provider-connection-stage/v2 stage=${fixture.expectedProviderStageV2}`,
+            "u",
+          ),
+        );
+      }
+      if (fixture.expectedProviderStageV3 === undefined) {
+        assert.doesNotMatch(visible, /steward-run\.provider-connection-stage\/v3/u);
+      } else {
+        assert.match(
+          visible,
+          new RegExp(
+            `steward-run\\.provider-connection-stage/v3 stage=${fixture.expectedProviderStageV3}`,
+            "u",
+          ),
+        );
+        assert.match(
+          summary,
+          new RegExp(
+            `\\| steward-run\\.provider-connection-stage/v3 \\| ${fixture.expectedProviderStageV3} \\|`,
+            "u",
+          ),
+        );
+      }
       assert.doesNotMatch(visible, /task agent exited|bundle-private-token|Bearer|header:/u);
       assert.match(await readFile(finalizationMarker, "utf8"), /^[0-9a-f-]+\n$/u);
     } finally {

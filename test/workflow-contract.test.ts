@@ -7,7 +7,8 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "c40185d1d8af187dcd9dd95698f4e8ddfec6f872";
+const releasedActionCommit = "c40185d1d8af187dcd9dd95698f4e8ddfec6f872";
+const stagedAssertionActionCommit = "d23e12a964b6fbc03e771d7736a27e2eeab2ec59";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -203,7 +204,14 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /name:\s*\$\{\{ inputs\.input-artifact \}\}/);
   assert.match(source, /path:\s*in/);
-  assert.match(source, new RegExp(`uses:\\s*apelogic-ai/steward-run@${actionCommit}`, "u"));
+  assert.match(
+    source,
+    new RegExp(`uses:\\s*apelogic-ai/steward-run@${stagedAssertionActionCommit}`, "u"),
+  );
+  assert.doesNotMatch(
+    source,
+    new RegExp(`uses:\\s*apelogic-ai/steward-run@${releasedActionCommit}`, "u"),
+  );
   assert.doesNotMatch(source, /uses:\s*apelogic-ai\/steward-run@\$\{\{/u);
   assert.match(source, /identity-exchange-url:\s*\$\{\{ inputs\.identity-exchange-url \}\}/);
   assert.match(source, /inputs:\s*in/);
@@ -214,7 +222,9 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.doesNotMatch(source, /oidc-audience|bearer-token|identity\.dev|cluster|secret/iu);
 
   const download = source.indexOf("actions/download-artifact@");
-  const action = source.indexOf(`uses: apelogic-ai/steward-run@${actionCommit}`);
+  const action = source.indexOf(
+    `uses: apelogic-ai/steward-run@${stagedAssertionActionCommit}`,
+  );
   const upload = source.indexOf("actions/upload-artifact@");
   assert.ok(download >= 0 && download < action && action < upload);
 });
@@ -271,7 +281,7 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
     /apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml@<WORKFLOW_COMMIT>/u,
   );
   assert.doesNotMatch(readme, /action-commit:/u);
-  assert.match(releaseWorkflow, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));
+  assert.match(releaseWorkflow, new RegExp(`ACTION_COMMIT:\\s*${releasedActionCommit}`, "u"));
   assert.match(
     releaseWorkflow,
     /Reusable workflow:.*steward-task\.yml@\$GITHUB_SHA/u,
@@ -288,6 +298,7 @@ test("failure diagnostics are versioned, bounded, and GitHub-visible", async () 
   ]);
   for (const document of [readme, specification]) {
     assert.match(document, /steward-run\.failure\/v1/u);
+    assert.match(document, /steward-run\.assertion-stage\/v1/u);
     assert.match(document, /provider-connection/u);
     assert.match(document, /provider-grant/u);
     assert.match(document, /provider-protocol/u);
@@ -299,4 +310,8 @@ test("failure diagnostics are versioned, bounded, and GitHub-visible", async () 
   assert.match(main, /::error title=Steward governed Task failed::/u);
   assert.doesNotMatch(main, /error instanceof Error \? error\.message : String\(error\)/u);
   assert.match(metadata, /FAILURE_METADATA_VERSION = "steward-run\.failure\/v1"/u);
+  assert.match(
+    metadata,
+    /ASSERTION_STAGE_METADATA_VERSION = "steward-run\.assertion-stage\/v1"/u,
+  );
 });

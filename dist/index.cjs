@@ -2534,6 +2534,10 @@ function readActionConfig(environment) {
 
 // src/failure-metadata.ts
 var FAILURE_METADATA_VERSION = "steward-run.failure/v1";
+var ASSERTION_STAGE_METADATA_VERSION = "steward-run.assertion-stage/v1";
+var PROVIDER_CONNECTION_STAGE_METADATA_VERSION = "steward-run.provider-connection-stage/v1";
+var PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION = "steward-run.provider-connection-stage/v2";
+var PROVIDER_CONNECTION_STAGE_V3_METADATA_VERSION = "steward-run.provider-connection-stage/v3";
 var failurePhases = ["succeeded", "failed", "cancelled", "unavailable"];
 var failureCategories = [
   "provider-connection",
@@ -2555,6 +2559,33 @@ var failureCategories = [
   "cancelled",
   "unknown"
 ];
+var assertionStages = [
+  "input-request",
+  "runtime-toolchain",
+  "model-result",
+  "mcp-tool-event"
+];
+var providerConnectionStages = [
+  "model-proxy-start",
+  "model-request",
+  "model-gateway",
+  "agent-after-model"
+];
+var providerConnectionStagesV2 = [
+  "model-proxy-start",
+  "model-request",
+  "model-proxy-contract",
+  "litellm-http",
+  "agent-after-model"
+];
+var providerConnectionStagesV3 = [
+  "model-proxy-start",
+  "model-request",
+  "model-proxy-contract",
+  "litellm-transport",
+  "litellm-http",
+  "agent-after-model"
+];
 var cleanupCategories = [
   "confirmed",
   "not-required",
@@ -2571,13 +2602,74 @@ var agentExitCategories = /* @__PURE__ */ new Map([
   [74, "assertion-mismatch"],
   [75, "workflow-cleanup"],
   [76, "provider-grant"],
-  [77, "provider-protocol"]
+  [77, "provider-protocol"],
+  [78, "assertion-mismatch"],
+  [79, "assertion-mismatch"],
+  [80, "assertion-mismatch"],
+  [81, "assertion-mismatch"],
+  [82, "provider-connection"],
+  [83, "provider-connection"],
+  [84, "provider-connection"],
+  [85, "provider-connection"],
+  [86, "provider-connection"],
+  [87, "provider-connection"]
 ]);
+var agentExitAssertionStages = /* @__PURE__ */ new Map([
+  [78, "input-request"],
+  [79, "runtime-toolchain"],
+  [80, "model-result"],
+  [81, "mcp-tool-event"]
+]);
+var agentExitProviderConnectionStages = /* @__PURE__ */ new Map([
+  [82, "model-proxy-start"],
+  [83, "model-request"],
+  [84, "model-gateway"],
+  [85, "agent-after-model"],
+  [86, "agent-after-model"],
+  [87, "model-gateway"]
+]);
+var agentExitProviderConnectionStagesV2 = /* @__PURE__ */ new Map([
+  [82, "model-proxy-start"],
+  [83, "model-request"],
+  [84, "model-proxy-contract"],
+  [85, "litellm-http"],
+  [86, "agent-after-model"],
+  [87, "litellm-http"]
+]);
+var agentExitProviderConnectionStagesV3 = /* @__PURE__ */ new Map([
+  [82, "model-proxy-start"],
+  [83, "model-request"],
+  [84, "model-proxy-contract"],
+  [85, "litellm-http"],
+  [86, "agent-after-model"],
+  [87, "litellm-transport"]
+]);
+function exactAgentExitCode(reason) {
+  if (reason === void 0) return void 0;
+  const exactAgentExit = /^task agent exited with code ([0-9]+)$/u.exec(reason.toLowerCase());
+  return exactAgentExit ? Number(exactAgentExit[1]) : void 0;
+}
+function classifyAssertionStage(reason) {
+  const code = exactAgentExitCode(reason);
+  return code === void 0 ? void 0 : agentExitAssertionStages.get(code);
+}
+function classifyProviderConnectionStage(reason) {
+  const code = exactAgentExitCode(reason);
+  return code === void 0 ? void 0 : agentExitProviderConnectionStages.get(code);
+}
+function classifyProviderConnectionStageV2(reason) {
+  const code = exactAgentExitCode(reason);
+  return code === void 0 ? void 0 : agentExitProviderConnectionStagesV2.get(code);
+}
+function classifyProviderConnectionStageV3(reason) {
+  const code = exactAgentExitCode(reason);
+  return code === void 0 ? void 0 : agentExitProviderConnectionStagesV3.get(code);
+}
 function classifyFailureReason(reason) {
   if (reason === void 0) return "unknown";
-  const exactAgentExit = /^task agent exited with code ([0-9]+)$/u.exec(reason.toLowerCase());
-  if (exactAgentExit) {
-    const code = Number(exactAgentExit[1]);
+  const exactAgentExit = exactAgentExitCode(reason);
+  if (exactAgentExit !== void 0) {
+    const code = exactAgentExit;
     return agentExitCategories.get(code) ?? "execution";
   }
   const normalized = reason.trim().toLowerCase();
@@ -2609,11 +2701,20 @@ function allowed(values, value) {
   return typeof value === "string" && values.includes(value);
 }
 function sanitizeFailureMetadata(value) {
+  const failureCategory = allowed(failureCategories, value.failureCategory) ? value.failureCategory : "unknown";
+  const assertionStage = failureCategory === "assertion-mismatch" && allowed(assertionStages, value.assertionStage) ? value.assertionStage : void 0;
+  const providerConnectionStage = failureCategory === "provider-connection" && allowed(providerConnectionStages, value.providerConnectionStage) ? value.providerConnectionStage : void 0;
+  const providerConnectionStageV2 = failureCategory === "provider-connection" && allowed(providerConnectionStagesV2, value.providerConnectionStageV2) ? value.providerConnectionStageV2 : void 0;
+  const providerConnectionStageV3 = failureCategory === "provider-connection" && allowed(providerConnectionStagesV3, value.providerConnectionStageV3) ? value.providerConnectionStageV3 : void 0;
   return {
     version: FAILURE_METADATA_VERSION,
     phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
-    failureCategory: allowed(failureCategories, value.failureCategory) ? value.failureCategory : "unknown",
-    cleanupCategory: allowed(cleanupCategories, value.cleanupCategory) ? value.cleanupCategory : "unknown"
+    failureCategory,
+    cleanupCategory: allowed(cleanupCategories, value.cleanupCategory) ? value.cleanupCategory : "unknown",
+    ...assertionStage === void 0 ? {} : { assertionStage },
+    ...providerConnectionStage === void 0 ? {} : { providerConnectionStage },
+    ...providerConnectionStageV2 === void 0 ? {} : { providerConnectionStageV2 },
+    ...providerConnectionStageV3 === void 0 ? {} : { providerConnectionStageV3 }
   };
 }
 function compact(metadata) {
@@ -2622,15 +2723,68 @@ function compact(metadata) {
 async function publishFailureMetadata(metadata, sink) {
   const safe = sanitizeFailureMetadata(metadata);
   await sink.writeAnnotation(compact(safe));
-  await sink.writeStepSummary(
-    [
-      "## Steward governed Task failure",
+  if (safe.assertionStage !== void 0) {
+    await sink.writeAnnotation(
+      `${ASSERTION_STAGE_METADATA_VERSION} stage=${safe.assertionStage}`
+    );
+  }
+  if (safe.providerConnectionStage !== void 0) {
+    await sink.writeAnnotation(
+      `${PROVIDER_CONNECTION_STAGE_METADATA_VERSION} stage=${safe.providerConnectionStage}`
+    );
+  }
+  if (safe.providerConnectionStageV2 !== void 0) {
+    await sink.writeAnnotation(
+      `${PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION} stage=${safe.providerConnectionStageV2}`
+    );
+  }
+  if (safe.providerConnectionStageV3 !== void 0) {
+    await sink.writeAnnotation(
+      `${PROVIDER_CONNECTION_STAGE_V3_METADATA_VERSION} stage=${safe.providerConnectionStageV3}`
+    );
+  }
+  const summary = [
+    "## Steward governed Task failure",
+    "",
+    "| Contract | Phase | Failure category | Cleanup category |",
+    "| --- | --- | --- | --- |",
+    `| ${FAILURE_METADATA_VERSION} | ${safe.phase} | ${safe.failureCategory} | ${safe.cleanupCategory} |`
+  ];
+  if (safe.assertionStage !== void 0) {
+    summary.push(
       "",
-      "| Contract | Phase | Failure category | Cleanup category |",
-      "| --- | --- | --- | --- |",
-      `| ${FAILURE_METADATA_VERSION} | ${safe.phase} | ${safe.failureCategory} | ${safe.cleanupCategory} |`,
-      ""
-    ].join("\n")
+      "| Contract | Assertion stage |",
+      "| --- | --- |",
+      `| ${ASSERTION_STAGE_METADATA_VERSION} | ${safe.assertionStage} |`
+    );
+  }
+  if (safe.providerConnectionStage !== void 0) {
+    summary.push(
+      "",
+      "| Contract | Provider connection stage |",
+      "| --- | --- |",
+      `| ${PROVIDER_CONNECTION_STAGE_METADATA_VERSION} | ${safe.providerConnectionStage} |`
+    );
+  }
+  if (safe.providerConnectionStageV2 !== void 0) {
+    summary.push(
+      "",
+      "| Contract | Provider connection stage |",
+      "| --- | --- |",
+      `| ${PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION} | ${safe.providerConnectionStageV2} |`
+    );
+  }
+  if (safe.providerConnectionStageV3 !== void 0) {
+    summary.push(
+      "",
+      "| Contract | Provider connection stage |",
+      "| --- | --- |",
+      `| ${PROVIDER_CONNECTION_STAGE_V3_METADATA_VERSION} | ${safe.providerConnectionStageV3} |`
+    );
+  }
+  summary.push("");
+  await sink.writeStepSummary(
+    summary.join("\n")
   );
 }
 var StewardRunFailure = class extends Error {
@@ -3076,6 +3230,10 @@ async function runWorkflow(config, workspace, dependencies) {
   let result;
   let failurePhase = "unavailable";
   let failureCategory = "unknown";
+  let assertionStage;
+  let providerConnectionStage;
+  let providerConnectionStageV2;
+  let providerConnectionStageV3;
   let failed = false;
   let stage = "input";
   try {
@@ -3108,6 +3266,10 @@ async function runWorkflow(config, workspace, dependencies) {
     if (terminal.phase !== "succeeded") {
       failed = true;
       failureCategory = terminal.phase === "cancelled" ? "cancelled" : classifyFailureReason(terminal.failureReason);
+      assertionStage = terminal.phase === "cancelled" ? void 0 : classifyAssertionStage(terminal.failureReason);
+      providerConnectionStage = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStage(terminal.failureReason);
+      providerConnectionStageV2 = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStageV2(terminal.failureReason);
+      providerConnectionStageV3 = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStageV3(terminal.failureReason);
     }
     await dependencies.setOutput("status", terminal.phase);
     if (!failed) {
@@ -3148,7 +3310,11 @@ async function runWorkflow(config, workspace, dependencies) {
       version: FAILURE_METADATA_VERSION,
       phase: failurePhase,
       failureCategory,
-      cleanupCategory
+      cleanupCategory,
+      ...assertionStage === void 0 ? {} : { assertionStage },
+      ...providerConnectionStage === void 0 ? {} : { providerConnectionStage },
+      ...providerConnectionStageV2 === void 0 ? {} : { providerConnectionStageV2 },
+      ...providerConnectionStageV3 === void 0 ? {} : { providerConnectionStageV3 }
     });
   }
   return result;
