@@ -2563,7 +2563,8 @@ var assertionStages = [
   "input-request",
   "runtime-toolchain",
   "model-result",
-  "mcp-tool-event"
+  "mcp-tool-event",
+  "mcp-no-call"
 ];
 var providerConnectionStages = [
   "model-proxy-start",
@@ -2607,6 +2608,7 @@ var agentExitCategories = /* @__PURE__ */ new Map([
   [79, "assertion-mismatch"],
   [80, "assertion-mismatch"],
   [81, "assertion-mismatch"],
+  [88, "assertion-mismatch"],
   [82, "provider-connection"],
   [83, "provider-connection"],
   [84, "provider-connection"],
@@ -2618,7 +2620,8 @@ var agentExitAssertionStages = /* @__PURE__ */ new Map([
   [78, "input-request"],
   [79, "runtime-toolchain"],
   [80, "model-result"],
-  [81, "mcp-tool-event"]
+  [81, "mcp-tool-event"],
+  [88, "mcp-no-call"]
 ]);
 var agentExitProviderConnectionStages = /* @__PURE__ */ new Map([
   [82, "model-proxy-start"],

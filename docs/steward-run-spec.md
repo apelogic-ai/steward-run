@@ -142,7 +142,7 @@ Finalization categories are `confirmed`, `not-required`, `request-failed`,
 Exact agent exits 78 through 81 are the sole exception to the generic numeric-exit rule. They all
 retain `assertion-mismatch` and add one independently versioned, allowlisted
 `steward-run.assertion-stage/v1` signal: 78 is `input-request`, 79 is `runtime-toolchain`, 80 is
-`model-result`, and 81 is `mcp-tool-event`. The original `steward-run.failure/v1` annotation and
+`model-result`, 81 is `mcp-tool-event`, and 88 is `mcp-no-call`. The original `steward-run.failure/v1` annotation and
 summary row remain byte-for-byte compatible; a staged assertion adds a second bounded annotation
 and a second summary table. Legacy exact exit 74 remains `assertion-mismatch` with no stage.
 Malformed or decorated reasons, unknown codes, and runtime-supplied text cannot select a stage.

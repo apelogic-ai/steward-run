@@ -235,6 +235,7 @@ test("assertion-stage exits map to an independently versioned bounded signal", a
     "runtime-toolchain",
     "model-result",
     "mcp-tool-event",
+    "mcp-no-call",
   ]);
 
   const fixtures = [
@@ -242,6 +243,7 @@ test("assertion-stage exits map to an independently versioned bounded signal", a
     [79, "runtime-toolchain"],
     [80, "model-result"],
     [81, "mcp-tool-event"],
+    [88, "mcp-no-call"],
   ] as const;
 
   for (const [exitCode, stage] of fixtures) {

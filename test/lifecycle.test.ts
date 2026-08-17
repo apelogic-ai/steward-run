@@ -230,6 +230,7 @@ test("terminal Task and cleanup failures expose only independent allowlisted met
       [79, "runtime-toolchain"],
       [80, "model-result"],
       [81, "mcp-tool-event"],
+      [88, "mcp-no-call"],
     ] as const) {
       const stagedAssertionFailure = new FakeClient();
       stagedAssertionFailure.phases = ["failed"];

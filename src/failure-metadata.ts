@@ -39,6 +39,7 @@ export const assertionStages = [
   "runtime-toolchain",
   "model-result",
   "mcp-tool-event",
+  "mcp-no-call",
 ] as const;
 export type AssertionStage = (typeof assertionStages)[number];
 
@@ -108,6 +109,7 @@ const agentExitCategories = new Map<number, FailureCategory>([
   [79, "assertion-mismatch"],
   [80, "assertion-mismatch"],
   [81, "assertion-mismatch"],
+  [88, "assertion-mismatch"],
   [82, "provider-connection"],
   [83, "provider-connection"],
   [84, "provider-connection"],
@@ -121,6 +123,7 @@ const agentExitAssertionStages = new Map<number, AssertionStage>([
   [79, "runtime-toolchain"],
   [80, "model-result"],
   [81, "mcp-tool-event"],
+  [88, "mcp-no-call"],
 ]);
 
 const agentExitProviderConnectionStages = new Map<number, ProviderConnectionStage>([

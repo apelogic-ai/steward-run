@@ -30,7 +30,7 @@ Steward finalization is reported separately as `confirmed`,
 Assertion failures may use exact agent exits 78 through 81. They retain the existing
 `assertion-mismatch` failure category and additionally publish one bounded
 `steward-run.assertion-stage/v1` signal: 78 is `input-request`, 79 is
-`runtime-toolchain`, 80 is `model-result`, and 81 is `mcp-tool-event`. Legacy exact exit 74 remains
+`runtime-toolchain`, 80 is `model-result`, 81 is `mcp-tool-event`, and 88 is `mcp-no-call`. Legacy exact exit 74 remains
 `assertion-mismatch` without a stage signal. The original `steward-run.failure/v1` annotation and
 summary row remain unchanged; a staged assertion adds a second bounded annotation and summary
 row. Malformed reasons and any other numeric exits cannot select an assertion stage.
