@@ -72,7 +72,7 @@ jobs:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: apelogic-ai/steward-run@d23e12a964b6fbc03e771d7736a27e2eeab2ec59
+        uses: apelogic-ai/steward-run@0bb83e87f3746181be92bc46b31867340567098f
         with:
           workflow: ${{ inputs.workflow }}
           inputs: in
