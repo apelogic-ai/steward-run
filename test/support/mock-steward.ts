@@ -110,8 +110,9 @@ function task(
 
 async function outputArchive(payload: Buffer): Promise<Buffer> {
   const pack = tar.pack();
-  pack.entry({ name: "out", type: "directory" });
-  pack.entry({ name: "out/payload.bin" }, payload);
+  pack.entry({ name: "./", type: "directory" });
+  pack.entry({ name: "./out/", type: "directory" });
+  pack.entry({ name: "./out/payload.bin" }, payload);
   pack.finalize();
   const chunks: Buffer[] = [];
   for await (const chunk of pack) chunks.push(Buffer.from(chunk));

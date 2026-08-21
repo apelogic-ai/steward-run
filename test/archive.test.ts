@@ -17,11 +17,15 @@ async function collect(stream: Readable): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-async function archive(entries: Array<{ name: string; type?: "file" | "directory" | "symlink"; body?: string }>): Promise<Readable> {
+async function archive(entries: Array<{ name: string; type?: "file" | "directory" | "link" | "symlink"; body?: string }>): Promise<Readable> {
   const pack = tar.pack();
   for (const entry of entries) {
     pack.entry(
-      { name: entry.name, type: entry.type ?? "file", linkname: entry.type === "symlink" ? "../../escape" : undefined },
+      {
+        name: entry.name,
+        type: entry.type ?? "file",
+        linkname: entry.type === "symlink" || entry.type === "link" ? "../../escape" : undefined,
+      },
       entry.body ?? "",
     );
   }
@@ -82,21 +86,53 @@ test("output extraction accepts only the canonical tar root directory entry", as
   }
 });
 
+test("output extraction accepts strict ancestor directories for an exact file declaration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "steward-run-output-ancestor-"));
+  try {
+    const input = await archive([
+      { name: "./", type: "directory" },
+      { name: "./out/", type: "directory" },
+      { name: "./out/payload.bin", body: "governed" },
+    ]);
+    await extractOutputArchive(input, root, ["out/payload.bin"]);
+    assert.equal(await readFile(join(root, "out", "payload.bin"), "utf8"), "governed");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("output extraction rejects traversal, undeclared paths, links, and symlink parents", async () => {
   const cases = [
-    { entry: { name: "./", body: "bad" }, error: /unsafe archive path/ },
-    { entry: { name: ".", type: "directory" as const }, error: /unsafe archive path/ },
-    { entry: { name: "../escape", body: "bad" }, error: /unsafe archive path/ },
-    { entry: { name: "/absolute", body: "bad" }, error: /unsafe archive path/ },
-    { entry: { name: "other/file", body: "bad" }, error: /not a declared output/ },
-    { entry: { name: "results/link", type: "symlink" as const }, error: /archive entry type/ },
+    { entry: { name: "./", body: "bad" }, outputs: ["results"], error: /unsafe archive path/ },
+    { entry: { name: ".", type: "directory" as const }, outputs: ["results"], error: /unsafe archive path/ },
+    { entry: { name: "../escape", body: "bad" }, outputs: ["results"], error: /unsafe archive path/ },
+    { entry: { name: "/absolute", body: "bad" }, outputs: ["results"], error: /unsafe archive path/ },
+    { entry: { name: "other/file", body: "bad" }, outputs: ["results"], error: /not a declared output/ },
+    { entry: { name: "out/sibling.bin", body: "bad" }, outputs: ["out/payload.bin"], error: /not a declared output/ },
+    { entry: { name: "results/link", type: "symlink" as const }, outputs: ["results"], error: /archive entry type/ },
   ];
   for (const current of cases) {
     const root = await mkdtemp(join(tmpdir(), "steward-run-reject-"));
     try {
       await assert.rejects(
-        extractOutputArchive(await archive([current.entry]), root, ["results"]),
+        extractOutputArchive(await archive([current.entry]), root, current.outputs),
         current.error,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+
+  for (const type of ["file", "symlink", "link"] as const) {
+    const root = await mkdtemp(join(tmpdir(), "steward-run-ancestor-type-"));
+    try {
+      await assert.rejects(
+        extractOutputArchive(
+          await archive([{ name: "out", type, ...(type === "file" ? { body: "bad" } : {}) }]),
+          root,
+          ["out/payload.bin"],
+        ),
+        /archive ancestor entry type is not allowed/,
       );
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -118,6 +154,23 @@ test("output extraction rejects traversal, undeclared paths, links, and symlink 
     );
   } finally {
     await rm(duplicateRoot, { recursive: true, force: true });
+  }
+
+  const duplicateAncestor = await mkdtemp(join(tmpdir(), "steward-run-duplicate-ancestor-"));
+  try {
+    await assert.rejects(
+      extractOutputArchive(
+        await archive([
+          { name: "out", type: "directory" },
+          { name: "./out/", type: "directory" },
+        ]),
+        duplicateAncestor,
+        ["out/payload.bin"],
+      ),
+      /duplicate archive entry: out/,
+    );
+  } finally {
+    await rm(duplicateAncestor, { recursive: true, force: true });
   }
 
   const root = await mkdtemp(join(tmpdir(), "steward-run-parent-"));
