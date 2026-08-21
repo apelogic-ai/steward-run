@@ -483,6 +483,36 @@ test("binding GET deadline bounds never-resolving token and fetch operations", a
   }
 });
 
+test("binding GET deadline bounds and cancels a never-ending JSON response body", async () => {
+  let bodyCancelled = false;
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async (_input, _init) => {
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          cancel: () => void (bodyCancelled = true),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+    maxAttempts: 1,
+  });
+
+  await assert.rejects(
+    client.getTask(task.taskUid, { deadline: Date.now() + 10 }),
+    (error: unknown) => {
+      assert.ok(error instanceof StewardRequestFailure);
+      assert.equal(error.stage, "poll");
+      assert.equal(error.category, "timeout");
+      assert.equal(error.httpStatus, undefined);
+      assert.equal(error.correlationId, undefined);
+      return true;
+    },
+  );
+  assert.equal(bodyCancelled, true);
+});
+
 test("the Steward client fails closed on incompatible payloads and unsafe base URLs", async () => {
   assert.throws(
     () =>

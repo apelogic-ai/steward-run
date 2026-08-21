@@ -3388,6 +3388,26 @@ async function boundedOperation(operation, options) {
     controller.signal.removeEventListener("abort", rejectOnAbort);
   }
 }
+async function readJsonResponse(response, signal) {
+  if (!response.body) return void 0;
+  const reader = response.body.getReader();
+  const cancel = () => {
+    void reader.cancel().catch(() => void 0);
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  const chunks = [];
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      chunks.push(Buffer.from(chunk.value));
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    reader.releaseLock();
+  }
+}
 var StewardClient = class {
   #baseUrl;
   #getToken;
@@ -3483,8 +3503,23 @@ var StewardClient = class {
     }
     throw new StewardRequestFailure(options.stage, "transport");
   }
-  async #taskResponse(response, stage) {
-    const payload = await response.json().catch(() => void 0);
+  async #taskResponse(response, stage, options = {}) {
+    let payload;
+    try {
+      payload = await boundedOperation(
+        (signal) => readJsonResponse(response, signal),
+        options
+      );
+    } catch (error) {
+      await response.body?.cancel().catch(() => void 0);
+      if (error instanceof Error && error.name === "AbortError" && options.signal?.aborted) {
+        throw error;
+      }
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new StewardRequestFailure(stage, "timeout");
+      }
+      payload = void 0;
+    }
     try {
       const task = parseTask(payload);
       if (task.runtimeUid === null) {
@@ -3540,7 +3575,8 @@ var StewardClient = class {
         ...options.signal === void 0 ? {} : { signal: options.signal },
         ...options.deadline === void 0 ? {} : { deadline: options.deadline }
       }),
-      "poll"
+      "poll",
+      options
     );
   }
   async downloadTaskOutputs(taskUid) {

@@ -352,6 +352,27 @@ async function boundedOperation<T>(
   }
 }
 
+async function readJsonResponse(response: Response, signal: AbortSignal): Promise<unknown> {
+  if (!response.body) return undefined;
+  const reader = response.body.getReader();
+  const cancel = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  const chunks: Buffer[] = [];
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      chunks.push(Buffer.from(chunk.value));
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    reader.releaseLock();
+  }
+}
+
 export class StewardClient {
   readonly #baseUrl: URL;
   readonly #getToken: (signal?: AbortSignal) => Promise<string>;
@@ -463,8 +484,27 @@ export class StewardClient {
     throw new StewardRequestFailure(options.stage, "transport");
   }
 
-  async #taskResponse(response: Response, stage: RequestStage): Promise<Task> {
-    const payload: unknown = await response.json().catch(() => undefined);
+  async #taskResponse(
+    response: Response,
+    stage: RequestStage,
+    options: TaskRequestOptions = {},
+  ): Promise<Task> {
+    let payload: unknown;
+    try {
+      payload = await boundedOperation(
+        (signal) => readJsonResponse(response, signal),
+        options,
+      );
+    } catch (error) {
+      await response.body?.cancel().catch(() => undefined);
+      if (error instanceof Error && error.name === "AbortError" && options.signal?.aborted) {
+        throw error;
+      }
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new StewardRequestFailure(stage, "timeout");
+      }
+      payload = undefined;
+    }
     try {
       const task = parseTask(payload);
       if (task.runtimeUid === null) {
@@ -529,6 +569,7 @@ export class StewardClient {
         ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
       }),
       "poll",
+      options,
     );
   }
 
