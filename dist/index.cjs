@@ -3644,10 +3644,13 @@ async function pollUntilRuntimeBound(initial, client, sleep, signal, timeoutMill
         throw timeoutError();
       }
       await abortable(sleep(interval, controller.signal), controller.signal);
-      const current = await client.getTask(initial.taskUid, {
-        signal: controller.signal,
-        deadline
-      });
+      const current = await abortable(
+        client.getTask(initial.taskUid, {
+          signal: controller.signal,
+          deadline
+        }),
+        controller.signal
+      );
       if (current.taskUid !== initial.taskUid || current.runtimeOwnership !== initial.runtimeOwnership) {
         throw new Error("Steward changed Task identity while waiting for runtime binding");
       }

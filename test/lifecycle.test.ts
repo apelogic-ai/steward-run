@@ -65,6 +65,7 @@ class FakeClient implements TaskClient {
   executingTask: Task = { ...baseTask, phase: "running" };
   finalizingTasks: Task[] = [];
   finalizationStarted = false;
+  ignoreBindingCancellation = false;
 
   async submitTask(request: TaskSubmissionRequest): Promise<Task> {
     this.calls.push("create");
@@ -87,6 +88,7 @@ class FakeClient implements TaskClient {
       const finalizingTask = this.finalizingTasks.shift();
       if (finalizingTask) return { ...finalizingTask, runtimeOwnership: this.ownership };
     }
+    if (this.ignoreBindingCancellation) return new Promise<Task>(() => undefined);
     const bindingTask = this.bindingTasks.shift();
     if (bindingTask) return { ...bindingTask, runtimeOwnership: this.ownership };
     return {
@@ -420,6 +422,50 @@ test("binding deadline interrupts a never-resolving Steward GET and confirms unb
     assert.equal(bindingSignal?.aborted, true);
     assert.equal(outputs["runtime-uid"], undefined);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("binding deadline also bounds a non-cooperative TaskClient GET", async () => {
+  const root = await fixture();
+  const client = new FakeClient();
+  client.submittedTask = { ...baseTask, runtimeUid: null };
+  client.ignoreBindingCancellation = true;
+  client.finalizingTasks = [
+    { ...baseTask, runtimeUid: null, phase: "cancelled" },
+    { ...baseTask, runtimeUid: null, phase: "cancelled", finalized: true },
+  ];
+  const outputs: Record<string, string> = {};
+  let guard: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const guarded = Promise.race([
+      runWorkflow(config, root, {
+        ...dependencies(client, outputs),
+        runtimeBindingTimeoutMilliseconds: 10,
+        sleep: async () => undefined,
+      }),
+      new Promise<Task>((_resolve, reject) => {
+        guard = setTimeout(
+          () => reject(new Error("non-cooperative TaskClient exceeded binding deadline")),
+          250,
+        );
+      }),
+    ]);
+    await assert.rejects(guarded, (error) => {
+      assert.ok(error instanceof StewardRunFailure);
+      assert.deepEqual(error.metadata, {
+        version: "steward-run.failure/v1",
+        phase: "unavailable",
+        failureCategory: "timeout",
+        cleanupCategory: "confirmed",
+        requestStage: "poll",
+      });
+      return true;
+    });
+    assert.equal(outputs["runtime-uid"], undefined);
+    assert.deepEqual(client.calls, ["create", "poll", "finalize", "poll"]);
+  } finally {
+    if (guard !== undefined) clearTimeout(guard);
     await rm(root, { recursive: true, force: true });
   }
 });
