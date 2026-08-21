@@ -165,6 +165,7 @@ test("pending runtime binding fails closed on null misuse and response contradic
     { ...task, runtimeUid: null, finalized: true },
     { ...task, runtimeUid: null, runtimeOwnership: "adopted" },
     { ...task, runtimeUid: null, failureReason: privateBody },
+    { ...task, runtimeUid: null, phase: "cancelled", failureReason: privateBody },
     { ...task, runtimeUid: null, unknown: privateBody },
   ];
 
@@ -189,6 +190,21 @@ test("pending runtime binding fails closed on null misuse and response contradic
       },
     );
   }
+});
+
+test("unbound cancellation and finalization preserve the real Steward response shape", async () => {
+  const cancelled = { ...task, runtimeUid: null, phase: "cancelled" as const };
+  const finalized = { ...cancelled, finalized: true };
+  const responses = [jsonResponse(cancelled, 202), jsonResponse(finalized, 200)];
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () => responses.shift() ?? jsonResponse(finalized),
+    maxAttempts: 1,
+  });
+
+  assert.deepEqual(await client.finalizeTask(task.taskUid), cancelled);
+  assert.deepEqual(await client.getTask(task.taskUid), finalized);
 });
 
 test("pending-binding polling never discloses bearer tokens or malformed bodies", async () => {
@@ -220,11 +236,18 @@ test("pending-binding polling never discloses bearer tokens or malformed bodies"
 });
 
 test("pending runtime binding is restricted to compatible response operations", async () => {
-  for (const [operation, status] of [["submit", 201], ["execute", 202]] as const) {
+  const pending = { ...task, runtimeUid: null };
+  const cancelled = { ...pending, phase: "cancelled" };
+  for (const [operation, status, payload] of [
+    ["submit", 201, pending],
+    ["submit", 202, cancelled],
+    ["execute", 202, pending],
+    ["finalize", 202, pending],
+  ] as const) {
     const client = new StewardClient({
       baseUrl: "https://steward.example.test",
       getToken: async () => "private-operation-bearer",
-      fetch: async () => jsonResponse({ ...task, runtimeUid: null }, status),
+      fetch: async () => jsonResponse(payload, status),
       maxAttempts: 1,
     });
     const request = operation === "submit"
@@ -232,7 +255,9 @@ test("pending runtime binding is restricted to compatible response operations", 
         { workflow: "code-review", codingAgentRuntime: "base" },
         "a".repeat(64),
       )
-      : client.executeTask(task.taskUid);
+      : operation === "execute"
+        ? client.executeTask(task.taskUid)
+        : client.finalizeTask(task.taskUid);
     await assert.rejects(request, (error: unknown) => {
       assert.ok(error instanceof StewardRequestFailure);
       assert.equal(error.stage, operation);

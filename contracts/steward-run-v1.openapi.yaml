@@ -214,8 +214,9 @@ components:
         taskUid: { type: string, format: uuid }
         runtimeUid:
           description: >-
-            Immutable Kubernetes runtime UID, or null only while a non-final Task is waiting for
-            controller-owned runtime binding in submitted, parked, or queued phase.
+            Immutable Kubernetes runtime UID. Null is valid for a provisioned Task while it is
+            waiting for controller-owned binding in non-final submitted, parked, or queued phase,
+            and remains null if that unbound Task is cancelled and finalized before binding.
           oneOf:
             - { type: string, minLength: 1 }
             - { type: 'null' }

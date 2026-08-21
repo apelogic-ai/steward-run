@@ -104,6 +104,7 @@ async function pollUntilRuntimeBound(
     ) {
       throw new Error("Steward changed Task identity while waiting for runtime binding");
     }
+    if (current.runtimeUid === null && current.phase === "cancelled") throw abortError();
     const currentBound = boundTask(current);
     if (currentBound) return assertPreExecutionTask(currentBound);
     interval = Math.min(interval * 2, 10_000);

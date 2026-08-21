@@ -178,6 +178,23 @@ function parseTaskDelta(value: unknown): TaskAdmissionDelta | undefined {
   return undefined;
 }
 
+const pendingBindingPhases = new Set<TaskPhase>(["submitted", "parked", "queued"]);
+
+function isPendingBindingTask(task: Task): boolean {
+  return task.runtimeUid === null &&
+    task.runtimeOwnership === "provisioned" &&
+    !task.finalized &&
+    pendingBindingPhases.has(task.phase) &&
+    task.failureReason === undefined;
+}
+
+function isUnboundFinalizationTask(task: Task): boolean {
+  return task.runtimeUid === null &&
+    task.runtimeOwnership === "provisioned" &&
+    task.phase === "cancelled" &&
+    task.failureReason === undefined;
+}
+
 function parseTask(payload: unknown): Task {
   const value = record(payload);
   const rawDeltas = value?.deltas ?? [];
@@ -206,16 +223,7 @@ function parseTask(payload: unknown): Task {
   ) {
     throw new Error("Steward returned an incompatible Task response");
   }
-  if (
-    value.runtimeUid === null &&
-    (value.runtimeOwnership !== "provisioned" ||
-      value.finalized ||
-      !["submitted", "parked", "queued"].includes(value.phase) ||
-      value.failureReason !== undefined)
-  ) {
-    throw new Error("Steward returned a contradictory unbound Task response");
-  }
-  return {
+  const task: Task = {
     taskUid: value.taskUid,
     runtimeUid: value.runtimeUid,
     phase: value.phase as TaskPhase,
@@ -224,6 +232,10 @@ function parseTask(payload: unknown): Task {
     ...(typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {}),
     deltas,
   };
+  if (task.runtimeUid === null && !isPendingBindingTask(task) && !isUnboundFinalizationTask(task)) {
+    throw new Error("Steward returned a contradictory unbound Task response");
+  }
+  return task;
 }
 
 function validatedBaseUrl(value: string): URL {
@@ -340,11 +352,15 @@ export class StewardClient {
     const payload: unknown = await response.json().catch(() => undefined);
     try {
       const task = parseTask(payload);
-      if (
-        task.runtimeUid === null &&
-        (stage === "execute" || (stage === "submit" && response.status !== 202))
-      ) {
-        throw new Error("Steward returned pending runtime binding in an incompatible response");
+      if (task.runtimeUid === null) {
+        const operationAllowsNull =
+          (stage === "submit" && response.status === 202 && isPendingBindingTask(task)) ||
+          (stage === "poll" &&
+            (isPendingBindingTask(task) || isUnboundFinalizationTask(task))) ||
+          (stage === "finalize" && isUnboundFinalizationTask(task));
+        if (!operationAllowsNull) {
+          throw new Error("Steward returned an unbound Task in an incompatible response");
+        }
       }
       return task;
     } catch {

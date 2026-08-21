@@ -67,7 +67,9 @@ The action runs inside the ARC runner job and does exactly two categories of thi
    runtime UID, and only then exposes `runtime-uid`, uploads inputs, or requests execution. The action
    polls Task status through any approval hold, collects
    outputs after success, and requests finalization. A provisioned runtime is terminated; an
-   adopted runtime is detached (see D2).
+   adopted runtime is detached (see D2). If cancellation happens before binding, Steward keeps
+   `runtimeUid: null` while the cancelled Task reaches `finalized: true`; the action confirms that
+   cleanup without inventing or publishing a runtime UID.
 
 Flow: `download-artifact` (regular step) → `steward-run` (materialise in → API provision → run
 → collect out) → `upload-artifact` (regular step). The agentic step is invisible to the

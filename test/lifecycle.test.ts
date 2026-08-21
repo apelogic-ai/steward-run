@@ -55,6 +55,8 @@ class FakeClient implements TaskClient {
   submittedTask: Task = baseTask;
   bindingTasks: Task[] = [];
   executingTask: Task = { ...baseTask, phase: "running" };
+  finalizingTasks: Task[] = [];
+  finalizationStarted = false;
 
   async submitTask(request: TaskSubmissionRequest): Promise<Task> {
     this.calls.push("create");
@@ -73,6 +75,10 @@ class FakeClient implements TaskClient {
   }
   async getTask(): Promise<Task> {
     this.calls.push("poll");
+    if (this.finalizationStarted) {
+      const finalizingTask = this.finalizingTasks.shift();
+      if (finalizingTask) return { ...finalizingTask, runtimeOwnership: this.ownership };
+    }
     const bindingTask = this.bindingTasks.shift();
     if (bindingTask) return { ...bindingTask, runtimeOwnership: this.ownership };
     return {
@@ -89,6 +95,9 @@ class FakeClient implements TaskClient {
   async finalizeTask(): Promise<Task> {
     this.calls.push("finalize");
     if (this.finalizeError) throw this.finalizeError;
+    this.finalizationStarted = true;
+    const finalizingTask = this.finalizingTasks.shift();
+    if (finalizingTask) return { ...finalizingTask, runtimeOwnership: this.ownership };
     return { ...baseTask, phase: "cancelled", runtimeOwnership: this.ownership, finalized: true };
   }
 }
@@ -228,6 +237,10 @@ test("runtime binding timeout is bounded, classified, and does not expose runtim
     runtimeUid: null,
     phase: "queued",
   }));
+  client.finalizingTasks = [
+    { ...baseTask, runtimeUid: null, phase: "cancelled" },
+    { ...baseTask, runtimeUid: null, phase: "cancelled", finalized: true },
+  ];
   const outputs: Record<string, string> = {};
   try {
     await assert.rejects(runWorkflow(config, root, dependencies(client, outputs)), (error) => {
@@ -241,7 +254,9 @@ test("runtime binding timeout is bounded, classified, and does not expose runtim
       assert.doesNotMatch(error.message, /runtime-uid-1/u);
       return true;
     });
-    assert.equal(client.calls.filter((call) => call === "poll").length, 60);
+    const finalizeIndex = client.calls.indexOf("finalize");
+    assert.equal(client.calls.slice(0, finalizeIndex).filter((call) => call === "poll").length, 60);
+    assert.deepEqual(client.calls.slice(finalizeIndex), ["finalize", "poll"]);
     assert.equal(outputs["runtime-uid"], undefined);
     assert.equal(client.calls.includes("upload"), false);
     assert.equal(client.calls.includes("execute"), false);
@@ -254,6 +269,10 @@ test("runtime binding cancellation is bounded and remains fail closed", async ()
   const root = await fixture();
   const client = new FakeClient();
   client.submittedTask = { ...baseTask, runtimeUid: null };
+  client.finalizingTasks = [
+    { ...baseTask, runtimeUid: null, phase: "cancelled" },
+    { ...baseTask, runtimeUid: null, phase: "cancelled", finalized: true },
+  ];
   const controller = new AbortController();
   const outputs: Record<string, string> = {};
   const cancelledDependencies = {
@@ -270,8 +289,39 @@ test("runtime binding cancellation is bounded and remains fail closed", async ()
       return true;
     });
     assert.equal(outputs["runtime-uid"], undefined);
-    assert.equal(client.calls.includes("poll"), false);
+    assert.deepEqual(client.calls, ["create", "finalize", "poll"]);
     assert.equal(client.calls.includes("upload"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("server cancellation while waiting for binding finalizes without inventing a runtime UID", async () => {
+  const root = await fixture();
+  const client = new FakeClient();
+  client.submittedTask = { ...baseTask, runtimeUid: null };
+  client.bindingTasks = [{ ...baseTask, runtimeUid: null, phase: "cancelled" }];
+  client.finalizingTasks = [
+    { ...baseTask, runtimeUid: null, phase: "cancelled" },
+    { ...baseTask, runtimeUid: null, phase: "cancelled", finalized: true },
+  ];
+  const outputs: Record<string, string> = {};
+  try {
+    await assert.rejects(runWorkflow(config, root, dependencies(client, outputs)), (error) => {
+      assert.ok(error instanceof StewardRunFailure);
+      assert.deepEqual(error.metadata, {
+        version: "steward-run.failure/v1",
+        phase: "cancelled",
+        failureCategory: "cancelled",
+        cleanupCategory: "confirmed",
+      });
+      return true;
+    });
+    assert.equal(outputs.status, "cancelled");
+    assert.equal(outputs["runtime-uid"], undefined);
+    assert.deepEqual(client.calls, ["create", "poll", "finalize", "poll"]);
+    assert.equal(client.calls.includes("upload"), false);
+    assert.equal(client.calls.includes("execute"), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -3244,6 +3244,13 @@ function parseTaskDelta(value) {
   }
   return void 0;
 }
+var pendingBindingPhases = /* @__PURE__ */ new Set(["submitted", "parked", "queued"]);
+function isPendingBindingTask(task) {
+  return task.runtimeUid === null && task.runtimeOwnership === "provisioned" && !task.finalized && pendingBindingPhases.has(task.phase) && task.failureReason === void 0;
+}
+function isUnboundFinalizationTask(task) {
+  return task.runtimeUid === null && task.runtimeOwnership === "provisioned" && task.phase === "cancelled" && task.failureReason === void 0;
+}
 function parseTask(payload) {
   const value = record(payload);
   const rawDeltas = value?.deltas ?? [];
@@ -3259,10 +3266,7 @@ function parseTask(payload) {
   ]) || typeof value.taskUid !== "string" || !value.taskUid || value.runtimeUid !== null && (typeof value.runtimeUid !== "string" || !value.runtimeUid) || typeof value.phase !== "string" || !taskPhases.includes(value.phase) || value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted" || typeof value.finalized !== "boolean" || value.failureReason !== void 0 && typeof value.failureReason !== "string" || !deltas) {
     throw new Error("Steward returned an incompatible Task response");
   }
-  if (value.runtimeUid === null && (value.runtimeOwnership !== "provisioned" || value.finalized || !["submitted", "parked", "queued"].includes(value.phase) || value.failureReason !== void 0)) {
-    throw new Error("Steward returned a contradictory unbound Task response");
-  }
-  return {
+  const task = {
     taskUid: value.taskUid,
     runtimeUid: value.runtimeUid,
     phase: value.phase,
@@ -3271,6 +3275,10 @@ function parseTask(payload) {
     ...typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {},
     deltas
   };
+  if (task.runtimeUid === null && !isPendingBindingTask(task) && !isUnboundFinalizationTask(task)) {
+    throw new Error("Steward returned a contradictory unbound Task response");
+  }
+  return task;
 }
 function validatedBaseUrl(value) {
   const url = new URL(value);
@@ -3373,8 +3381,11 @@ var StewardClient = class {
     const payload = await response.json().catch(() => void 0);
     try {
       const task = parseTask(payload);
-      if (task.runtimeUid === null && (stage === "execute" || stage === "submit" && response.status !== 202)) {
-        throw new Error("Steward returned pending runtime binding in an incompatible response");
+      if (task.runtimeUid === null) {
+        const operationAllowsNull = stage === "submit" && response.status === 202 && isPendingBindingTask(task) || stage === "poll" && (isPendingBindingTask(task) || isUnboundFinalizationTask(task)) || stage === "finalize" && isUnboundFinalizationTask(task);
+        if (!operationAllowsNull) {
+          throw new Error("Steward returned an unbound Task in an incompatible response");
+        }
       }
       return task;
     } catch {
@@ -3502,6 +3513,7 @@ async function pollUntilRuntimeBound(initial, client, sleep, signal) {
     if (current.taskUid !== initial.taskUid || current.runtimeOwnership !== initial.runtimeOwnership) {
       throw new Error("Steward changed Task identity while waiting for runtime binding");
     }
+    if (current.runtimeUid === null && current.phase === "cancelled") throw abortError();
     const currentBound = boundTask(current);
     if (currentBound) return assertPreExecutionTask(currentBound);
     interval = Math.min(interval * 2, 1e4);
