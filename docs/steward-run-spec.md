@@ -128,8 +128,9 @@ versioned `steward-run.failure/v1` diagnostic contract. It contains exactly:
 The failure allowlist is `provider-connection`, `provider-token-grant`, `provider-grant`,
 `provider-protocol`,
 `provider-authorization`, `provider-upstream`, `assertion-mismatch`, `workflow-cleanup`,
-`authentication`, `authorization`, `configuration`, `dependency`, `input-output`, `runtime`,
-`timeout`, `execution`, `cancelled`, and `unknown`. Exact agent exit codes 70 through 75 map to
+`authentication`, `authorization`, `validation`, `conflict`, `configuration`, `dependency`,
+`transport`, `malformed-response`, `input-output`, `runtime`, `timeout`, `execution`, `cancelled`,
+and `unknown`. Exact agent exit codes 70 through 75 map to
 `provider-connection`, `provider-token-grant`, `provider-authorization`, `provider-upstream`,
 `assertion-mismatch`, and `workflow-cleanup`, respectively. Exact agent exit 76 maps to
 `provider-grant`; exact agent exit 77 maps to `provider-protocol`. Except for the staged assertion
@@ -146,6 +147,15 @@ retain `assertion-mismatch` and add one independently versioned, allowlisted
 summary row remain byte-for-byte compatible; a staged assertion adds a second bounded annotation
 and a second summary table. Legacy exact exit 74 remains `assertion-mismatch` with no stage.
 Malformed or decorated reasons, unknown codes, and runtime-supplied text cannot select a stage.
+
+A Steward HTTP/request failure adds a separately versioned
+`steward-run.request-failure/v1` annotation and summary row while retaining the original v1
+failure record. The request signal contains only an allowlisted stage, its bounded category, an
+optional integer HTTP status, and an optional correlation identifier accepted only from
+`X-Correlation-ID` or `X-Request-ID` after strict length and character validation. Validation
+(400/422), authentication (401), authorization (403), conflict (409), dependency (including 503),
+timeout, transport, and malformed-response remain distinct. Response bodies and arbitrary headers
+are never parsed into diagnostics.
 
 Only those literals are rendered. Arbitrary failure reasons and command output, HTTP bodies or
 headers, JWTs, assertions, provider tokens, API keys, cookies, credentials, and Kubernetes Secret

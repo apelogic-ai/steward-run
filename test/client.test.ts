@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { getGitHubOidcToken } from "../src/oidc.ts";
-import { StewardClient, type Task } from "../src/steward-client.ts";
+import {
+  StewardClient,
+  StewardRequestFailure,
+  type Task,
+} from "../src/steward-client.ts";
 
 function jsonResponse(body: unknown, status = 200, headers?: HeadersInit): Response {
   return new Response(JSON.stringify(body), {
@@ -126,6 +130,73 @@ test("Task submission accepts admitted and parked responses with structured delt
   );
 });
 
+test("Task submission preserves bounded HTTP failure classification", async (context) => {
+  for (const [status, category] of [
+    [400, "validation"],
+    [422, "validation"],
+    [401, "authentication"],
+    [403, "authorization"],
+    [409, "conflict"],
+    [503, "dependency"],
+  ] as const) {
+    await context.test(`${status} is ${category}`, async () => {
+      const secretBody = `private-response-${status}`;
+      const client = new StewardClient({
+        baseUrl: "https://steward.example.test",
+        getToken: async () => "private-bearer-token",
+        fetch: async () =>
+          new Response(secretBody, {
+            status,
+            headers: {
+              "content-type": "application/json",
+              "x-request-id": `request-${status}`,
+            },
+          }),
+        maxAttempts: 1,
+      });
+
+      await assert.rejects(
+        client.submitTask(
+          { workflow: "code-review", codingAgentRuntime: "base" },
+          "a".repeat(64),
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof StewardRequestFailure);
+          assert.equal(error.stage, "submit");
+          assert.equal(error.category, category);
+          assert.equal(error.httpStatus, status);
+          assert.equal(error.correlationId, `request-${status}`);
+          assert.doesNotMatch(error.message, /private-response|private-bearer-token/u);
+          return true;
+        },
+      );
+    });
+  }
+});
+
+test("Task submission rejects malformed successful responses without exposing their body", async () => {
+  const secretBody = "private-malformed-response";
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "private-bearer-token",
+    fetch: async () =>
+      jsonResponse(secretBody, 201, { "x-correlation-id": "correlation-malformed" }),
+  });
+
+  await assert.rejects(
+    client.submitTask({ workflow: "code-review", codingAgentRuntime: "base" }, "a".repeat(64)),
+    (error: unknown) => {
+      assert.ok(error instanceof StewardRequestFailure);
+      assert.equal(error.stage, "submit");
+      assert.equal(error.category, "malformed-response");
+      assert.equal(error.httpStatus, 201);
+      assert.equal(error.correlationId, "correlation-malformed");
+      assert.doesNotMatch(error.message, /private-malformed-response|private-bearer-token/u);
+      return true;
+    },
+  );
+});
+
 test("the Steward client retries transient responses and honors Retry-After", async () => {
   const delays: number[] = [];
   let calls = 0;
@@ -166,21 +237,32 @@ test("input upload retries recreate the archive stream", async () => {
   assert.equal(archives, 2);
 });
 
-test("transport failures retain only a safe error category", async () => {
-  const secret = "not-for-error-output";
-  const client = new StewardClient({
-    baseUrl: "https://steward.example.test",
-    getToken: async () => "token",
-    fetch: async () => {
-      throw Object.assign(new Error(secret), { code: "ECONNRESET" });
-    },
-    maxAttempts: 1,
-  });
-  await assert.rejects(client.getTask(task.taskUid), (error: Error) => {
-    assert.match(error.message, /failed after retries \(network\)/u);
-    assert.doesNotMatch(error.message, new RegExp(secret, "u"));
-    return true;
-  });
+test("timeout and transport failures remain distinct and bounded", async (context) => {
+  for (const [code, category] of [
+    ["ETIMEDOUT", "timeout"],
+    ["ECONNRESET", "transport"],
+  ] as const) {
+    await context.test(category, async () => {
+      const secret = `not-for-${category}-output`;
+      const client = new StewardClient({
+        baseUrl: "https://steward.example.test",
+        getToken: async () => "token",
+        fetch: async () => {
+          throw Object.assign(new Error(secret), { code });
+        },
+        maxAttempts: 1,
+      });
+      await assert.rejects(client.getTask(task.taskUid), (error: unknown) => {
+        assert.ok(error instanceof StewardRequestFailure);
+        assert.equal(error.stage, "poll");
+        assert.equal(error.category, category);
+        assert.equal(error.httpStatus, undefined);
+        assert.equal(error.correlationId, undefined);
+        assert.doesNotMatch(error.message, new RegExp(secret, "u"));
+        return true;
+      });
+    });
+  }
 });
 
 test("the Steward client fails closed on incompatible payloads and unsafe base URLs", async () => {
@@ -199,5 +281,10 @@ test("the Steward client fails closed on incompatible payloads and unsafe base U
     fetch: async () => jsonResponse({ ...task, phase: "surprise" }),
     sleep: async () => undefined,
   });
-  await assert.rejects(client.getTask(task.taskUid), /incompatible Task response/);
+  await assert.rejects(client.getTask(task.taskUid), (error: unknown) => {
+    assert.ok(error instanceof StewardRequestFailure);
+    assert.equal(error.stage, "poll");
+    assert.equal(error.category, "malformed-response");
+    return true;
+  });
 });

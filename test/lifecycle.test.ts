@@ -12,7 +12,11 @@ import {
   runWorkflow,
   type TaskClient,
 } from "../src/lifecycle.ts";
-import type { Task, TaskSubmissionRequest } from "../src/steward-client.ts";
+import {
+  StewardRequestFailure,
+  type Task,
+  type TaskSubmissionRequest,
+} from "../src/steward-client.ts";
 
 const baseTask: Task = {
   taskUid: "2f9f6ade-261d-4090-9532-9e157b59db2e",
@@ -347,6 +351,68 @@ test("missing inputs fail before any Steward request and Task cleanup failure is
         return true;
       },
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("submit request diagnostics survive lifecycle sanitization", async (context) => {
+  const root = await fixture();
+  try {
+    for (const [category, status] of [
+      ["validation", 422],
+      ["authentication", 401],
+      ["authorization", 403],
+      ["conflict", 409],
+      ["dependency", 503],
+      ["malformed-response", 201],
+    ] as const) {
+      await context.test(category, async () => {
+        const client = new FakeClient();
+        client.submitTask = async () => {
+          throw new StewardRequestFailure("submit", category, {
+            httpStatus: status,
+            correlationId: "request-safe-123",
+          });
+        };
+        await assert.rejects(
+          runWorkflow(config, root, dependencies(client, {})),
+          (error: unknown) => {
+            assert.ok(error instanceof StewardRunFailure);
+            assert.deepEqual(error.metadata, {
+              version: "steward-run.failure/v1",
+              phase: "unavailable",
+              failureCategory: category,
+              cleanupCategory: "not-required",
+              requestStage: "submit",
+              httpStatus: status,
+              correlationId: "request-safe-123",
+            });
+            return true;
+          },
+        );
+      });
+    }
+
+    for (const category of ["timeout", "transport"] as const) {
+      await context.test(category, async () => {
+        const client = new FakeClient();
+        client.submitTask = async () => {
+          throw new StewardRequestFailure("submit", category);
+        };
+        await assert.rejects(
+          runWorkflow(config, root, dependencies(client, {})),
+          (error: unknown) => {
+            assert.ok(error instanceof StewardRunFailure);
+            assert.equal(error.metadata.failureCategory, category);
+            assert.equal(error.metadata.requestStage, "submit");
+            assert.equal(error.metadata.httpStatus, undefined);
+            assert.equal(error.metadata.correlationId, undefined);
+            return true;
+          },
+        );
+      });
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

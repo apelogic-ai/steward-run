@@ -1,5 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { Readable } from "node:stream";
+import {
+  sanitizeCorrelationId,
+  type RequestFailureCategory,
+  type RequestStage,
+} from "./failure-metadata.js";
 import type { FetchLike } from "./oidc.js";
 
 export type RuntimeOwnership = "provisioned" | "adopted";
@@ -57,10 +62,39 @@ interface ClientOptions {
 }
 
 interface RequestOptions {
+  stage: RequestStage;
   expectedStatus: number | readonly number[];
   headers?: Record<string, string>;
   body?: BodyInit | (() => Promise<BodyInit>);
   duplex?: "half";
+}
+
+interface RequestFailureDetails {
+  httpStatus?: number;
+  correlationId?: string;
+}
+
+export class StewardRequestFailure extends Error {
+  readonly stage: RequestStage;
+  readonly category: RequestFailureCategory;
+  readonly httpStatus: number | undefined;
+  readonly correlationId: string | undefined;
+
+  constructor(
+    stage: RequestStage,
+    category: RequestFailureCategory,
+    details: RequestFailureDetails = {},
+  ) {
+    super(
+      `Steward request failed (stage=${stage}, category=${category}` +
+        `${details.httpStatus === undefined ? "" : `, status=${details.httpStatus}`})`,
+    );
+    this.name = "StewardRequestFailure";
+    this.stage = stage;
+    this.category = category;
+    this.httpStatus = details.httpStatus;
+    this.correlationId = sanitizeCorrelationId(details.correlationId);
+  }
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -209,35 +243,29 @@ function isRetryableStatus(status: number): boolean {
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
 
-function transportErrorCategory(
-  error: unknown,
-): "network" | "request body" | "TLS" | "transport" {
+function transportFailureCategory(error: unknown): "timeout" | "transport" {
   const candidates: unknown[] = [error];
   if (error && typeof error === "object" && "cause" in error) candidates.push(error.cause);
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== "object") continue;
     const code = "code" in candidate && typeof candidate.code === "string" ? candidate.code : "";
-    if (/(?:CERT|TLS|SSL|ALTNAME|SELF_SIGNED|UNABLE_TO_VERIFY)/u.test(code)) {
-      return "TLS";
-    }
-    if (
-      [
-        "ECONNABORTED",
-        "ECONNREFUSED",
-        "ECONNRESET",
-        "ENETUNREACH",
-        "ENOTFOUND",
-        "EPIPE",
-        "ETIMEDOUT",
-      ].includes(code)
-    ) {
-      return "network";
-    }
+    if (["ECONNABORTED", "ETIMEDOUT"].includes(code)) return "timeout";
   }
-  if (error instanceof Error && error.message === "unsupported Steward request body") {
-    return "request body";
-  }
+  if (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name)) return "timeout";
   return "transport";
+}
+
+function httpFailureCategory(status: number): RequestFailureCategory {
+  if (status === 400 || status === 422) return "validation";
+  if (status === 401) return "authentication";
+  if (status === 403) return "authorization";
+  if (status === 409) return "conflict";
+  return "dependency";
+}
+
+function responseCorrelationId(response: Response): string | undefined {
+  return sanitizeCorrelationId(response.headers.get("x-correlation-id")) ??
+    sanitizeCorrelationId(response.headers.get("x-request-id"));
 }
 
 export class StewardClient {
@@ -274,11 +302,8 @@ export class StewardClient {
           ...(options.duplex ? { duplex: options.duplex } : {}),
         });
       } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") throw error;
         if (attempt + 1 === this.#maxAttempts) {
-          throw new Error(
-            `Steward request ${method} ${path} failed after retries (${transportErrorCategory(error)})`,
-          );
+          throw new StewardRequestFailure(options.stage, transportFailureCategory(error));
         }
         await this.#sleep(retryDelay(undefined, attempt));
         continue;
@@ -293,18 +318,31 @@ export class StewardClient {
         continue;
       }
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Steward request ${method} ${path} failed with status ${response.status}`);
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure(options.stage, httpFailureCategory(response.status), {
+        httpStatus: response.status,
+        ...(correlationId === undefined ? {} : { correlationId }),
+      });
     }
-    throw new Error(`Steward request ${method} ${path} exhausted retries`);
+    throw new StewardRequestFailure(options.stage, "transport");
   }
 
-  async #taskResponse(response: Response): Promise<Task> {
+  async #taskResponse(response: Response, stage: RequestStage): Promise<Task> {
     const payload: unknown = await response.json().catch(() => undefined);
-    return parseTask(payload);
+    try {
+      return parseTask(payload);
+    } catch {
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure(stage, "malformed-response", {
+        httpStatus: response.status,
+        ...(correlationId === undefined ? {} : { correlationId }),
+      });
+    }
   }
 
   async submitTask(request: TaskSubmissionRequest, idempotencyKey: string): Promise<Task> {
     const response = await this.#request("POST", "v1/tasks", {
+      stage: "submit",
       expectedStatus: [201, 202],
       headers: {
         "content-type": "application/json",
@@ -312,11 +350,12 @@ export class StewardClient {
       },
       body: JSON.stringify(request),
     });
-    return this.#taskResponse(response);
+    return this.#taskResponse(response, "submit");
   }
 
   async uploadTaskInputs(taskUid: string, createArchive: () => Promise<Readable>): Promise<void> {
     await this.#request("PUT", `v1/tasks/${encodeURIComponent(taskUid)}/inputs`, {
+      stage: "upload",
       expectedStatus: 204,
       headers: { "content-type": "application/x-tar" },
       body: async () => (await createArchive()) as unknown as BodyInit,
@@ -327,16 +366,20 @@ export class StewardClient {
   async executeTask(taskUid: string): Promise<Task> {
     return this.#taskResponse(
       await this.#request("POST", `v1/tasks/${encodeURIComponent(taskUid)}/execute`, {
+        stage: "execute",
         expectedStatus: 202,
       }),
+      "execute",
     );
   }
 
   async getTask(taskUid: string): Promise<Task> {
     return this.#taskResponse(
       await this.#request("GET", `v1/tasks/${encodeURIComponent(taskUid)}`, {
+        stage: "poll",
         expectedStatus: 200,
       }),
+      "poll",
     );
   }
 
@@ -345,12 +388,17 @@ export class StewardClient {
       "GET",
       `v1/tasks/${encodeURIComponent(taskUid)}/outputs`,
       {
+        stage: "output",
         expectedStatus: 200,
         headers: { accept: "application/x-tar" },
       },
     );
     if (!response.headers.get("content-type")?.startsWith("application/x-tar") || !response.body) {
-      throw new Error("Steward returned an incompatible output archive response");
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure("output", "malformed-response", {
+        httpStatus: response.status,
+        ...(correlationId === undefined ? {} : { correlationId }),
+      });
     }
     return Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
   }
@@ -358,8 +406,10 @@ export class StewardClient {
   async finalizeTask(taskUid: string): Promise<Task> {
     return this.#taskResponse(
       await this.#request("DELETE", `v1/tasks/${encodeURIComponent(taskUid)}`, {
+        stage: "finalize",
         expectedStatus: 202,
       }),
+      "finalize",
     );
   }
 

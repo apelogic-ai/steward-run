@@ -14,12 +14,13 @@ import {
   type AssertionStage,
   type CleanupCategory,
   type FailureCategory,
+  type FailureMetadata,
   type FailurePhase,
   type ProviderConnectionStage,
   type ProviderConnectionStageV2,
   type ProviderConnectionStageV3,
 } from "./failure-metadata.js";
-import type { Task, TaskSubmissionRequest } from "./steward-client.js";
+import { StewardRequestFailure, type Task, type TaskSubmissionRequest } from "./steward-client.js";
 
 export interface TaskClient {
   submitTask(request: TaskSubmissionRequest, idempotencyKey: string): Promise<Task>;
@@ -128,6 +129,7 @@ function taskFailurePhase(task: Task | undefined): FailurePhase {
 }
 
 function stageFailureCategory(stage: WorkflowStage, error: unknown): FailureCategory {
+  if (error instanceof StewardRequestFailure) return error.category;
   if (error instanceof Error && error.name === "AbortError") return "cancelled";
   switch (stage) {
     case "input":
@@ -170,6 +172,9 @@ export async function runWorkflow(
   let providerConnectionStage: ProviderConnectionStage | undefined;
   let providerConnectionStageV2: ProviderConnectionStageV2 | undefined;
   let providerConnectionStageV3: ProviderConnectionStageV3 | undefined;
+  let requestStage: FailureMetadata["requestStage"];
+  let httpStatus: FailureMetadata["httpStatus"];
+  let correlationId: FailureMetadata["correlationId"];
   let failed = false;
   let stage: WorkflowStage = "input";
   try {
@@ -234,6 +239,11 @@ export async function runWorkflow(
         ? taskFailurePhase(terminal)
         : (error instanceof Error && error.name === "AbortError" ? "cancelled" : "unavailable");
       failureCategory = stageFailureCategory(stage, error);
+      if (error instanceof StewardRequestFailure) {
+        requestStage = error.stage;
+        httpStatus = error.httpStatus;
+        correlationId = error.correlationId;
+      }
     }
     if (created && error instanceof Error && error.name === "AbortError") {
       try {
@@ -266,6 +276,9 @@ export async function runWorkflow(
       ...(providerConnectionStage === undefined ? {} : { providerConnectionStage }),
       ...(providerConnectionStageV2 === undefined ? {} : { providerConnectionStageV2 }),
       ...(providerConnectionStageV3 === undefined ? {} : { providerConnectionStageV3 }),
+      ...(requestStage === undefined ? {} : { requestStage }),
+      ...(httpStatus === undefined ? {} : { httpStatus }),
+      ...(correlationId === undefined ? {} : { correlationId }),
     });
   }
   return result;

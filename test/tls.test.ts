@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import tar from "tar-stream";
 import { createInputArchive } from "../src/archive.ts";
-import { StewardClient, type Task } from "../src/steward-client.ts";
+import { StewardClient, StewardRequestFailure, type Task } from "../src/steward-client.ts";
 import { createStewardFetch } from "../src/transport.ts";
 
 const execFileAsync = promisify(execFile);
@@ -181,7 +181,12 @@ test("a trusted private CA succeeds while a wrong CA and hostname mismatch fail 
       fetch: await createStewardFetch(wrongAuthority.certificate),
       maxAttempts: 1,
     });
-    await assert.rejects(wrongCaClient.getTask(task.taskUid), /failed after retries \(TLS\)/);
+    await assert.rejects(wrongCaClient.getTask(task.taskUid), (error: unknown) => {
+      assert.ok(error instanceof StewardRequestFailure);
+      assert.equal(error.stage, "poll");
+      assert.equal(error.category, "transport");
+      return true;
+    });
 
     const hostnameClient = new StewardClient({
       baseUrl: mismatchServer.url,
@@ -189,7 +194,12 @@ test("a trusted private CA succeeds while a wrong CA and hostname mismatch fail 
       fetch: await createStewardFetch(authority.certificate),
       maxAttempts: 1,
     });
-    await assert.rejects(hostnameClient.getTask(task.taskUid), /failed after retries \(TLS\)/);
+    await assert.rejects(hostnameClient.getTask(task.taskUid), (error: unknown) => {
+      assert.ok(error instanceof StewardRequestFailure);
+      assert.equal(error.stage, "poll");
+      assert.equal(error.category, "transport");
+      return true;
+    });
   } finally {
     await Promise.all([close(trustedServer.server), close(mismatchServer.server)]);
     await rm(root, { recursive: true, force: true });

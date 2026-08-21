@@ -1,4 +1,5 @@
 export const FAILURE_METADATA_VERSION = "steward-run.failure/v1" as const;
+export const REQUEST_FAILURE_METADATA_VERSION = "steward-run.request-failure/v1" as const;
 export const ASSERTION_STAGE_METADATA_VERSION = "steward-run.assertion-stage/v1" as const;
 export const PROVIDER_CONNECTION_STAGE_METADATA_VERSION = "steward-run.provider-connection-stage/v1" as const;
 // v1 remains stable for the already-published coarse signal. v2 distinguishes
@@ -23,8 +24,12 @@ export const failureCategories = [
   "workflow-cleanup",
   "authentication",
   "authorization",
+  "validation",
+  "conflict",
   "configuration",
   "dependency",
+  "transport",
+  "malformed-response",
   "input-output",
   "runtime",
   "timeout",
@@ -33,6 +38,21 @@ export const failureCategories = [
   "unknown",
 ] as const;
 export type FailureCategory = (typeof failureCategories)[number];
+
+export const requestStages = ["submit", "upload", "execute", "poll", "output", "finalize"] as const;
+export type RequestStage = (typeof requestStages)[number];
+
+export const requestFailureCategories = [
+  "validation",
+  "authentication",
+  "authorization",
+  "conflict",
+  "dependency",
+  "timeout",
+  "transport",
+  "malformed-response",
+] as const;
+export type RequestFailureCategory = (typeof requestFailureCategories)[number];
 
 export const assertionStages = [
   "input-request",
@@ -88,6 +108,9 @@ export interface FailureMetadata {
   providerConnectionStage?: ProviderConnectionStage;
   providerConnectionStageV2?: ProviderConnectionStageV2;
   providerConnectionStageV3?: ProviderConnectionStageV3;
+  requestStage?: RequestStage;
+  httpStatus?: number;
+  correlationId?: string;
 }
 
 export interface FailureMetadataSink {
@@ -213,6 +236,12 @@ function allowed<T extends string>(values: readonly T[], value: unknown): value 
   return typeof value === "string" && values.includes(value as T);
 }
 
+export function sanitizeCorrelationId(value: unknown): string | undefined {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/u.test(value)
+    ? value
+    : undefined;
+}
+
 export function sanitizeFailureMetadata(value: FailureMetadata): FailureMetadata {
   const failureCategory = allowed(failureCategories, value.failureCategory)
     ? value.failureCategory
@@ -233,6 +262,19 @@ export function sanitizeFailureMetadata(value: FailureMetadata): FailureMetadata
       allowed(providerConnectionStagesV3, value.providerConnectionStageV3)
     ? value.providerConnectionStageV3
     : undefined;
+  const requestStage = allowed(requestFailureCategories, failureCategory) &&
+      allowed(requestStages, value.requestStage)
+    ? value.requestStage
+    : undefined;
+  const httpStatus = requestStage !== undefined &&
+      Number.isInteger(value.httpStatus) &&
+      (value.httpStatus as number) >= 100 &&
+      (value.httpStatus as number) <= 599
+    ? value.httpStatus
+    : undefined;
+  const correlationId = requestStage === undefined
+    ? undefined
+    : sanitizeCorrelationId(value.correlationId);
   return {
     version: FAILURE_METADATA_VERSION,
     phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
@@ -244,6 +286,9 @@ export function sanitizeFailureMetadata(value: FailureMetadata): FailureMetadata
     ...(providerConnectionStage === undefined ? {} : { providerConnectionStage }),
     ...(providerConnectionStageV2 === undefined ? {} : { providerConnectionStageV2 }),
     ...(providerConnectionStageV3 === undefined ? {} : { providerConnectionStageV3 }),
+    ...(requestStage === undefined ? {} : { requestStage }),
+    ...(httpStatus === undefined ? {} : { httpStatus }),
+    ...(correlationId === undefined ? {} : { correlationId }),
   };
 }
 
@@ -257,6 +302,13 @@ export async function publishFailureMetadata(
 ): Promise<void> {
   const safe = sanitizeFailureMetadata(metadata);
   await sink.writeAnnotation(compact(safe));
+  if (safe.requestStage !== undefined) {
+    await sink.writeAnnotation(
+      `${REQUEST_FAILURE_METADATA_VERSION} stage=${safe.requestStage} category=${safe.failureCategory}` +
+        `${safe.httpStatus === undefined ? "" : ` status=${safe.httpStatus}`}` +
+        `${safe.correlationId === undefined ? "" : ` correlation-id=${safe.correlationId}`}`,
+    );
+  }
   if (safe.assertionStage !== undefined) {
     await sink.writeAnnotation(
       `${ASSERTION_STAGE_METADATA_VERSION} stage=${safe.assertionStage}`,
@@ -284,6 +336,14 @@ export async function publishFailureMetadata(
     "| --- | --- | --- | --- |",
     `| ${FAILURE_METADATA_VERSION} | ${safe.phase} | ${safe.failureCategory} | ${safe.cleanupCategory} |`,
   ];
+  if (safe.requestStage !== undefined) {
+    summary.push(
+      "",
+      "| Contract | Request stage | Category | HTTP status | Correlation ID |",
+      "| --- | --- | --- | --- | --- |",
+      `| ${REQUEST_FAILURE_METADATA_VERSION} | ${safe.requestStage} | ${safe.failureCategory} | ${safe.httpStatus ?? "-"} | ${safe.correlationId ?? "-"} |`,
+    );
+  }
   if (safe.assertionStage !== undefined) {
     summary.push(
       "",
