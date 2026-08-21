@@ -55,10 +55,15 @@ export interface TaskSubmissionRequest {
 
 interface ClientOptions {
   baseUrl: string;
-  getToken: () => Promise<string>;
+  getToken: (signal?: AbortSignal) => Promise<string>;
   fetch?: FetchLike;
-  sleep?: (milliseconds: number) => Promise<void>;
+  sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   maxAttempts?: number;
+}
+
+export interface TaskRequestOptions {
+  signal?: AbortSignal;
+  deadline?: number;
 }
 
 interface RequestOptions {
@@ -67,6 +72,8 @@ interface RequestOptions {
   headers?: Record<string, string>;
   body?: BodyInit | (() => Promise<BodyInit>);
   duplex?: "half";
+  signal?: AbortSignal;
+  deadline?: number;
 }
 
 interface RequestFailureDetails {
@@ -289,44 +296,135 @@ function responseCorrelationId(response: Response): string | undefined {
     sanitizeCorrelationId(response.headers.get("x-request-id"));
 }
 
+function requestAbortError(): Error {
+  const error = new Error("Steward request was cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+function requestTimeoutError(): Error {
+  const error = new Error("Steward request deadline expired");
+  error.name = "TimeoutError";
+  return error;
+}
+
+async function boundedOperation<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  options: Pick<RequestOptions, "signal" | "deadline">,
+): Promise<T> {
+  if (options.signal?.aborted) throw requestAbortError();
+  const controller = new AbortController();
+  let deadlineExpired = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const cancel = () => controller.abort();
+  options.signal?.addEventListener("abort", cancel, { once: true });
+  if (options.deadline !== undefined) {
+    const remaining = options.deadline - Date.now();
+    if (remaining <= 0) {
+      options.signal?.removeEventListener("abort", cancel);
+      throw requestTimeoutError();
+    }
+    timeout = setTimeout(() => {
+      deadlineExpired = true;
+      controller.abort();
+    }, remaining);
+  }
+  let rejectAbort: ((error: Error) => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const rejectOnAbort = () => {
+    rejectAbort?.(
+      options.signal?.aborted
+        ? requestAbortError()
+        : deadlineExpired
+          ? requestTimeoutError()
+          : requestAbortError(),
+    );
+  };
+  controller.signal.addEventListener("abort", rejectOnAbort, { once: true });
+  try {
+    return await Promise.race([operation(controller.signal), aborted]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", cancel);
+    controller.signal.removeEventListener("abort", rejectOnAbort);
+  }
+}
+
 export class StewardClient {
   readonly #baseUrl: URL;
-  readonly #getToken: () => Promise<string>;
+  readonly #getToken: (signal?: AbortSignal) => Promise<string>;
   readonly #fetch: FetchLike;
-  readonly #sleep: (milliseconds: number) => Promise<void>;
+  readonly #sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   readonly #maxAttempts: number;
 
   constructor(options: ClientOptions) {
     this.#baseUrl = validatedBaseUrl(options.baseUrl);
     this.#getToken = options.getToken;
     this.#fetch = options.fetch ?? fetch;
-    this.#sleep = options.sleep ?? (async (milliseconds) => delay(milliseconds));
+    this.#sleep =
+      options.sleep ??
+      (async (milliseconds, signal) => delay(milliseconds, undefined, { signal }));
     this.#maxAttempts = options.maxAttempts ?? 4;
   }
 
   async #request(method: string, path: string, options: RequestOptions): Promise<Response> {
     const url = new URL(path.replace(/^\//u, ""), this.#baseUrl);
     for (let attempt = 0; attempt < this.#maxAttempts; attempt += 1) {
-      const token = await this.#getToken();
       let response: Response | undefined;
       try {
-        const body =
-          typeof options.body === "function" ? await options.body() : options.body;
-        response = await this.#fetch(url, {
-          method,
-          headers: {
-            accept: "application/json",
-            authorization: `Bearer ${token}`,
-            ...options.headers,
-          },
-          ...(body === undefined ? {} : { body }),
-          ...(options.duplex ? { duplex: options.duplex } : {}),
-        });
+        const token = await boundedOperation(
+          (signal) => this.#getToken(signal),
+          options,
+        );
+        const body = await boundedOperation(
+          async () => (typeof options.body === "function" ? options.body() : options.body),
+          options,
+        );
+        response = await boundedOperation(
+          (signal) =>
+            this.#fetch(url, {
+              method,
+              headers: {
+                accept: "application/json",
+                authorization: `Bearer ${token}`,
+                ...options.headers,
+              },
+              ...(body === undefined ? {} : { body }),
+              ...(options.duplex ? { duplex: options.duplex } : {}),
+              signal,
+            }),
+          options,
+        );
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError" && options.signal?.aborted) {
+          throw error;
+        }
+        if (error instanceof Error && error.name === "TimeoutError") {
+          throw new StewardRequestFailure(options.stage, "timeout");
+        }
         if (attempt + 1 === this.#maxAttempts) {
           throw new StewardRequestFailure(options.stage, transportFailureCategory(error));
         }
-        await this.#sleep(retryDelay(undefined, attempt));
+        try {
+          await boundedOperation(
+            (signal) => this.#sleep(retryDelay(undefined, attempt), signal),
+            options,
+          );
+        } catch (sleepError) {
+          if (
+            sleepError instanceof Error &&
+            sleepError.name === "AbortError" &&
+            options.signal?.aborted
+          ) {
+            throw sleepError;
+          }
+          throw new StewardRequestFailure(
+            options.stage,
+            transportFailureCategory(sleepError),
+          );
+        }
         continue;
       }
       const expectedStatuses = Array.isArray(options.expectedStatus)
@@ -335,7 +433,24 @@ export class StewardClient {
       if (expectedStatuses.includes(response.status)) return response;
       if (isRetryableStatus(response.status) && attempt + 1 < this.#maxAttempts) {
         await response.body?.cancel().catch(() => undefined);
-        await this.#sleep(retryDelay(response, attempt));
+        try {
+          await boundedOperation(
+            (signal) => this.#sleep(retryDelay(response, attempt), signal),
+            options,
+          );
+        } catch (sleepError) {
+          if (
+            sleepError instanceof Error &&
+            sleepError.name === "AbortError" &&
+            options.signal?.aborted
+          ) {
+            throw sleepError;
+          }
+          throw new StewardRequestFailure(
+            options.stage,
+            transportFailureCategory(sleepError),
+          );
+        }
         continue;
       }
       await response.body?.cancel().catch(() => undefined);
@@ -405,11 +520,13 @@ export class StewardClient {
     );
   }
 
-  async getTask(taskUid: string): Promise<Task> {
+  async getTask(taskUid: string, options: TaskRequestOptions = {}): Promise<Task> {
     return this.#taskResponse(
       await this.#request("GET", `v1/tasks/${encodeURIComponent(taskUid)}`, {
         stage: "poll",
         expectedStatus: 200,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
       }),
       "poll",
     );

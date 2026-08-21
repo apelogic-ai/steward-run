@@ -403,6 +403,86 @@ test("timeout and transport failures remain distinct and bounded", async (contex
   }
 });
 
+test("binding GET cancellation bounds never-resolving token and fetch operations", async (context) => {
+  for (const stalled of ["token", "fetch"] as const) {
+    await context.test(stalled, async () => {
+      const controller = new AbortController();
+      let observedSignal: AbortSignal | undefined;
+      const client = new StewardClient({
+        baseUrl: "https://steward.example.test",
+        getToken: async (signal) => {
+          if (stalled === "token") {
+            observedSignal = signal;
+            return new Promise<string>(() => undefined);
+          }
+          return "token";
+        },
+        fetch: async (_input, init) => {
+          if (stalled === "fetch") {
+            observedSignal = init?.signal ?? undefined;
+            return new Promise<Response>(() => undefined);
+          }
+          return jsonResponse(task);
+        },
+        maxAttempts: 1,
+      });
+      const cancellation = setTimeout(() => controller.abort(), 10);
+      try {
+        await assert.rejects(
+          client.getTask(task.taskUid, { signal: controller.signal }),
+          (error: unknown) => {
+            assert.ok(error instanceof Error);
+            assert.equal(error.name, "AbortError");
+            assert.doesNotMatch(error.message, /token|response-body/u);
+            return true;
+          },
+        );
+        assert.equal(observedSignal?.aborted, true);
+      } finally {
+        clearTimeout(cancellation);
+      }
+    });
+  }
+});
+
+test("binding GET deadline bounds never-resolving token and fetch operations", async (context) => {
+  for (const stalled of ["token", "fetch"] as const) {
+    await context.test(stalled, async () => {
+      let observedSignal: AbortSignal | undefined;
+      const client = new StewardClient({
+        baseUrl: "https://steward.example.test",
+        getToken: async (signal) => {
+          if (stalled === "token") {
+            observedSignal = signal;
+            return new Promise<string>(() => undefined);
+          }
+          return "token";
+        },
+        fetch: async (_input, init) => {
+          if (stalled === "fetch") {
+            observedSignal = init?.signal ?? undefined;
+            return new Promise<Response>(() => undefined);
+          }
+          return jsonResponse(task);
+        },
+        maxAttempts: 1,
+      });
+      await assert.rejects(
+        client.getTask(task.taskUid, { deadline: Date.now() + 10 }),
+        (error: unknown) => {
+          assert.ok(error instanceof StewardRequestFailure);
+          assert.equal(error.stage, "poll");
+          assert.equal(error.category, "timeout");
+          assert.equal(error.httpStatus, undefined);
+          assert.equal(error.correlationId, undefined);
+          return true;
+        },
+      );
+      assert.equal(observedSignal?.aborted, true);
+    });
+  }
+});
+
 test("the Steward client fails closed on incompatible payloads and unsafe base URLs", async () => {
   assert.throws(
     () =>

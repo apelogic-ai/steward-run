@@ -37,12 +37,17 @@ function validateShortLivedToken(token: string, nowSeconds: number): string {
 export function shortLivedBearerTokenFileProvider(
   path: string,
   now: () => number = () => Math.floor(Date.now() / 1_000),
-): () => Promise<string> {
-  return async () => {
+): (signal?: AbortSignal) => Promise<string> {
+  return async (signal) => {
     let token: string;
     try {
-      token = (await readFile(path, "utf8")).trim();
+      token = (await readFile(path, { encoding: "utf8", signal })).trim();
     } catch {
+      if (signal?.aborted) {
+        const error = new Error("bearer-token file read was cancelled");
+        error.name = "AbortError";
+        throw error;
+      }
       throw new Error("bearer-token file could not be read");
     }
     return validateShortLivedToken(token, now());

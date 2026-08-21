@@ -67,7 +67,7 @@ export function identityExchangeTokenProvider(
   exchangeUrl: string,
   fetchImplementation: FetchLike = fetch,
   now: () => number = () => Math.floor(Date.now() / 1_000),
-): () => Promise<string> {
+): (signal?: AbortSignal) => Promise<string> {
   const url = validateExchangeUrl(exchangeUrl);
   const getSourceToken = oidcTokenProvider(
     environment,
@@ -75,8 +75,8 @@ export function identityExchangeTokenProvider(
     fetchImplementation,
   );
 
-  return async () => {
-    const sourceToken = await getSourceToken();
+  return async (signal) => {
+    const sourceToken = await getSourceToken(signal);
     let response: Response;
     try {
       response = await fetchImplementation(url, {
@@ -85,8 +85,14 @@ export function identityExchangeTokenProvider(
           accept: "application/json",
           authorization: `Bearer ${sourceToken}`,
         },
+        ...(signal === undefined ? {} : { signal }),
       });
     } catch {
+      if (signal?.aborted) {
+        const error = new Error("identity exchange request was cancelled");
+        error.name = "AbortError";
+        throw error;
+      }
       throw new Error("identity exchange request failed");
     }
     if (!response.ok) {

@@ -71,6 +71,10 @@ The action runs inside the ARC runner job and does exactly two categories of thi
    `runtimeUid: null` while the cancelled Task reaches `finalized: true`; the action confirms that
    cleanup without inventing or publishing a runtime UID.
 
+The controller-binding wait is bounded by both 60 attempts and a ten-minute wall-clock deadline.
+Cancellation and that deadline propagate through binding sleeps, token acquisition, and the
+in-flight Task-status request; a stalled credential provider or HTTP fetch cannot extend the wait.
+
 Flow: `download-artifact` (regular step) → `steward-run` (materialise in → API provision → run
 → collect out) → `upload-artifact` (regular step). The agentic step is invisible to the
 surrounding YAML; the workspace is the contract.

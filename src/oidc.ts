@@ -8,6 +8,7 @@ export async function getGitHubOidcToken(
   requestToken: string,
   audience: string,
   fetchImplementation: FetchLike = fetch,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (!requestUrl || !requestToken) {
     throw new Error(
@@ -29,8 +30,14 @@ export async function getGitHubOidcToken(
         accept: "application/json",
         authorization: `Bearer ${requestToken}`,
       },
+      ...(signal === undefined ? {} : { signal }),
     });
   } catch {
+    if (signal?.aborted) {
+      const error = new Error("GitHub OIDC token request was cancelled");
+      error.name = "AbortError";
+      throw error;
+    }
     throw new Error("GitHub OIDC token request failed");
   }
   if (!response.ok) {
@@ -51,12 +58,13 @@ export function oidcTokenProvider(
   environment: NodeJS.ProcessEnv,
   audience: string,
   fetchImplementation: FetchLike = fetch,
-): () => Promise<string> {
-  return async () =>
+): (signal?: AbortSignal) => Promise<string> {
+  return async (signal) =>
     getGitHubOidcToken(
       environment.ACTIONS_ID_TOKEN_REQUEST_URL ?? "",
       environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "",
       audience,
       fetchImplementation,
+      signal,
     );
 }

@@ -29,7 +29,9 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/TaskStatusResponse' }
         '202':
-          description: Task parked for approval
+          description: >-
+            Task accepted for controller-owned runtime binding or parked for approval; runtimeUid
+            is null until the controller binds the exact runtime UID.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TaskStatusResponse' }

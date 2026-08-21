@@ -20,13 +20,18 @@ import {
   type ProviderConnectionStageV2,
   type ProviderConnectionStageV3,
 } from "./failure-metadata.js";
-import { StewardRequestFailure, type Task, type TaskSubmissionRequest } from "./steward-client.js";
+import {
+  StewardRequestFailure,
+  type Task,
+  type TaskRequestOptions,
+  type TaskSubmissionRequest,
+} from "./steward-client.js";
 
 export interface TaskClient {
   submitTask(request: TaskSubmissionRequest, idempotencyKey: string): Promise<Task>;
   uploadTaskInputs(taskUid: string, createArchive: () => Promise<Readable>): Promise<void>;
   executeTask(taskUid: string): Promise<Task>;
-  getTask(taskUid: string): Promise<Task>;
+  getTask(taskUid: string, options?: TaskRequestOptions): Promise<Task>;
   downloadTaskOutputs(taskUid: string): Promise<Readable>;
   finalizeTask(taskUid: string): Promise<Task>;
 }
@@ -37,10 +42,12 @@ interface LifecycleDependencies {
   setOutput: (name: "status" | "task-uid" | "runtime-uid", value: string) => Promise<void>;
   sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
+  runtimeBindingTimeoutMilliseconds?: number;
 }
 
 const terminalPhases = new Set<Task["phase"]>(["succeeded", "failed", "cancelled"]);
 const runtimeBindingPollAttempts = 60;
+const runtimeBindingTimeoutMilliseconds = 10 * 60 * 1_000;
 
 type BoundTask = Task & { runtimeUid: string };
 
@@ -67,13 +74,26 @@ function abortError(): Error {
 }
 
 function timeoutError(): Error {
-  const error = new Error("Steward runtime binding timed out");
-  error.name = "TimeoutError";
-  return error;
+  return new StewardRequestFailure("poll", "timeout");
 }
 
 function boundTask(task: Task): BoundTask | undefined {
   return task.runtimeUid === null ? undefined : (task as BoundTask);
+}
+
+async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw abortError();
+  let rejectAbort: ((error: Error) => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const cancel = () => rejectAbort?.(abortError());
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    return await Promise.race([operation, aborted]);
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
 }
 
 function assertPreExecutionTask(task: BoundTask): BoundTask {
@@ -88,28 +108,56 @@ async function pollUntilRuntimeBound(
   client: TaskClient,
   sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>,
   signal?: AbortSignal,
+  timeoutMilliseconds = runtimeBindingTimeoutMilliseconds,
 ): Promise<BoundTask> {
   const alreadyBound = boundTask(initial);
   if (alreadyBound) return assertPreExecutionTask(alreadyBound);
 
-  let interval = 250;
-  for (let attempt = 0; attempt < runtimeBindingPollAttempts; attempt += 1) {
-    if (signal?.aborted) throw abortError();
-    await sleep(interval, signal);
-    if (signal?.aborted) throw abortError();
-    const current = await client.getTask(initial.taskUid);
-    if (
-      current.taskUid !== initial.taskUid ||
-      current.runtimeOwnership !== initial.runtimeOwnership
-    ) {
-      throw new Error("Steward changed Task identity while waiting for runtime binding");
+  const controller = new AbortController();
+  let deadlineExpired = false;
+  const timeout = Math.max(1, timeoutMilliseconds);
+  const deadline = Date.now() + timeout;
+  const expire = setTimeout(() => {
+    deadlineExpired = true;
+    controller.abort();
+  }, timeout);
+  const cancel = () => controller.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) controller.abort();
+  try {
+    let interval = 250;
+    for (let attempt = 0; attempt < runtimeBindingPollAttempts; attempt += 1) {
+      if (controller.signal.aborted) {
+        if (signal?.aborted) throw abortError();
+        throw timeoutError();
+      }
+      await abortable(sleep(interval, controller.signal), controller.signal);
+      const current = await client.getTask(initial.taskUid, {
+        signal: controller.signal,
+        deadline,
+      });
+      if (
+        current.taskUid !== initial.taskUid ||
+        current.runtimeOwnership !== initial.runtimeOwnership
+      ) {
+        throw new Error("Steward changed Task identity while waiting for runtime binding");
+      }
+      if (current.runtimeUid === null && current.phase === "cancelled") throw abortError();
+      const currentBound = boundTask(current);
+      if (currentBound) return assertPreExecutionTask(currentBound);
+      interval = Math.min(interval * 2, 10_000);
     }
-    if (current.runtimeUid === null && current.phase === "cancelled") throw abortError();
-    const currentBound = boundTask(current);
-    if (currentBound) return assertPreExecutionTask(currentBound);
-    interval = Math.min(interval * 2, 10_000);
+    throw timeoutError();
+  } catch (error) {
+    if (controller.signal.aborted) {
+      if (signal?.aborted) throw abortError();
+      if (deadlineExpired) throw timeoutError();
+    }
+    throw error;
+  } finally {
+    clearTimeout(expire);
+    signal?.removeEventListener("abort", cancel);
   }
-  throw timeoutError();
 }
 
 async function pollUntilTerminal(
@@ -258,6 +306,10 @@ export async function runWorkflow(
       },
       createIdempotencyKey(dependencies.environment),
     );
+    const expectedOwnership = config.agentRuntime ? "adopted" : "provisioned";
+    if (created.runtimeOwnership !== expectedOwnership) {
+      throw new Error("Steward returned Task ownership inconsistent with the submission");
+    }
     await dependencies.setOutput("task-uid", created.taskUid);
     stage = "poll";
     const bound = await pollUntilRuntimeBound(
@@ -265,6 +317,7 @@ export async function runWorkflow(
       dependencies.client,
       sleep,
       dependencies.signal,
+      dependencies.runtimeBindingTimeoutMilliseconds,
     );
     created = bound;
     await dependencies.setOutput("runtime-uid", bound.runtimeUid);

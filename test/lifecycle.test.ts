@@ -13,6 +13,7 @@ import {
   type TaskClient,
 } from "../src/lifecycle.ts";
 import {
+  StewardClient,
   StewardRequestFailure,
   type Task,
   type TaskSubmissionRequest,
@@ -34,6 +35,13 @@ const config: WorkflowConfig = {
   apiUrl: "https://steward.example.test",
   codingAgentRuntime: "claude-code@2.1.220",
 };
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 async function outputArchive(path = "results/report.txt", body = "done"): Promise<Readable> {
   const pack = tar.pack();
@@ -179,6 +187,38 @@ test("a pending Task binds before runtime output, upload, and execution", async 
   }
 });
 
+test("Task runtime ownership must match provision or adoption intent", async () => {
+  for (const [agentRuntime, ownership] of [
+    [undefined, "adopted"],
+    ["standing-runtime", "provisioned"],
+  ] as const) {
+    const root = await fixture();
+    const client = new FakeClient();
+    client.ownership = ownership;
+    const outputs: Record<string, string> = {};
+    try {
+      await assert.rejects(
+        runWorkflow(
+          { ...config, ...(agentRuntime === undefined ? {} : { agentRuntime }) },
+          root,
+          dependencies(client, outputs),
+        ),
+        (error) => {
+          assert.ok(error instanceof StewardRunFailure);
+          assert.equal(error.metadata.failureCategory, "dependency");
+          assert.equal(error.metadata.cleanupCategory, "confirmed");
+          return true;
+        },
+      );
+      assert.equal(outputs["task-uid"], undefined);
+      assert.equal(client.calls.includes("upload"), false);
+      assert.equal(client.calls.includes("execute"), false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
 test("runtime binding rejects a changed Task UID before upload or execution", async () => {
   const root = await fixture();
   const client = new FakeClient();
@@ -250,6 +290,7 @@ test("runtime binding timeout is bounded, classified, and does not expose runtim
         phase: "unavailable",
         failureCategory: "timeout",
         cleanupCategory: "confirmed",
+        requestStage: "poll",
       });
       assert.doesNotMatch(error.message, /runtime-uid-1/u);
       return true;
@@ -323,6 +364,125 @@ test("server cancellation while waiting for binding finalizes without inventing 
     assert.equal(client.calls.includes("upload"), false);
     assert.equal(client.calls.includes("execute"), false);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("binding deadline interrupts a never-resolving Steward GET and confirms unbound cleanup", async () => {
+  const root = await fixture();
+  let finalizing = false;
+  let bindingSignal: AbortSignal | undefined;
+  const pending = { ...baseTask, runtimeUid: null };
+  const cancelled = { ...pending, phase: "cancelled" as const };
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      if (request.method === "POST" && request.url.endsWith("/v1/tasks")) {
+        return jsonResponse(pending, 202);
+      }
+      if (request.method === "DELETE") {
+        finalizing = true;
+        return jsonResponse(cancelled, 202);
+      }
+      if (request.method === "GET" && finalizing) {
+        return jsonResponse({ ...cancelled, finalized: true });
+      }
+      if (request.method === "GET") {
+        bindingSignal = init?.signal ?? undefined;
+        return new Promise<Response>(() => undefined);
+      }
+      throw new Error("unexpected Steward test request");
+    },
+    maxAttempts: 1,
+  });
+  const outputs: Record<string, string> = {};
+  try {
+    await assert.rejects(
+      runWorkflow(config, root, {
+        ...dependencies(client, outputs),
+        runtimeBindingTimeoutMilliseconds: 10,
+        sleep: async () => undefined,
+      }),
+      (error) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.deepEqual(error.metadata, {
+          version: "steward-run.failure/v1",
+          phase: "unavailable",
+          failureCategory: "timeout",
+          cleanupCategory: "confirmed",
+          requestStage: "poll",
+        });
+        return true;
+      },
+    );
+    assert.equal(bindingSignal?.aborted, true);
+    assert.equal(outputs["runtime-uid"], undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("binding cancellation interrupts a never-resolving token provider and confirms cleanup", async () => {
+  const root = await fixture();
+  let tokenRequests = 0;
+  let stalledTokenSignal: AbortSignal | undefined;
+  let finalizing = false;
+  const pending = { ...baseTask, runtimeUid: null };
+  const cancelled = { ...pending, phase: "cancelled" as const };
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async (signal) => {
+      tokenRequests += 1;
+      if (tokenRequests === 2) {
+        stalledTokenSignal = signal;
+        return new Promise<string>(() => undefined);
+      }
+      return "token";
+    },
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      if (request.method === "POST" && request.url.endsWith("/v1/tasks")) {
+        return jsonResponse(pending, 202);
+      }
+      if (request.method === "DELETE") {
+        finalizing = true;
+        return jsonResponse(cancelled, 202);
+      }
+      if (request.method === "GET" && finalizing) {
+        return jsonResponse({ ...cancelled, finalized: true });
+      }
+      throw new Error("binding GET must not reach fetch while its token is stalled");
+    },
+    maxAttempts: 1,
+  });
+  const controller = new AbortController();
+  const cancellation = setTimeout(() => controller.abort(), 10);
+  const outputs: Record<string, string> = {};
+  try {
+    await assert.rejects(
+      runWorkflow(config, root, {
+        ...dependencies(client, outputs),
+        signal: controller.signal,
+        sleep: async () => undefined,
+      }),
+      (error) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.deepEqual(error.metadata, {
+          version: "steward-run.failure/v1",
+          phase: "cancelled",
+          failureCategory: "cancelled",
+          cleanupCategory: "confirmed",
+        });
+        return true;
+      },
+    );
+    assert.equal(stalledTokenSignal?.aborted, true);
+    assert.equal(outputs.status, "cancelled");
+    assert.equal(outputs["runtime-uid"], undefined);
+  } finally {
+    clearTimeout(cancellation);
     await rm(root, { recursive: true, force: true });
   }
 });

@@ -2474,11 +2474,16 @@ function validateShortLivedToken(token, nowSeconds) {
   return token;
 }
 function shortLivedBearerTokenFileProvider(path, now = () => Math.floor(Date.now() / 1e3)) {
-  return async () => {
+  return async (signal) => {
     let token;
     try {
-      token = (await (0, import_promises.readFile)(path, "utf8")).trim();
+      token = (await (0, import_promises.readFile)(path, { encoding: "utf8", signal })).trim();
     } catch {
+      if (signal?.aborted) {
+        const error = new Error("bearer-token file read was cancelled");
+        error.name = "AbortError";
+        throw error;
+      }
       throw new Error("bearer-token file could not be read");
     }
     return validateShortLivedToken(token, now());
@@ -2838,7 +2843,7 @@ var StewardRunFailure = class extends Error {
 };
 
 // src/oidc.ts
-async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImplementation = fetch) {
+async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImplementation = fetch, signal) {
   if (!requestUrl || !requestToken) {
     throw new Error(
       "GitHub OIDC is unavailable; grant the job id-token: write permission"
@@ -2857,9 +2862,15 @@ async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImple
       headers: {
         accept: "application/json",
         authorization: `Bearer ${requestToken}`
-      }
+      },
+      ...signal === void 0 ? {} : { signal }
     });
   } catch {
+    if (signal?.aborted) {
+      const error = new Error("GitHub OIDC token request was cancelled");
+      error.name = "AbortError";
+      throw error;
+    }
     throw new Error("GitHub OIDC token request failed");
   }
   if (!response.ok) {
@@ -2873,11 +2884,12 @@ async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImple
   return value;
 }
 function oidcTokenProvider(environment, audience, fetchImplementation = fetch) {
-  return async () => getGitHubOidcToken(
+  return async (signal) => getGitHubOidcToken(
     environment.ACTIONS_ID_TOKEN_REQUEST_URL ?? "",
     environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "",
     audience,
-    fetchImplementation
+    fetchImplementation,
+    signal
   );
 }
 
@@ -2934,8 +2946,8 @@ function identityExchangeTokenProvider(environment, exchangeUrl, fetchImplementa
     GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
     fetchImplementation
   );
-  return async () => {
-    const sourceToken = await getSourceToken();
+  return async (signal) => {
+    const sourceToken = await getSourceToken(signal);
     let response;
     try {
       response = await fetchImplementation(url, {
@@ -2943,9 +2955,15 @@ function identityExchangeTokenProvider(environment, exchangeUrl, fetchImplementa
         headers: {
           accept: "application/json",
           authorization: `Bearer ${sourceToken}`
-        }
+        },
+        ...signal === void 0 ? {} : { signal }
       });
     } catch {
+      if (signal?.aborted) {
+        const error = new Error("identity exchange request was cancelled");
+        error.name = "AbortError";
+        throw error;
+      }
       throw new Error("identity exchange request failed");
     }
     if (!response.ok) {
@@ -3324,6 +3342,52 @@ function httpFailureCategory(status) {
 function responseCorrelationId(response) {
   return sanitizeCorrelationId(response.headers.get("x-correlation-id")) ?? sanitizeCorrelationId(response.headers.get("x-request-id"));
 }
+function requestAbortError() {
+  const error = new Error("Steward request was cancelled");
+  error.name = "AbortError";
+  return error;
+}
+function requestTimeoutError() {
+  const error = new Error("Steward request deadline expired");
+  error.name = "TimeoutError";
+  return error;
+}
+async function boundedOperation(operation, options) {
+  if (options.signal?.aborted) throw requestAbortError();
+  const controller = new AbortController();
+  let deadlineExpired = false;
+  let timeout;
+  const cancel = () => controller.abort();
+  options.signal?.addEventListener("abort", cancel, { once: true });
+  if (options.deadline !== void 0) {
+    const remaining = options.deadline - Date.now();
+    if (remaining <= 0) {
+      options.signal?.removeEventListener("abort", cancel);
+      throw requestTimeoutError();
+    }
+    timeout = setTimeout(() => {
+      deadlineExpired = true;
+      controller.abort();
+    }, remaining);
+  }
+  let rejectAbort;
+  const aborted = new Promise((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const rejectOnAbort = () => {
+    rejectAbort?.(
+      options.signal?.aborted ? requestAbortError() : deadlineExpired ? requestTimeoutError() : requestAbortError()
+    );
+  };
+  controller.signal.addEventListener("abort", rejectOnAbort, { once: true });
+  try {
+    return await Promise.race([operation(controller.signal), aborted]);
+  } finally {
+    if (timeout !== void 0) clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", cancel);
+    controller.signal.removeEventListener("abort", rejectOnAbort);
+  }
+}
 var StewardClient = class {
   #baseUrl;
   #getToken;
@@ -3334,38 +3398,80 @@ var StewardClient = class {
     this.#baseUrl = validatedBaseUrl(options.baseUrl);
     this.#getToken = options.getToken;
     this.#fetch = options.fetch ?? fetch;
-    this.#sleep = options.sleep ?? (async (milliseconds) => (0, import_promises4.setTimeout)(milliseconds));
+    this.#sleep = options.sleep ?? (async (milliseconds, signal) => (0, import_promises4.setTimeout)(milliseconds, void 0, { signal }));
     this.#maxAttempts = options.maxAttempts ?? 4;
   }
   async #request(method, path, options) {
     const url = new URL(path.replace(/^\//u, ""), this.#baseUrl);
     for (let attempt = 0; attempt < this.#maxAttempts; attempt += 1) {
-      const token = await this.#getToken();
       let response;
       try {
-        const body = typeof options.body === "function" ? await options.body() : options.body;
-        response = await this.#fetch(url, {
-          method,
-          headers: {
-            accept: "application/json",
-            authorization: `Bearer ${token}`,
-            ...options.headers
-          },
-          ...body === void 0 ? {} : { body },
-          ...options.duplex ? { duplex: options.duplex } : {}
-        });
+        const token = await boundedOperation(
+          (signal) => this.#getToken(signal),
+          options
+        );
+        const body = await boundedOperation(
+          async () => typeof options.body === "function" ? options.body() : options.body,
+          options
+        );
+        response = await boundedOperation(
+          (signal) => this.#fetch(url, {
+            method,
+            headers: {
+              accept: "application/json",
+              authorization: `Bearer ${token}`,
+              ...options.headers
+            },
+            ...body === void 0 ? {} : { body },
+            ...options.duplex ? { duplex: options.duplex } : {},
+            signal
+          }),
+          options
+        );
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError" && options.signal?.aborted) {
+          throw error;
+        }
+        if (error instanceof Error && error.name === "TimeoutError") {
+          throw new StewardRequestFailure(options.stage, "timeout");
+        }
         if (attempt + 1 === this.#maxAttempts) {
           throw new StewardRequestFailure(options.stage, transportFailureCategory(error));
         }
-        await this.#sleep(retryDelay(void 0, attempt));
+        try {
+          await boundedOperation(
+            (signal) => this.#sleep(retryDelay(void 0, attempt), signal),
+            options
+          );
+        } catch (sleepError) {
+          if (sleepError instanceof Error && sleepError.name === "AbortError" && options.signal?.aborted) {
+            throw sleepError;
+          }
+          throw new StewardRequestFailure(
+            options.stage,
+            transportFailureCategory(sleepError)
+          );
+        }
         continue;
       }
       const expectedStatuses = Array.isArray(options.expectedStatus) ? options.expectedStatus : [options.expectedStatus];
       if (expectedStatuses.includes(response.status)) return response;
       if (isRetryableStatus(response.status) && attempt + 1 < this.#maxAttempts) {
         await response.body?.cancel().catch(() => void 0);
-        await this.#sleep(retryDelay(response, attempt));
+        try {
+          await boundedOperation(
+            (signal) => this.#sleep(retryDelay(response, attempt), signal),
+            options
+          );
+        } catch (sleepError) {
+          if (sleepError instanceof Error && sleepError.name === "AbortError" && options.signal?.aborted) {
+            throw sleepError;
+          }
+          throw new StewardRequestFailure(
+            options.stage,
+            transportFailureCategory(sleepError)
+          );
+        }
         continue;
       }
       await response.body?.cancel().catch(() => void 0);
@@ -3426,11 +3532,13 @@ var StewardClient = class {
       "execute"
     );
   }
-  async getTask(taskUid) {
+  async getTask(taskUid, options = {}) {
     return this.#taskResponse(
       await this.#request("GET", `v1/tasks/${encodeURIComponent(taskUid)}`, {
         stage: "poll",
-        expectedStatus: 200
+        expectedStatus: 200,
+        ...options.signal === void 0 ? {} : { signal: options.signal },
+        ...options.deadline === void 0 ? {} : { deadline: options.deadline }
       }),
       "poll"
     );
@@ -3468,6 +3576,7 @@ var StewardClient = class {
 // src/lifecycle.ts
 var terminalPhases = /* @__PURE__ */ new Set(["succeeded", "failed", "cancelled"]);
 var runtimeBindingPollAttempts = 60;
+var runtimeBindingTimeoutMilliseconds = 10 * 60 * 1e3;
 function identityField(environment, name) {
   const value = environment[name]?.trim();
   if (!value) throw new Error(`required GitHub job identity ${name} is missing`);
@@ -3488,12 +3597,24 @@ function abortError() {
   return error;
 }
 function timeoutError() {
-  const error = new Error("Steward runtime binding timed out");
-  error.name = "TimeoutError";
-  return error;
+  return new StewardRequestFailure("poll", "timeout");
 }
 function boundTask(task) {
   return task.runtimeUid === null ? void 0 : task;
+}
+async function abortable(operation, signal) {
+  if (signal.aborted) throw abortError();
+  let rejectAbort;
+  const aborted = new Promise((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const cancel = () => rejectAbort?.(abortError());
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    return await Promise.race([operation, aborted]);
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
 }
 function assertPreExecutionTask(task) {
   if (task.finalized || terminalPhases.has(task.phase)) {
@@ -3501,24 +3622,51 @@ function assertPreExecutionTask(task) {
   }
   return task;
 }
-async function pollUntilRuntimeBound(initial, client, sleep, signal) {
+async function pollUntilRuntimeBound(initial, client, sleep, signal, timeoutMilliseconds = runtimeBindingTimeoutMilliseconds) {
   const alreadyBound = boundTask(initial);
   if (alreadyBound) return assertPreExecutionTask(alreadyBound);
-  let interval = 250;
-  for (let attempt = 0; attempt < runtimeBindingPollAttempts; attempt += 1) {
-    if (signal?.aborted) throw abortError();
-    await sleep(interval, signal);
-    if (signal?.aborted) throw abortError();
-    const current = await client.getTask(initial.taskUid);
-    if (current.taskUid !== initial.taskUid || current.runtimeOwnership !== initial.runtimeOwnership) {
-      throw new Error("Steward changed Task identity while waiting for runtime binding");
+  const controller = new AbortController();
+  let deadlineExpired = false;
+  const timeout = Math.max(1, timeoutMilliseconds);
+  const deadline = Date.now() + timeout;
+  const expire = setTimeout(() => {
+    deadlineExpired = true;
+    controller.abort();
+  }, timeout);
+  const cancel = () => controller.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) controller.abort();
+  try {
+    let interval = 250;
+    for (let attempt = 0; attempt < runtimeBindingPollAttempts; attempt += 1) {
+      if (controller.signal.aborted) {
+        if (signal?.aborted) throw abortError();
+        throw timeoutError();
+      }
+      await abortable(sleep(interval, controller.signal), controller.signal);
+      const current = await client.getTask(initial.taskUid, {
+        signal: controller.signal,
+        deadline
+      });
+      if (current.taskUid !== initial.taskUid || current.runtimeOwnership !== initial.runtimeOwnership) {
+        throw new Error("Steward changed Task identity while waiting for runtime binding");
+      }
+      if (current.runtimeUid === null && current.phase === "cancelled") throw abortError();
+      const currentBound = boundTask(current);
+      if (currentBound) return assertPreExecutionTask(currentBound);
+      interval = Math.min(interval * 2, 1e4);
     }
-    if (current.runtimeUid === null && current.phase === "cancelled") throw abortError();
-    const currentBound = boundTask(current);
-    if (currentBound) return assertPreExecutionTask(currentBound);
-    interval = Math.min(interval * 2, 1e4);
+    throw timeoutError();
+  } catch (error) {
+    if (controller.signal.aborted) {
+      if (signal?.aborted) throw abortError();
+      if (deadlineExpired) throw timeoutError();
+    }
+    throw error;
+  } finally {
+    clearTimeout(expire);
+    signal?.removeEventListener("abort", cancel);
   }
-  throw timeoutError();
 }
 async function pollUntilTerminal(initial, client, sleep, signal) {
   let current = initial;
@@ -3627,13 +3775,18 @@ async function runWorkflow(config, workspace, dependencies) {
       },
       createIdempotencyKey(dependencies.environment)
     );
+    const expectedOwnership = config.agentRuntime ? "adopted" : "provisioned";
+    if (created.runtimeOwnership !== expectedOwnership) {
+      throw new Error("Steward returned Task ownership inconsistent with the submission");
+    }
     await dependencies.setOutput("task-uid", created.taskUid);
     stage = "poll";
     const bound = await pollUntilRuntimeBound(
       created,
       dependencies.client,
       sleep,
-      dependencies.signal
+      dependencies.signal,
+      dependencies.runtimeBindingTimeoutMilliseconds
     );
     created = bound;
     await dependencies.setOutput("runtime-uid", bound.runtimeUid);

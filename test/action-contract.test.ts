@@ -71,6 +71,7 @@ test("the Steward Task API contract covers the complete lifecycle", async () => 
   assert.doesNotMatch(source, /\/v1\/runs|runUid/u);
   assert.match(source, /steward-task-api/);
   assert.match(source, /67108864/);
+  assert.match(source, /Task accepted for controller-owned runtime binding/u);
   assert.deepEqual(api.components.schemas.TaskStatusResponse.properties.runtimeUid.oneOf, [
     { type: "string", minLength: 1 },
     { type: "null" },

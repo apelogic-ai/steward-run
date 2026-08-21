@@ -32,6 +32,7 @@ const stewardToken = jwt({
 
 test("identity exchange requests the fixed GitHub audience and returns the Steward token", async () => {
   const requests: Request[] = [];
+  const controller = new AbortController();
   const provider = identityExchangeTokenProvider(
     {
       ACTIONS_ID_TOKEN_REQUEST_TOKEN: "github-request-secret",
@@ -49,7 +50,7 @@ test("identity exchange requests the fixed GitHub audience and returns the Stewa
     () => now,
   );
 
-  assert.equal(await provider(), stewardToken);
+  assert.equal(await provider(controller.signal), stewardToken);
   assert.equal(requests.length, 2);
 
   const oidcRequest = requests[0];
@@ -67,6 +68,9 @@ test("identity exchange requests the fixed GitHub audience and returns the Stewa
   assert.equal(exchangeRequest?.headers.get("accept"), "application/json");
   assert.equal(await exchangeRequest?.text(), "");
   assert.doesNotMatch(exchangeRequest?.headers.get("authorization") ?? "", new RegExp(stewardToken));
+  controller.abort();
+  assert.equal(oidcRequest?.signal.aborted, true);
+  assert.equal(exchangeRequest?.signal.aborted, true);
 });
 
 test("identity exchange requires HTTPS except for loopback tests", async () => {
