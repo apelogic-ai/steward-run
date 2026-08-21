@@ -130,6 +130,119 @@ test("Task submission accepts admitted and parked responses with structured delt
   );
 });
 
+test("Task submission accepts only documented non-final pending runtime binding states", async () => {
+  const pending = ["submitted", "parked", "queued"].map((phase) => ({
+    ...task,
+    runtimeUid: null,
+    phase,
+  }));
+  const responses = pending.map((response) => jsonResponse(response, 202));
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () => responses.shift() ?? jsonResponse(task),
+  });
+
+  for (const expected of pending) {
+    assert.deepEqual(
+      await client.submitTask(
+        { workflow: "code-review", codingAgentRuntime: "base" },
+        "a".repeat(64),
+      ),
+      expected,
+    );
+  }
+});
+
+test("pending runtime binding fails closed on null misuse and response contradictions", async () => {
+  const privateToken = "private-binding-bearer";
+  const privateBody = "private-binding-response";
+  const incompatible = [
+    { ...task, runtimeUid: "" },
+    { ...task, runtimeUid: 7 },
+    { ...task, runtimeUid: null, phase: "running" },
+    { ...task, runtimeUid: null, phase: "succeeded" },
+    { ...task, runtimeUid: null, finalized: true },
+    { ...task, runtimeUid: null, runtimeOwnership: "adopted" },
+    { ...task, runtimeUid: null, failureReason: privateBody },
+    { ...task, runtimeUid: null, unknown: privateBody },
+  ];
+
+  for (const payload of incompatible) {
+    const client = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => privateToken,
+      fetch: async () => jsonResponse(payload, 202),
+      maxAttempts: 1,
+    });
+    await assert.rejects(
+      client.submitTask(
+        { workflow: "code-review", codingAgentRuntime: "base" },
+        "a".repeat(64),
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRequestFailure);
+        assert.equal(error.stage, "submit");
+        assert.equal(error.category, "malformed-response");
+        assert.doesNotMatch(error.message, /private-binding/u);
+        return true;
+      },
+    );
+  }
+});
+
+test("pending-binding polling never discloses bearer tokens or malformed bodies", async () => {
+  const privateToken = "private-poll-bearer";
+  const privateBody = "private-poll-body";
+  const responses = [
+    jsonResponse({ ...task, runtimeUid: null }, 202),
+    jsonResponse({ ...task, runtimeUid: null, phase: "running", privateBody }, 200),
+  ];
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => privateToken,
+    fetch: async () => responses.shift() ?? jsonResponse(task),
+    maxAttempts: 1,
+  });
+
+  const pending = await client.submitTask(
+    { workflow: "code-review", codingAgentRuntime: "base" },
+    "a".repeat(64),
+  );
+  assert.equal(pending.runtimeUid, null);
+  await assert.rejects(client.getTask(pending.taskUid), (error: unknown) => {
+    assert.ok(error instanceof StewardRequestFailure);
+    assert.equal(error.stage, "poll");
+    assert.equal(error.category, "malformed-response");
+    assert.doesNotMatch(error.message, /private-poll/u);
+    return true;
+  });
+});
+
+test("pending runtime binding is restricted to compatible response operations", async () => {
+  for (const [operation, status] of [["submit", 201], ["execute", 202]] as const) {
+    const client = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => "private-operation-bearer",
+      fetch: async () => jsonResponse({ ...task, runtimeUid: null }, status),
+      maxAttempts: 1,
+    });
+    const request = operation === "submit"
+      ? client.submitTask(
+        { workflow: "code-review", codingAgentRuntime: "base" },
+        "a".repeat(64),
+      )
+      : client.executeTask(task.taskUid);
+    await assert.rejects(request, (error: unknown) => {
+      assert.ok(error instanceof StewardRequestFailure);
+      assert.equal(error.stage, operation);
+      assert.equal(error.category, "malformed-response");
+      assert.doesNotMatch(error.message, /private-operation/u);
+      return true;
+    });
+  }
+});
+
 test("Task submission preserves bounded HTTP failure classification", async (context) => {
   for (const [status, category] of [
     [400, "validation"],

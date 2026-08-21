@@ -212,7 +212,13 @@ components:
       required: [taskUid, runtimeUid, phase, runtimeOwnership, finalized]
       properties:
         taskUid: { type: string, format: uuid }
-        runtimeUid: { type: string, minLength: 1 }
+        runtimeUid:
+          description: >-
+            Immutable Kubernetes runtime UID, or null only while a non-final Task is waiting for
+            controller-owned runtime binding in submitted, parked, or queued phase.
+          oneOf:
+            - { type: string, minLength: 1 }
+            - { type: 'null' }
         phase: { $ref: '#/components/schemas/TaskPhase' }
         runtimeOwnership: { $ref: '#/components/schemas/RuntimeOwnership' }
         finalized:

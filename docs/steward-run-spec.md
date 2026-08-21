@@ -61,9 +61,11 @@ The action runs inside the ARC runner job and does exactly two categories of thi
    `ACTIONS_ID_TOKEN_REQUEST_TOKEN`; the workflow must grant `id-token: write`).
 2. **Call Steward's REST API** as the translator: exchange the GitHub OIDC token server-side for a
    short-lived `steward-task-api` token, then submit a Steward `Task`. The exchange validates the
-   calling workflow and resolves the actor. Steward selects the versioned workflow envelope,
-   provisions or adopts its `AgentRuntime`, and returns the durable Task identity. The action
-   uploads inputs, requests execution, polls Task status through any approval hold, collects
+   calling workflow and resolves the actor. Steward selects the versioned workflow envelope and
+   returns the durable Task identity. For controller-owned creation, that first accepted response
+   has `runtimeUid: null`; the action polls that exact Task until the controller binds the immutable
+   runtime UID, and only then exposes `runtime-uid`, uploads inputs, or requests execution. The action
+   polls Task status through any approval hold, collects
    outputs after success, and requests finalization. A provisioned runtime is terminated; an
    adopted runtime is detached (see D2).
 

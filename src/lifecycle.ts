@@ -40,6 +40,9 @@ interface LifecycleDependencies {
 }
 
 const terminalPhases = new Set<Task["phase"]>(["succeeded", "failed", "cancelled"]);
+const runtimeBindingPollAttempts = 60;
+
+type BoundTask = Task & { runtimeUid: string };
 
 function identityField(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name]?.trim();
@@ -63,20 +66,69 @@ function abortError(): Error {
   return error;
 }
 
-async function pollUntilTerminal(
+function timeoutError(): Error {
+  const error = new Error("Steward runtime binding timed out");
+  error.name = "TimeoutError";
+  return error;
+}
+
+function boundTask(task: Task): BoundTask | undefined {
+  return task.runtimeUid === null ? undefined : (task as BoundTask);
+}
+
+function assertPreExecutionTask(task: BoundTask): BoundTask {
+  if (task.finalized || terminalPhases.has(task.phase)) {
+    throw new Error("Steward bound Task in an incompatible pre-execution state");
+  }
+  return task;
+}
+
+async function pollUntilRuntimeBound(
   initial: Task,
   client: TaskClient,
   sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>,
   signal?: AbortSignal,
+): Promise<BoundTask> {
+  const alreadyBound = boundTask(initial);
+  if (alreadyBound) return assertPreExecutionTask(alreadyBound);
+
+  let interval = 250;
+  for (let attempt = 0; attempt < runtimeBindingPollAttempts; attempt += 1) {
+    if (signal?.aborted) throw abortError();
+    await sleep(interval, signal);
+    if (signal?.aborted) throw abortError();
+    const current = await client.getTask(initial.taskUid);
+    if (
+      current.taskUid !== initial.taskUid ||
+      current.runtimeOwnership !== initial.runtimeOwnership
+    ) {
+      throw new Error("Steward changed Task identity while waiting for runtime binding");
+    }
+    const currentBound = boundTask(current);
+    if (currentBound) return assertPreExecutionTask(currentBound);
+    interval = Math.min(interval * 2, 10_000);
+  }
+  throw timeoutError();
+}
+
+async function pollUntilTerminal(
+  initial: BoundTask,
+  client: TaskClient,
+  sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<Task> {
-  let current = initial;
+  let current: Task = initial;
   let interval = 1_000;
   while (!terminalPhases.has(current.phase)) {
     if (signal?.aborted) throw abortError();
     await sleep(interval, signal);
     if (signal?.aborted) throw abortError();
     current = await client.getTask(current.taskUid);
-    if (current.taskUid !== initial.taskUid || current.runtimeUid !== initial.runtimeUid) {
+    if (
+      current.taskUid !== initial.taskUid ||
+      current.runtimeUid !== initial.runtimeUid ||
+      current.runtimeOwnership !== initial.runtimeOwnership
+    ) {
       throw new Error("Steward changed Task identity while polling");
     }
     interval = Math.min(interval * 2, 10_000);
@@ -100,13 +152,27 @@ async function finalizeAndConfirm(
   sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>,
 ): Promise<void> {
   try {
+    let finalizationRuntimeUid = task.runtimeUid;
     let current = await client.finalizeTask(task.taskUid);
+    if (
+      current.taskUid !== task.taskUid ||
+      current.runtimeOwnership !== task.runtimeOwnership ||
+      (finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid)
+    ) {
+      throw new FinalizationFailure("identity-mismatch");
+    }
+    finalizationRuntimeUid ??= current.runtimeUid;
     for (let attempt = 0; !current.finalized && attempt < 120; attempt += 1) {
       await sleep(Math.min(250 * 2 ** attempt, 2_000));
       current = await client.getTask(task.taskUid);
-      if (current.taskUid !== task.taskUid || current.runtimeUid !== task.runtimeUid) {
+      if (
+        current.taskUid !== task.taskUid ||
+        current.runtimeOwnership !== task.runtimeOwnership ||
+        (finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid)
+      ) {
         throw new FinalizationFailure("identity-mismatch");
       }
+      finalizationRuntimeUid ??= current.runtimeUid;
     }
     if (!current.finalized) throw new FinalizationFailure("confirmation-timeout");
   } catch (error) {
@@ -131,6 +197,7 @@ function taskFailurePhase(task: Task | undefined): FailurePhase {
 function stageFailureCategory(stage: WorkflowStage, error: unknown): FailureCategory {
   if (error instanceof StewardRequestFailure) return error.category;
   if (error instanceof Error && error.name === "AbortError") return "cancelled";
+  if (error instanceof Error && error.name === "TimeoutError") return "timeout";
   switch (stage) {
     case "input":
     case "upload":
@@ -191,14 +258,31 @@ export async function runWorkflow(
       createIdempotencyKey(dependencies.environment),
     );
     await dependencies.setOutput("task-uid", created.taskUid);
-    await dependencies.setOutput("runtime-uid", created.runtimeUid);
+    stage = "poll";
+    const bound = await pollUntilRuntimeBound(
+      created,
+      dependencies.client,
+      sleep,
+      dependencies.signal,
+    );
+    created = bound;
+    await dependencies.setOutput("runtime-uid", bound.runtimeUid);
     stage = "upload";
-    await dependencies.client.uploadTaskInputs(created.taskUid, createArchive);
+    await dependencies.client.uploadTaskInputs(bound.taskUid, createArchive);
     stage = "execute";
-    const executing = await dependencies.client.executeTask(created.taskUid);
+    const executing = await dependencies.client.executeTask(bound.taskUid);
+    const executingBound = boundTask(executing);
+    if (
+      !executingBound ||
+      executingBound.taskUid !== bound.taskUid ||
+      executingBound.runtimeUid !== bound.runtimeUid ||
+      executingBound.runtimeOwnership !== bound.runtimeOwnership
+    ) {
+      throw new Error("Steward changed Task identity while requesting execution");
+    }
     stage = "poll";
     terminal = await pollUntilTerminal(
-      executing,
+      executingBound,
       dependencies.client,
       sleep,
       dependencies.signal,

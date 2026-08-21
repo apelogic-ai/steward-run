@@ -52,11 +52,14 @@ class FakeClient implements TaskClient {
   archivePath = "results/report.txt";
   failureReason?: string;
   finalizeError?: Error;
+  submittedTask: Task = baseTask;
+  bindingTasks: Task[] = [];
+  executingTask: Task = { ...baseTask, phase: "running" };
 
   async submitTask(request: TaskSubmissionRequest): Promise<Task> {
     this.calls.push("create");
     this.requests.push(request);
-    return { ...baseTask, runtimeOwnership: this.ownership };
+    return { ...this.submittedTask, runtimeOwnership: this.ownership };
   }
   async uploadTaskInputs(_uid: string, createArchive: () => Promise<Readable>): Promise<void> {
     this.calls.push("upload");
@@ -66,10 +69,12 @@ class FakeClient implements TaskClient {
   }
   async executeTask(): Promise<Task> {
     this.calls.push("execute");
-    return { ...baseTask, phase: "running", runtimeOwnership: this.ownership };
+    return { ...this.executingTask, runtimeOwnership: this.ownership };
   }
   async getTask(): Promise<Task> {
     this.calls.push("poll");
+    const bindingTask = this.bindingTasks.shift();
+    if (bindingTask) return { ...bindingTask, runtimeOwnership: this.ownership };
     return {
       ...baseTask,
       phase: this.phases.shift() ?? "succeeded",
@@ -123,6 +128,150 @@ test("a provisioned Task round-trips files, reports identities, and finalizes", 
       "runtime-uid": "runtime-uid-1",
     });
     assert.deepEqual(client.calls, ["create", "upload", "execute", "poll", "poll", "download", "finalize"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a pending Task binds before runtime output, upload, and execution", async () => {
+  const root = await fixture();
+  const client = new FakeClient();
+  client.submittedTask = { ...baseTask, runtimeUid: null };
+  client.bindingTasks = [
+    { ...baseTask, runtimeUid: null, phase: "queued" },
+    { ...baseTask, phase: "submitted" },
+  ];
+  const outputs: Record<string, string> = {};
+  const pendingDependencies = dependencies(client, outputs);
+  pendingDependencies.setOutput = async (name: string, value: string) => {
+    client.calls.push(`output:${name}`);
+    outputs[name] = value;
+  };
+  try {
+    const result = await runWorkflow(config, root, pendingDependencies);
+    assert.equal(result.phase, "succeeded");
+    assert.deepEqual(client.calls, [
+      "create",
+      "output:task-uid",
+      "poll",
+      "poll",
+      "output:runtime-uid",
+      "upload",
+      "execute",
+      "poll",
+      "poll",
+      "output:status",
+      "download",
+      "finalize",
+    ]);
+    assert.equal(outputs["runtime-uid"], baseTask.runtimeUid);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("runtime binding rejects a changed Task UID before upload or execution", async () => {
+  const root = await fixture();
+  const client = new FakeClient();
+  client.submittedTask = { ...baseTask, runtimeUid: null };
+  client.bindingTasks = [
+    {
+      ...baseTask,
+      taskUid: "d296d3b4-b25f-4e78-a0c5-6fc637cf69cc",
+    },
+  ];
+  const outputs: Record<string, string> = {};
+  try {
+    await assert.rejects(runWorkflow(config, root, dependencies(client, outputs)), (error) => {
+      assert.ok(error instanceof StewardRunFailure);
+      assert.equal(error.metadata.failureCategory, "dependency");
+      assert.equal(error.metadata.cleanupCategory, "confirmed");
+      return true;
+    });
+    assert.equal(outputs["runtime-uid"], undefined);
+    assert.equal(client.calls.includes("upload"), false);
+    assert.equal(client.calls.includes("execute"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a runtime UID cannot change after the first binding", async () => {
+  const root = await fixture();
+  const client = new FakeClient();
+  client.submittedTask = { ...baseTask, runtimeUid: null };
+  client.bindingTasks = [{ ...baseTask }];
+  client.executingTask = { ...baseTask, runtimeUid: "runtime-uid-rebound", phase: "running" };
+  const outputs: Record<string, string> = {};
+  try {
+    await assert.rejects(runWorkflow(config, root, dependencies(client, outputs)), (error) => {
+      assert.ok(error instanceof StewardRunFailure);
+      assert.equal(error.metadata.failureCategory, "execution");
+      assert.equal(error.metadata.cleanupCategory, "confirmed");
+      assert.doesNotMatch(error.message, /runtime-uid-rebound/u);
+      return true;
+    });
+    assert.equal(outputs["runtime-uid"], baseTask.runtimeUid);
+    assert.equal(client.calls.includes("execute"), true);
+    assert.equal(client.calls.includes("download"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("runtime binding timeout is bounded, classified, and does not expose runtime state", async () => {
+  const root = await fixture();
+  const client = new FakeClient();
+  client.submittedTask = { ...baseTask, runtimeUid: null };
+  client.bindingTasks = Array.from({ length: 60 }, () => ({
+    ...baseTask,
+    runtimeUid: null,
+    phase: "queued",
+  }));
+  const outputs: Record<string, string> = {};
+  try {
+    await assert.rejects(runWorkflow(config, root, dependencies(client, outputs)), (error) => {
+      assert.ok(error instanceof StewardRunFailure);
+      assert.deepEqual(error.metadata, {
+        version: "steward-run.failure/v1",
+        phase: "unavailable",
+        failureCategory: "timeout",
+        cleanupCategory: "confirmed",
+      });
+      assert.doesNotMatch(error.message, /runtime-uid-1/u);
+      return true;
+    });
+    assert.equal(client.calls.filter((call) => call === "poll").length, 60);
+    assert.equal(outputs["runtime-uid"], undefined);
+    assert.equal(client.calls.includes("upload"), false);
+    assert.equal(client.calls.includes("execute"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("runtime binding cancellation is bounded and remains fail closed", async () => {
+  const root = await fixture();
+  const client = new FakeClient();
+  client.submittedTask = { ...baseTask, runtimeUid: null };
+  const controller = new AbortController();
+  const outputs: Record<string, string> = {};
+  const cancelledDependencies = {
+    ...dependencies(client, outputs),
+    signal: controller.signal,
+    sleep: async () => void controller.abort(),
+  };
+  try {
+    await assert.rejects(runWorkflow(config, root, cancelledDependencies), (error) => {
+      assert.ok(error instanceof StewardRunFailure);
+      assert.equal(error.metadata.phase, "cancelled");
+      assert.equal(error.metadata.failureCategory, "cancelled");
+      assert.equal(error.metadata.cleanupCategory, "confirmed");
+      return true;
+    });
+    assert.equal(outputs["runtime-uid"], undefined);
+    assert.equal(client.calls.includes("poll"), false);
+    assert.equal(client.calls.includes("upload"), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

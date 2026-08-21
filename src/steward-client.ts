@@ -39,7 +39,7 @@ export type TaskAdmissionDelta =
 
 export interface Task {
   taskUid: string;
-  runtimeUid: string;
+  runtimeUid: string | null;
   phase: TaskPhase;
   runtimeOwnership: RuntimeOwnership;
   finalized: boolean;
@@ -195,8 +195,8 @@ function parseTask(payload: unknown): Task {
     ]) ||
     typeof value.taskUid !== "string" ||
     !value.taskUid ||
-    typeof value.runtimeUid !== "string" ||
-    !value.runtimeUid ||
+    (value.runtimeUid !== null &&
+      (typeof value.runtimeUid !== "string" || !value.runtimeUid)) ||
     typeof value.phase !== "string" ||
     !taskPhases.includes(value.phase as TaskPhase) ||
     (value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted") ||
@@ -205,6 +205,15 @@ function parseTask(payload: unknown): Task {
     !deltas
   ) {
     throw new Error("Steward returned an incompatible Task response");
+  }
+  if (
+    value.runtimeUid === null &&
+    (value.runtimeOwnership !== "provisioned" ||
+      value.finalized ||
+      !["submitted", "parked", "queued"].includes(value.phase) ||
+      value.failureReason !== undefined)
+  ) {
+    throw new Error("Steward returned a contradictory unbound Task response");
   }
   return {
     taskUid: value.taskUid,
@@ -330,7 +339,14 @@ export class StewardClient {
   async #taskResponse(response: Response, stage: RequestStage): Promise<Task> {
     const payload: unknown = await response.json().catch(() => undefined);
     try {
-      return parseTask(payload);
+      const task = parseTask(payload);
+      if (
+        task.runtimeUid === null &&
+        (stage === "execute" || (stage === "submit" && response.status !== 202))
+      ) {
+        throw new Error("Steward returned pending runtime binding in an incompatible response");
+      }
+      return task;
     } catch {
       const correlationId = responseCorrelationId(response);
       throw new StewardRequestFailure(stage, "malformed-response", {
