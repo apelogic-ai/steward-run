@@ -1,5 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { Readable } from "node:stream";
+import {
+  sanitizeCorrelationId,
+  type RequestFailureCategory,
+  type RequestStage,
+} from "./failure-metadata.js";
 import type { FetchLike } from "./oidc.js";
 
 export type RuntimeOwnership = "provisioned" | "adopted";
@@ -34,7 +39,7 @@ export type TaskAdmissionDelta =
 
 export interface Task {
   taskUid: string;
-  runtimeUid: string;
+  runtimeUid: string | null;
   phase: TaskPhase;
   runtimeOwnership: RuntimeOwnership;
   finalized: boolean;
@@ -50,17 +55,53 @@ export interface TaskSubmissionRequest {
 
 interface ClientOptions {
   baseUrl: string;
-  getToken: () => Promise<string>;
+  getToken: (signal?: AbortSignal) => Promise<string>;
   fetch?: FetchLike;
-  sleep?: (milliseconds: number) => Promise<void>;
+  sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   maxAttempts?: number;
 }
 
+export interface TaskRequestOptions {
+  signal?: AbortSignal;
+  deadline?: number;
+}
+
 interface RequestOptions {
+  stage: RequestStage;
   expectedStatus: number | readonly number[];
   headers?: Record<string, string>;
   body?: BodyInit | (() => Promise<BodyInit>);
   duplex?: "half";
+  signal?: AbortSignal;
+  deadline?: number;
+}
+
+interface RequestFailureDetails {
+  httpStatus?: number;
+  correlationId?: string;
+}
+
+export class StewardRequestFailure extends Error {
+  readonly stage: RequestStage;
+  readonly category: RequestFailureCategory;
+  readonly httpStatus: number | undefined;
+  readonly correlationId: string | undefined;
+
+  constructor(
+    stage: RequestStage,
+    category: RequestFailureCategory,
+    details: RequestFailureDetails = {},
+  ) {
+    super(
+      `Steward request failed (stage=${stage}, category=${category}` +
+        `${details.httpStatus === undefined ? "" : `, status=${details.httpStatus}`})`,
+    );
+    this.name = "StewardRequestFailure";
+    this.stage = stage;
+    this.category = category;
+    this.httpStatus = details.httpStatus;
+    this.correlationId = sanitizeCorrelationId(details.correlationId);
+  }
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -144,6 +185,23 @@ function parseTaskDelta(value: unknown): TaskAdmissionDelta | undefined {
   return undefined;
 }
 
+const pendingBindingPhases = new Set<TaskPhase>(["submitted", "parked", "queued"]);
+
+function isPendingBindingTask(task: Task): boolean {
+  return task.runtimeUid === null &&
+    task.runtimeOwnership === "provisioned" &&
+    !task.finalized &&
+    pendingBindingPhases.has(task.phase) &&
+    task.failureReason === undefined;
+}
+
+function isUnboundFinalizationTask(task: Task): boolean {
+  return task.runtimeUid === null &&
+    task.runtimeOwnership === "provisioned" &&
+    task.phase === "cancelled" &&
+    task.failureReason === undefined;
+}
+
 function parseTask(payload: unknown): Task {
   const value = record(payload);
   const rawDeltas = value?.deltas ?? [];
@@ -161,8 +219,8 @@ function parseTask(payload: unknown): Task {
     ]) ||
     typeof value.taskUid !== "string" ||
     !value.taskUid ||
-    typeof value.runtimeUid !== "string" ||
-    !value.runtimeUid ||
+    (value.runtimeUid !== null &&
+      (typeof value.runtimeUid !== "string" || !value.runtimeUid)) ||
     typeof value.phase !== "string" ||
     !taskPhases.includes(value.phase as TaskPhase) ||
     (value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted") ||
@@ -172,7 +230,7 @@ function parseTask(payload: unknown): Task {
   ) {
     throw new Error("Steward returned an incompatible Task response");
   }
-  return {
+  const task: Task = {
     taskUid: value.taskUid,
     runtimeUid: value.runtimeUid,
     phase: value.phase as TaskPhase,
@@ -181,6 +239,10 @@ function parseTask(payload: unknown): Task {
     ...(typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {}),
     deltas,
   };
+  if (task.runtimeUid === null && !isPendingBindingTask(task) && !isUnboundFinalizationTask(task)) {
+    throw new Error("Steward returned a contradictory unbound Task response");
+  }
+  return task;
 }
 
 function validatedBaseUrl(value: string): URL {
@@ -209,78 +271,181 @@ function isRetryableStatus(status: number): boolean {
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
 
-function transportErrorCategory(
-  error: unknown,
-): "network" | "request body" | "TLS" | "transport" {
+function transportFailureCategory(error: unknown): "timeout" | "transport" {
   const candidates: unknown[] = [error];
   if (error && typeof error === "object" && "cause" in error) candidates.push(error.cause);
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== "object") continue;
     const code = "code" in candidate && typeof candidate.code === "string" ? candidate.code : "";
-    if (/(?:CERT|TLS|SSL|ALTNAME|SELF_SIGNED|UNABLE_TO_VERIFY)/u.test(code)) {
-      return "TLS";
-    }
-    if (
-      [
-        "ECONNABORTED",
-        "ECONNREFUSED",
-        "ECONNRESET",
-        "ENETUNREACH",
-        "ENOTFOUND",
-        "EPIPE",
-        "ETIMEDOUT",
-      ].includes(code)
-    ) {
-      return "network";
-    }
+    if (["ECONNABORTED", "ETIMEDOUT"].includes(code)) return "timeout";
   }
-  if (error instanceof Error && error.message === "unsupported Steward request body") {
-    return "request body";
-  }
+  if (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name)) return "timeout";
   return "transport";
+}
+
+function httpFailureCategory(status: number): RequestFailureCategory {
+  if (status === 400 || status === 422) return "validation";
+  if (status === 401) return "authentication";
+  if (status === 403) return "authorization";
+  if (status === 409) return "conflict";
+  return "dependency";
+}
+
+function responseCorrelationId(response: Response): string | undefined {
+  return sanitizeCorrelationId(response.headers.get("x-correlation-id")) ??
+    sanitizeCorrelationId(response.headers.get("x-request-id"));
+}
+
+function requestAbortError(): Error {
+  const error = new Error("Steward request was cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+function requestTimeoutError(): Error {
+  const error = new Error("Steward request deadline expired");
+  error.name = "TimeoutError";
+  return error;
+}
+
+async function boundedOperation<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  options: Pick<RequestOptions, "signal" | "deadline">,
+): Promise<T> {
+  if (options.signal?.aborted) throw requestAbortError();
+  const controller = new AbortController();
+  let deadlineExpired = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const cancel = () => controller.abort();
+  options.signal?.addEventListener("abort", cancel, { once: true });
+  if (options.deadline !== undefined) {
+    const remaining = options.deadline - Date.now();
+    if (remaining <= 0) {
+      options.signal?.removeEventListener("abort", cancel);
+      throw requestTimeoutError();
+    }
+    timeout = setTimeout(() => {
+      deadlineExpired = true;
+      controller.abort();
+    }, remaining);
+  }
+  let rejectAbort: ((error: Error) => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const rejectOnAbort = () => {
+    rejectAbort?.(
+      options.signal?.aborted
+        ? requestAbortError()
+        : deadlineExpired
+          ? requestTimeoutError()
+          : requestAbortError(),
+    );
+  };
+  controller.signal.addEventListener("abort", rejectOnAbort, { once: true });
+  try {
+    return await Promise.race([operation(controller.signal), aborted]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", cancel);
+    controller.signal.removeEventListener("abort", rejectOnAbort);
+  }
+}
+
+async function readJsonResponse(response: Response, signal: AbortSignal): Promise<unknown> {
+  if (!response.body) return undefined;
+  const reader = response.body.getReader();
+  const cancel = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  const chunks: Buffer[] = [];
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      chunks.push(Buffer.from(chunk.value));
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    reader.releaseLock();
+  }
 }
 
 export class StewardClient {
   readonly #baseUrl: URL;
-  readonly #getToken: () => Promise<string>;
+  readonly #getToken: (signal?: AbortSignal) => Promise<string>;
   readonly #fetch: FetchLike;
-  readonly #sleep: (milliseconds: number) => Promise<void>;
+  readonly #sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   readonly #maxAttempts: number;
 
   constructor(options: ClientOptions) {
     this.#baseUrl = validatedBaseUrl(options.baseUrl);
     this.#getToken = options.getToken;
     this.#fetch = options.fetch ?? fetch;
-    this.#sleep = options.sleep ?? (async (milliseconds) => delay(milliseconds));
+    this.#sleep =
+      options.sleep ??
+      (async (milliseconds, signal) => delay(milliseconds, undefined, { signal }));
     this.#maxAttempts = options.maxAttempts ?? 4;
   }
 
   async #request(method: string, path: string, options: RequestOptions): Promise<Response> {
     const url = new URL(path.replace(/^\//u, ""), this.#baseUrl);
     for (let attempt = 0; attempt < this.#maxAttempts; attempt += 1) {
-      const token = await this.#getToken();
       let response: Response | undefined;
       try {
-        const body =
-          typeof options.body === "function" ? await options.body() : options.body;
-        response = await this.#fetch(url, {
-          method,
-          headers: {
-            accept: "application/json",
-            authorization: `Bearer ${token}`,
-            ...options.headers,
-          },
-          ...(body === undefined ? {} : { body }),
-          ...(options.duplex ? { duplex: options.duplex } : {}),
-        });
+        const token = await boundedOperation(
+          (signal) => this.#getToken(signal),
+          options,
+        );
+        const body = await boundedOperation(
+          async () => (typeof options.body === "function" ? options.body() : options.body),
+          options,
+        );
+        response = await boundedOperation(
+          (signal) =>
+            this.#fetch(url, {
+              method,
+              headers: {
+                accept: "application/json",
+                authorization: `Bearer ${token}`,
+                ...options.headers,
+              },
+              ...(body === undefined ? {} : { body }),
+              ...(options.duplex ? { duplex: options.duplex } : {}),
+              signal,
+            }),
+          options,
+        );
       } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") throw error;
+        if (error instanceof Error && error.name === "AbortError" && options.signal?.aborted) {
+          throw error;
+        }
+        if (error instanceof Error && error.name === "TimeoutError") {
+          throw new StewardRequestFailure(options.stage, "timeout");
+        }
         if (attempt + 1 === this.#maxAttempts) {
-          throw new Error(
-            `Steward request ${method} ${path} failed after retries (${transportErrorCategory(error)})`,
+          throw new StewardRequestFailure(options.stage, transportFailureCategory(error));
+        }
+        try {
+          await boundedOperation(
+            (signal) => this.#sleep(retryDelay(undefined, attempt), signal),
+            options,
+          );
+        } catch (sleepError) {
+          if (
+            sleepError instanceof Error &&
+            sleepError.name === "AbortError" &&
+            options.signal?.aborted
+          ) {
+            throw sleepError;
+          }
+          throw new StewardRequestFailure(
+            options.stage,
+            transportFailureCategory(sleepError),
           );
         }
-        await this.#sleep(retryDelay(undefined, attempt));
         continue;
       }
       const expectedStatuses = Array.isArray(options.expectedStatus)
@@ -289,22 +454,82 @@ export class StewardClient {
       if (expectedStatuses.includes(response.status)) return response;
       if (isRetryableStatus(response.status) && attempt + 1 < this.#maxAttempts) {
         await response.body?.cancel().catch(() => undefined);
-        await this.#sleep(retryDelay(response, attempt));
+        try {
+          await boundedOperation(
+            (signal) => this.#sleep(retryDelay(response, attempt), signal),
+            options,
+          );
+        } catch (sleepError) {
+          if (
+            sleepError instanceof Error &&
+            sleepError.name === "AbortError" &&
+            options.signal?.aborted
+          ) {
+            throw sleepError;
+          }
+          throw new StewardRequestFailure(
+            options.stage,
+            transportFailureCategory(sleepError),
+          );
+        }
         continue;
       }
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Steward request ${method} ${path} failed with status ${response.status}`);
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure(options.stage, httpFailureCategory(response.status), {
+        httpStatus: response.status,
+        ...(correlationId === undefined ? {} : { correlationId }),
+      });
     }
-    throw new Error(`Steward request ${method} ${path} exhausted retries`);
+    throw new StewardRequestFailure(options.stage, "transport");
   }
 
-  async #taskResponse(response: Response): Promise<Task> {
-    const payload: unknown = await response.json().catch(() => undefined);
-    return parseTask(payload);
+  async #taskResponse(
+    response: Response,
+    stage: RequestStage,
+    options: TaskRequestOptions = {},
+  ): Promise<Task> {
+    let payload: unknown;
+    try {
+      payload = await boundedOperation(
+        (signal) => readJsonResponse(response, signal),
+        options,
+      );
+    } catch (error) {
+      await response.body?.cancel().catch(() => undefined);
+      if (error instanceof Error && error.name === "AbortError" && options.signal?.aborted) {
+        throw error;
+      }
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new StewardRequestFailure(stage, "timeout");
+      }
+      payload = undefined;
+    }
+    try {
+      const task = parseTask(payload);
+      if (task.runtimeUid === null) {
+        const operationAllowsNull =
+          (stage === "submit" && response.status === 202 && isPendingBindingTask(task)) ||
+          (stage === "poll" &&
+            (isPendingBindingTask(task) || isUnboundFinalizationTask(task))) ||
+          (stage === "finalize" && isUnboundFinalizationTask(task));
+        if (!operationAllowsNull) {
+          throw new Error("Steward returned an unbound Task in an incompatible response");
+        }
+      }
+      return task;
+    } catch {
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure(stage, "malformed-response", {
+        httpStatus: response.status,
+        ...(correlationId === undefined ? {} : { correlationId }),
+      });
+    }
   }
 
   async submitTask(request: TaskSubmissionRequest, idempotencyKey: string): Promise<Task> {
     const response = await this.#request("POST", "v1/tasks", {
+      stage: "submit",
       expectedStatus: [201, 202],
       headers: {
         "content-type": "application/json",
@@ -312,11 +537,12 @@ export class StewardClient {
       },
       body: JSON.stringify(request),
     });
-    return this.#taskResponse(response);
+    return this.#taskResponse(response, "submit");
   }
 
   async uploadTaskInputs(taskUid: string, createArchive: () => Promise<Readable>): Promise<void> {
     await this.#request("PUT", `v1/tasks/${encodeURIComponent(taskUid)}/inputs`, {
+      stage: "upload",
       expectedStatus: 204,
       headers: { "content-type": "application/x-tar" },
       body: async () => (await createArchive()) as unknown as BodyInit,
@@ -327,16 +553,23 @@ export class StewardClient {
   async executeTask(taskUid: string): Promise<Task> {
     return this.#taskResponse(
       await this.#request("POST", `v1/tasks/${encodeURIComponent(taskUid)}/execute`, {
+        stage: "execute",
         expectedStatus: 202,
       }),
+      "execute",
     );
   }
 
-  async getTask(taskUid: string): Promise<Task> {
+  async getTask(taskUid: string, options: TaskRequestOptions = {}): Promise<Task> {
     return this.#taskResponse(
       await this.#request("GET", `v1/tasks/${encodeURIComponent(taskUid)}`, {
+        stage: "poll",
         expectedStatus: 200,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
       }),
+      "poll",
+      options,
     );
   }
 
@@ -345,12 +578,17 @@ export class StewardClient {
       "GET",
       `v1/tasks/${encodeURIComponent(taskUid)}/outputs`,
       {
+        stage: "output",
         expectedStatus: 200,
         headers: { accept: "application/x-tar" },
       },
     );
     if (!response.headers.get("content-type")?.startsWith("application/x-tar") || !response.body) {
-      throw new Error("Steward returned an incompatible output archive response");
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure("output", "malformed-response", {
+        httpStatus: response.status,
+        ...(correlationId === undefined ? {} : { correlationId }),
+      });
     }
     return Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
   }
@@ -358,8 +596,10 @@ export class StewardClient {
   async finalizeTask(taskUid: string): Promise<Task> {
     return this.#taskResponse(
       await this.#request("DELETE", `v1/tasks/${encodeURIComponent(taskUid)}`, {
+        stage: "finalize",
         expectedStatus: 202,
       }),
+      "finalize",
     );
   }
 

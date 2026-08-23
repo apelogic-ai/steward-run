@@ -29,7 +29,9 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/TaskStatusResponse' }
         '202':
-          description: Task parked for approval
+          description: >-
+            Task accepted for controller-owned runtime binding or parked for approval; runtimeUid
+            is null until the controller binds the exact runtime UID.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TaskStatusResponse' }
@@ -212,7 +214,14 @@ components:
       required: [taskUid, runtimeUid, phase, runtimeOwnership, finalized]
       properties:
         taskUid: { type: string, format: uuid }
-        runtimeUid: { type: string, minLength: 1 }
+        runtimeUid:
+          description: >-
+            Immutable Kubernetes runtime UID. Null is valid for a provisioned Task while it is
+            waiting for controller-owned binding in non-final submitted, parked, or queued phase,
+            and remains null if that unbound Task is cancelled and finalized before binding.
+          oneOf:
+            - { type: string, minLength: 1 }
+            - { type: 'null' }
         phase: { $ref: '#/components/schemas/TaskPhase' }
         runtimeOwnership: { $ref: '#/components/schemas/RuntimeOwnership' }
         finalized:

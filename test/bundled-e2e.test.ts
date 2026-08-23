@@ -40,7 +40,7 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
         STEWARD_RUN_CODING_AGENT_RUNTIME: "claude-code@2.1.220",
         STEWARD_RUN_IDENTITY_EXCHANGE_URL: `${mock.url}/v1/exchange`,
         STEWARD_RUN_INPUTS: "in",
-        STEWARD_RUN_OUTPUTS: "out",
+        STEWARD_RUN_OUTPUTS: "out/payload.bin",
         STEWARD_RUN_WORKFLOW: "copy-smoke",
       },
       stdio: ["ignore", "pipe", "pipe"],

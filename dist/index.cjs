@@ -2474,11 +2474,16 @@ function validateShortLivedToken(token, nowSeconds) {
   return token;
 }
 function shortLivedBearerTokenFileProvider(path, now = () => Math.floor(Date.now() / 1e3)) {
-  return async () => {
+  return async (signal) => {
     let token;
     try {
-      token = (await (0, import_promises.readFile)(path, "utf8")).trim();
+      token = (await (0, import_promises.readFile)(path, { encoding: "utf8", signal })).trim();
     } catch {
+      if (signal?.aborted) {
+        const error = new Error("bearer-token file read was cancelled");
+        error.name = "AbortError";
+        throw error;
+      }
       throw new Error("bearer-token file could not be read");
     }
     return validateShortLivedToken(token, now());
@@ -2534,6 +2539,7 @@ function readActionConfig(environment) {
 
 // src/failure-metadata.ts
 var FAILURE_METADATA_VERSION = "steward-run.failure/v1";
+var REQUEST_FAILURE_METADATA_VERSION = "steward-run.request-failure/v1";
 var ASSERTION_STAGE_METADATA_VERSION = "steward-run.assertion-stage/v1";
 var PROVIDER_CONNECTION_STAGE_METADATA_VERSION = "steward-run.provider-connection-stage/v1";
 var PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION = "steward-run.provider-connection-stage/v2";
@@ -2550,14 +2556,29 @@ var failureCategories = [
   "workflow-cleanup",
   "authentication",
   "authorization",
+  "validation",
+  "conflict",
   "configuration",
   "dependency",
+  "transport",
+  "malformed-response",
   "input-output",
   "runtime",
   "timeout",
   "execution",
   "cancelled",
   "unknown"
+];
+var requestStages = ["submit", "upload", "execute", "poll", "output", "finalize"];
+var requestFailureCategories = [
+  "validation",
+  "authentication",
+  "authorization",
+  "conflict",
+  "dependency",
+  "timeout",
+  "transport",
+  "malformed-response"
 ];
 var assertionStages = [
   "input-request",
@@ -2700,12 +2721,18 @@ function classifyFailureReason(reason) {
 function allowed(values, value) {
   return typeof value === "string" && values.includes(value);
 }
+function sanitizeCorrelationId(value) {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/u.test(value) ? value : void 0;
+}
 function sanitizeFailureMetadata(value) {
   const failureCategory = allowed(failureCategories, value.failureCategory) ? value.failureCategory : "unknown";
   const assertionStage = failureCategory === "assertion-mismatch" && allowed(assertionStages, value.assertionStage) ? value.assertionStage : void 0;
   const providerConnectionStage = failureCategory === "provider-connection" && allowed(providerConnectionStages, value.providerConnectionStage) ? value.providerConnectionStage : void 0;
   const providerConnectionStageV2 = failureCategory === "provider-connection" && allowed(providerConnectionStagesV2, value.providerConnectionStageV2) ? value.providerConnectionStageV2 : void 0;
   const providerConnectionStageV3 = failureCategory === "provider-connection" && allowed(providerConnectionStagesV3, value.providerConnectionStageV3) ? value.providerConnectionStageV3 : void 0;
+  const requestStage = allowed(requestFailureCategories, failureCategory) && allowed(requestStages, value.requestStage) ? value.requestStage : void 0;
+  const httpStatus = requestStage !== void 0 && Number.isInteger(value.httpStatus) && value.httpStatus >= 100 && value.httpStatus <= 599 ? value.httpStatus : void 0;
+  const correlationId = requestStage === void 0 ? void 0 : sanitizeCorrelationId(value.correlationId);
   return {
     version: FAILURE_METADATA_VERSION,
     phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
@@ -2714,7 +2741,10 @@ function sanitizeFailureMetadata(value) {
     ...assertionStage === void 0 ? {} : { assertionStage },
     ...providerConnectionStage === void 0 ? {} : { providerConnectionStage },
     ...providerConnectionStageV2 === void 0 ? {} : { providerConnectionStageV2 },
-    ...providerConnectionStageV3 === void 0 ? {} : { providerConnectionStageV3 }
+    ...providerConnectionStageV3 === void 0 ? {} : { providerConnectionStageV3 },
+    ...requestStage === void 0 ? {} : { requestStage },
+    ...httpStatus === void 0 ? {} : { httpStatus },
+    ...correlationId === void 0 ? {} : { correlationId }
   };
 }
 function compact(metadata) {
@@ -2723,6 +2753,11 @@ function compact(metadata) {
 async function publishFailureMetadata(metadata, sink) {
   const safe = sanitizeFailureMetadata(metadata);
   await sink.writeAnnotation(compact(safe));
+  if (safe.requestStage !== void 0) {
+    await sink.writeAnnotation(
+      `${REQUEST_FAILURE_METADATA_VERSION} stage=${safe.requestStage} category=${safe.failureCategory}${safe.httpStatus === void 0 ? "" : ` status=${safe.httpStatus}`}${safe.correlationId === void 0 ? "" : ` correlation-id=${safe.correlationId}`}`
+    );
+  }
   if (safe.assertionStage !== void 0) {
     await sink.writeAnnotation(
       `${ASSERTION_STAGE_METADATA_VERSION} stage=${safe.assertionStage}`
@@ -2750,6 +2785,14 @@ async function publishFailureMetadata(metadata, sink) {
     "| --- | --- | --- | --- |",
     `| ${FAILURE_METADATA_VERSION} | ${safe.phase} | ${safe.failureCategory} | ${safe.cleanupCategory} |`
   ];
+  if (safe.requestStage !== void 0) {
+    summary.push(
+      "",
+      "| Contract | Request stage | Category | HTTP status | Correlation ID |",
+      "| --- | --- | --- | --- | --- |",
+      `| ${REQUEST_FAILURE_METADATA_VERSION} | ${safe.requestStage} | ${safe.failureCategory} | ${safe.httpStatus ?? "-"} | ${safe.correlationId ?? "-"} |`
+    );
+  }
   if (safe.assertionStage !== void 0) {
     summary.push(
       "",
@@ -2800,7 +2843,7 @@ var StewardRunFailure = class extends Error {
 };
 
 // src/oidc.ts
-async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImplementation = fetch) {
+async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImplementation = fetch, signal) {
   if (!requestUrl || !requestToken) {
     throw new Error(
       "GitHub OIDC is unavailable; grant the job id-token: write permission"
@@ -2819,9 +2862,15 @@ async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImple
       headers: {
         accept: "application/json",
         authorization: `Bearer ${requestToken}`
-      }
+      },
+      ...signal === void 0 ? {} : { signal }
     });
   } catch {
+    if (signal?.aborted) {
+      const error = new Error("GitHub OIDC token request was cancelled");
+      error.name = "AbortError";
+      throw error;
+    }
     throw new Error("GitHub OIDC token request failed");
   }
   if (!response.ok) {
@@ -2835,11 +2884,12 @@ async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImple
   return value;
 }
 function oidcTokenProvider(environment, audience, fetchImplementation = fetch) {
-  return async () => getGitHubOidcToken(
+  return async (signal) => getGitHubOidcToken(
     environment.ACTIONS_ID_TOKEN_REQUEST_URL ?? "",
     environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "",
     audience,
-    fetchImplementation
+    fetchImplementation,
+    signal
   );
 }
 
@@ -2896,8 +2946,8 @@ function identityExchangeTokenProvider(environment, exchangeUrl, fetchImplementa
     GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
     fetchImplementation
   );
-  return async () => {
-    const sourceToken = await getSourceToken();
+  return async (signal) => {
+    const sourceToken = await getSourceToken(signal);
     let response;
     try {
       response = await fetchImplementation(url, {
@@ -2905,9 +2955,15 @@ function identityExchangeTokenProvider(environment, exchangeUrl, fetchImplementa
         headers: {
           accept: "application/json",
           authorization: `Bearer ${sourceToken}`
-        }
+        },
+        ...signal === void 0 ? {} : { signal }
       });
     } catch {
+      if (signal?.aborted) {
+        const error = new Error("identity exchange request was cancelled");
+        error.name = "AbortError";
+        throw error;
+      }
       throw new Error("identity exchange request failed");
     }
     if (!response.ok) {
@@ -2927,7 +2983,7 @@ function identityExchangeTokenProvider(environment, exchangeUrl, fetchImplementa
 
 // src/lifecycle.ts
 var import_node_crypto2 = require("node:crypto");
-var import_promises4 = require("node:timers/promises");
+var import_promises5 = require("node:timers/promises");
 
 // src/archive.ts
 var import_node_fs = require("node:fs");
@@ -3053,6 +3109,9 @@ function normalizeArchivePath(value) {
 function isDeclaredOutput(path, outputs) {
   return outputs.some((root) => path === root || path.startsWith(`${root}/`));
 }
+function isStrictAncestorOfDeclaredOutput(path, outputs) {
+  return outputs.some((output) => output.startsWith(`${path}/`));
+}
 async function ensureSafeDirectories(workspace, relativeDirectory) {
   if (!relativeDirectory || relativeDirectory === ".") return;
   let current = workspace;
@@ -3108,11 +3167,17 @@ async function extractOutputArchive(archive, workspace, declaredPaths) {
           return;
         }
         const relative = normalizeArchivePath(header.name);
-        if (!isDeclaredOutput(relative, outputs)) {
+        const isDeclared = isDeclaredOutput(relative, outputs);
+        const isAncestor = isStrictAncestorOfDeclaredOutput(relative, outputs);
+        if (!isDeclared && !isAncestor) {
           throw new Error(`archive path is not a declared output: ${relative}`);
         }
         if (seen.has(relative)) throw new Error(`duplicate archive entry: ${relative}`);
         seen.add(relative);
+        if (!isDeclared && header.type !== "directory") {
+          stream.resume();
+          throw new Error(`archive ancestor entry type is not allowed: ${header.type ?? "unknown"}`);
+        }
         if (header.type === "directory") {
           stream.resume();
           await ensureSafeDirectories(workspace, relative);
@@ -3132,196 +3197,8 @@ async function extractOutputArchive(archive, workspace, declaredPaths) {
   await (0, import_promises3.pipeline)(archive, extract);
 }
 
-// src/lifecycle.ts
-var terminalPhases = /* @__PURE__ */ new Set(["succeeded", "failed", "cancelled"]);
-function identityField(environment, name) {
-  const value = environment[name]?.trim();
-  if (!value) throw new Error(`required GitHub job identity ${name} is missing`);
-  return value;
-}
-function createIdempotencyKey(environment) {
-  const identity = [
-    identityField(environment, "GITHUB_REPOSITORY"),
-    identityField(environment, "GITHUB_RUN_ID"),
-    identityField(environment, "GITHUB_RUN_ATTEMPT"),
-    identityField(environment, "GITHUB_JOB")
-  ].join("\0");
-  return (0, import_node_crypto2.createHash)("sha256").update(identity).digest("hex");
-}
-function abortError() {
-  const error = new Error("Steward Task was cancelled");
-  error.name = "AbortError";
-  return error;
-}
-async function pollUntilTerminal(initial, client, sleep, signal) {
-  let current = initial;
-  let interval = 1e3;
-  while (!terminalPhases.has(current.phase)) {
-    if (signal?.aborted) throw abortError();
-    await sleep(interval, signal);
-    if (signal?.aborted) throw abortError();
-    current = await client.getTask(current.taskUid);
-    if (current.taskUid !== initial.taskUid || current.runtimeUid !== initial.runtimeUid) {
-      throw new Error("Steward changed Task identity while polling");
-    }
-    interval = Math.min(interval * 2, 1e4);
-  }
-  return current;
-}
-var FinalizationFailure = class extends Error {
-  category;
-  constructor(category) {
-    super("Steward Task finalization failed");
-    this.name = "FinalizationFailure";
-    this.category = category;
-  }
-};
-async function finalizeAndConfirm(task, client, sleep) {
-  try {
-    let current = await client.finalizeTask(task.taskUid);
-    for (let attempt = 0; !current.finalized && attempt < 120; attempt += 1) {
-      await sleep(Math.min(250 * 2 ** attempt, 2e3));
-      current = await client.getTask(task.taskUid);
-      if (current.taskUid !== task.taskUid || current.runtimeUid !== task.runtimeUid) {
-        throw new FinalizationFailure("identity-mismatch");
-      }
-    }
-    if (!current.finalized) throw new FinalizationFailure("confirmation-timeout");
-  } catch (error) {
-    if (error instanceof FinalizationFailure) throw error;
-    throw new FinalizationFailure("request-failed");
-  }
-}
-function taskFailurePhase(task) {
-  if (task?.phase === "succeeded" || task?.phase === "failed" || task?.phase === "cancelled") {
-    return task.phase;
-  }
-  return "unavailable";
-}
-function stageFailureCategory(stage, error) {
-  if (error instanceof Error && error.name === "AbortError") return "cancelled";
-  switch (stage) {
-    case "input":
-    case "upload":
-    case "output":
-      return "input-output";
-    case "execute":
-      return "execution";
-    case "submit":
-    case "poll":
-      return "dependency";
-  }
-}
-async function runWorkflow(config, workspace, dependencies) {
-  let initialArchive;
-  let inputPaths = [];
-  let outputPaths = [];
-  const createArchive = async () => {
-    if (initialArchive) {
-      const archive = initialArchive;
-      initialArchive = void 0;
-      return archive;
-    }
-    return createInputArchive(workspace, inputPaths);
-  };
-  const sleep = dependencies.sleep ?? (async (milliseconds, signal) => (0, import_promises4.setTimeout)(milliseconds, void 0, { signal }));
-  let created;
-  let terminal;
-  let result;
-  let failurePhase = "unavailable";
-  let failureCategory = "unknown";
-  let assertionStage;
-  let providerConnectionStage;
-  let providerConnectionStageV2;
-  let providerConnectionStageV3;
-  let failed = false;
-  let stage = "input";
-  try {
-    inputPaths = parseWorkspacePaths(config.inputPaths);
-    outputPaths = parseWorkspacePaths(config.outputPaths);
-    initialArchive = await createInputArchive(workspace, inputPaths);
-    stage = "submit";
-    created = await dependencies.client.submitTask(
-      {
-        workflow: config.workflow,
-        codingAgentRuntime: config.codingAgentRuntime,
-        ...config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}
-      },
-      createIdempotencyKey(dependencies.environment)
-    );
-    await dependencies.setOutput("task-uid", created.taskUid);
-    await dependencies.setOutput("runtime-uid", created.runtimeUid);
-    stage = "upload";
-    await dependencies.client.uploadTaskInputs(created.taskUid, createArchive);
-    stage = "execute";
-    const executing = await dependencies.client.executeTask(created.taskUid);
-    stage = "poll";
-    terminal = await pollUntilTerminal(
-      executing,
-      dependencies.client,
-      sleep,
-      dependencies.signal
-    );
-    failurePhase = taskFailurePhase(terminal);
-    if (terminal.phase !== "succeeded") {
-      failed = true;
-      failureCategory = terminal.phase === "cancelled" ? "cancelled" : classifyFailureReason(terminal.failureReason);
-      assertionStage = terminal.phase === "cancelled" ? void 0 : classifyAssertionStage(terminal.failureReason);
-      providerConnectionStage = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStage(terminal.failureReason);
-      providerConnectionStageV2 = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStageV2(terminal.failureReason);
-      providerConnectionStageV3 = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStageV3(terminal.failureReason);
-    }
-    await dependencies.setOutput("status", terminal.phase);
-    if (!failed) {
-      stage = "output";
-      await extractOutputArchive(
-        await dependencies.client.downloadTaskOutputs(terminal.taskUid),
-        workspace,
-        outputPaths
-      );
-      result = terminal;
-    }
-  } catch (error) {
-    if (!failed) {
-      failed = true;
-      failurePhase = terminal ? taskFailurePhase(terminal) : error instanceof Error && error.name === "AbortError" ? "cancelled" : "unavailable";
-      failureCategory = stageFailureCategory(stage, error);
-    }
-    if (created && error instanceof Error && error.name === "AbortError") {
-      try {
-        await dependencies.setOutput("status", "cancelled");
-      } catch {
-      }
-    }
-  }
-  let cleanupCategory = "not-required";
-  if (created) {
-    try {
-      await finalizeAndConfirm(created, dependencies.client, sleep);
-      cleanupCategory = "confirmed";
-    } catch (error) {
-      cleanupCategory = error instanceof FinalizationFailure ? error.category : "unknown";
-      failed = true;
-      failurePhase = terminal ? taskFailurePhase(terminal) : failurePhase;
-    }
-  }
-  if (failed || !result) {
-    throw new StewardRunFailure({
-      version: FAILURE_METADATA_VERSION,
-      phase: failurePhase,
-      failureCategory,
-      cleanupCategory,
-      ...assertionStage === void 0 ? {} : { assertionStage },
-      ...providerConnectionStage === void 0 ? {} : { providerConnectionStage },
-      ...providerConnectionStageV2 === void 0 ? {} : { providerConnectionStageV2 },
-      ...providerConnectionStageV3 === void 0 ? {} : { providerConnectionStageV3 }
-    });
-  }
-  return result;
-}
-
 // src/steward-client.ts
-var import_promises5 = require("node:timers/promises");
+var import_promises4 = require("node:timers/promises");
 var import_node_stream = require("node:stream");
 var taskPhases = [
   "submitted",
@@ -3332,6 +3209,22 @@ var taskPhases = [
   "failed",
   "cancelled"
 ];
+var StewardRequestFailure = class extends Error {
+  stage;
+  category;
+  httpStatus;
+  correlationId;
+  constructor(stage, category, details = {}) {
+    super(
+      `Steward request failed (stage=${stage}, category=${category}${details.httpStatus === void 0 ? "" : `, status=${details.httpStatus}`})`
+    );
+    this.name = "StewardRequestFailure";
+    this.stage = stage;
+    this.category = category;
+    this.httpStatus = details.httpStatus;
+    this.correlationId = sanitizeCorrelationId(details.correlationId);
+  }
+};
 function record(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
 }
@@ -3378,6 +3271,13 @@ function parseTaskDelta(value) {
   }
   return void 0;
 }
+var pendingBindingPhases = /* @__PURE__ */ new Set(["submitted", "parked", "queued"]);
+function isPendingBindingTask(task) {
+  return task.runtimeUid === null && task.runtimeOwnership === "provisioned" && !task.finalized && pendingBindingPhases.has(task.phase) && task.failureReason === void 0;
+}
+function isUnboundFinalizationTask(task) {
+  return task.runtimeUid === null && task.runtimeOwnership === "provisioned" && task.phase === "cancelled" && task.failureReason === void 0;
+}
 function parseTask(payload) {
   const value = record(payload);
   const rawDeltas = value?.deltas ?? [];
@@ -3390,10 +3290,10 @@ function parseTask(payload) {
     "finalized",
     "failureReason",
     "deltas"
-  ]) || typeof value.taskUid !== "string" || !value.taskUid || typeof value.runtimeUid !== "string" || !value.runtimeUid || typeof value.phase !== "string" || !taskPhases.includes(value.phase) || value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted" || typeof value.finalized !== "boolean" || value.failureReason !== void 0 && typeof value.failureReason !== "string" || !deltas) {
+  ]) || typeof value.taskUid !== "string" || !value.taskUid || value.runtimeUid !== null && (typeof value.runtimeUid !== "string" || !value.runtimeUid) || typeof value.phase !== "string" || !taskPhases.includes(value.phase) || value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted" || typeof value.finalized !== "boolean" || value.failureReason !== void 0 && typeof value.failureReason !== "string" || !deltas) {
     throw new Error("Steward returned an incompatible Task response");
   }
-  return {
+  const task = {
     taskUid: value.taskUid,
     runtimeUid: value.runtimeUid,
     phase: value.phase,
@@ -3402,6 +3302,10 @@ function parseTask(payload) {
     ...typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {},
     deltas
   };
+  if (task.runtimeUid === null && !isPendingBindingTask(task) && !isUnboundFinalizationTask(task)) {
+    throw new Error("Steward returned a contradictory unbound Task response");
+  }
+  return task;
 }
 function validatedBaseUrl(value) {
   const url = new URL(value);
@@ -3426,31 +3330,92 @@ function retryDelay(response, attempt) {
 function isRetryableStatus(status) {
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
-function transportErrorCategory(error) {
+function transportFailureCategory(error) {
   const candidates = [error];
   if (error && typeof error === "object" && "cause" in error) candidates.push(error.cause);
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== "object") continue;
     const code = "code" in candidate && typeof candidate.code === "string" ? candidate.code : "";
-    if (/(?:CERT|TLS|SSL|ALTNAME|SELF_SIGNED|UNABLE_TO_VERIFY)/u.test(code)) {
-      return "TLS";
-    }
-    if ([
-      "ECONNABORTED",
-      "ECONNREFUSED",
-      "ECONNRESET",
-      "ENETUNREACH",
-      "ENOTFOUND",
-      "EPIPE",
-      "ETIMEDOUT"
-    ].includes(code)) {
-      return "network";
-    }
+    if (["ECONNABORTED", "ETIMEDOUT"].includes(code)) return "timeout";
   }
-  if (error instanceof Error && error.message === "unsupported Steward request body") {
-    return "request body";
-  }
+  if (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name)) return "timeout";
   return "transport";
+}
+function httpFailureCategory(status) {
+  if (status === 400 || status === 422) return "validation";
+  if (status === 401) return "authentication";
+  if (status === 403) return "authorization";
+  if (status === 409) return "conflict";
+  return "dependency";
+}
+function responseCorrelationId(response) {
+  return sanitizeCorrelationId(response.headers.get("x-correlation-id")) ?? sanitizeCorrelationId(response.headers.get("x-request-id"));
+}
+function requestAbortError() {
+  const error = new Error("Steward request was cancelled");
+  error.name = "AbortError";
+  return error;
+}
+function requestTimeoutError() {
+  const error = new Error("Steward request deadline expired");
+  error.name = "TimeoutError";
+  return error;
+}
+async function boundedOperation(operation, options) {
+  if (options.signal?.aborted) throw requestAbortError();
+  const controller = new AbortController();
+  let deadlineExpired = false;
+  let timeout;
+  const cancel = () => controller.abort();
+  options.signal?.addEventListener("abort", cancel, { once: true });
+  if (options.deadline !== void 0) {
+    const remaining = options.deadline - Date.now();
+    if (remaining <= 0) {
+      options.signal?.removeEventListener("abort", cancel);
+      throw requestTimeoutError();
+    }
+    timeout = setTimeout(() => {
+      deadlineExpired = true;
+      controller.abort();
+    }, remaining);
+  }
+  let rejectAbort;
+  const aborted = new Promise((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const rejectOnAbort = () => {
+    rejectAbort?.(
+      options.signal?.aborted ? requestAbortError() : deadlineExpired ? requestTimeoutError() : requestAbortError()
+    );
+  };
+  controller.signal.addEventListener("abort", rejectOnAbort, { once: true });
+  try {
+    return await Promise.race([operation(controller.signal), aborted]);
+  } finally {
+    if (timeout !== void 0) clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", cancel);
+    controller.signal.removeEventListener("abort", rejectOnAbort);
+  }
+}
+async function readJsonResponse(response, signal) {
+  if (!response.body) return void 0;
+  const reader = response.body.getReader();
+  const cancel = () => {
+    void reader.cancel().catch(() => void 0);
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  const chunks = [];
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      chunks.push(Buffer.from(chunk.value));
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    reader.releaseLock();
+  }
 }
 var StewardClient = class {
   #baseUrl;
@@ -3462,54 +3427,128 @@ var StewardClient = class {
     this.#baseUrl = validatedBaseUrl(options.baseUrl);
     this.#getToken = options.getToken;
     this.#fetch = options.fetch ?? fetch;
-    this.#sleep = options.sleep ?? (async (milliseconds) => (0, import_promises5.setTimeout)(milliseconds));
+    this.#sleep = options.sleep ?? (async (milliseconds, signal) => (0, import_promises4.setTimeout)(milliseconds, void 0, { signal }));
     this.#maxAttempts = options.maxAttempts ?? 4;
   }
   async #request(method, path, options) {
     const url = new URL(path.replace(/^\//u, ""), this.#baseUrl);
     for (let attempt = 0; attempt < this.#maxAttempts; attempt += 1) {
-      const token = await this.#getToken();
       let response;
       try {
-        const body = typeof options.body === "function" ? await options.body() : options.body;
-        response = await this.#fetch(url, {
-          method,
-          headers: {
-            accept: "application/json",
-            authorization: `Bearer ${token}`,
-            ...options.headers
-          },
-          ...body === void 0 ? {} : { body },
-          ...options.duplex ? { duplex: options.duplex } : {}
-        });
+        const token = await boundedOperation(
+          (signal) => this.#getToken(signal),
+          options
+        );
+        const body = await boundedOperation(
+          async () => typeof options.body === "function" ? options.body() : options.body,
+          options
+        );
+        response = await boundedOperation(
+          (signal) => this.#fetch(url, {
+            method,
+            headers: {
+              accept: "application/json",
+              authorization: `Bearer ${token}`,
+              ...options.headers
+            },
+            ...body === void 0 ? {} : { body },
+            ...options.duplex ? { duplex: options.duplex } : {},
+            signal
+          }),
+          options
+        );
       } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") throw error;
+        if (error instanceof Error && error.name === "AbortError" && options.signal?.aborted) {
+          throw error;
+        }
+        if (error instanceof Error && error.name === "TimeoutError") {
+          throw new StewardRequestFailure(options.stage, "timeout");
+        }
         if (attempt + 1 === this.#maxAttempts) {
-          throw new Error(
-            `Steward request ${method} ${path} failed after retries (${transportErrorCategory(error)})`
+          throw new StewardRequestFailure(options.stage, transportFailureCategory(error));
+        }
+        try {
+          await boundedOperation(
+            (signal) => this.#sleep(retryDelay(void 0, attempt), signal),
+            options
+          );
+        } catch (sleepError) {
+          if (sleepError instanceof Error && sleepError.name === "AbortError" && options.signal?.aborted) {
+            throw sleepError;
+          }
+          throw new StewardRequestFailure(
+            options.stage,
+            transportFailureCategory(sleepError)
           );
         }
-        await this.#sleep(retryDelay(void 0, attempt));
         continue;
       }
       const expectedStatuses = Array.isArray(options.expectedStatus) ? options.expectedStatus : [options.expectedStatus];
       if (expectedStatuses.includes(response.status)) return response;
       if (isRetryableStatus(response.status) && attempt + 1 < this.#maxAttempts) {
         await response.body?.cancel().catch(() => void 0);
-        await this.#sleep(retryDelay(response, attempt));
+        try {
+          await boundedOperation(
+            (signal) => this.#sleep(retryDelay(response, attempt), signal),
+            options
+          );
+        } catch (sleepError) {
+          if (sleepError instanceof Error && sleepError.name === "AbortError" && options.signal?.aborted) {
+            throw sleepError;
+          }
+          throw new StewardRequestFailure(
+            options.stage,
+            transportFailureCategory(sleepError)
+          );
+        }
         continue;
       }
       await response.body?.cancel().catch(() => void 0);
-      throw new Error(`Steward request ${method} ${path} failed with status ${response.status}`);
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure(options.stage, httpFailureCategory(response.status), {
+        httpStatus: response.status,
+        ...correlationId === void 0 ? {} : { correlationId }
+      });
     }
-    throw new Error(`Steward request ${method} ${path} exhausted retries`);
+    throw new StewardRequestFailure(options.stage, "transport");
   }
-  async #taskResponse(response) {
-    const payload = await response.json().catch(() => void 0);
-    return parseTask(payload);
+  async #taskResponse(response, stage, options = {}) {
+    let payload;
+    try {
+      payload = await boundedOperation(
+        (signal) => readJsonResponse(response, signal),
+        options
+      );
+    } catch (error) {
+      await response.body?.cancel().catch(() => void 0);
+      if (error instanceof Error && error.name === "AbortError" && options.signal?.aborted) {
+        throw error;
+      }
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new StewardRequestFailure(stage, "timeout");
+      }
+      payload = void 0;
+    }
+    try {
+      const task = parseTask(payload);
+      if (task.runtimeUid === null) {
+        const operationAllowsNull = stage === "submit" && response.status === 202 && isPendingBindingTask(task) || stage === "poll" && (isPendingBindingTask(task) || isUnboundFinalizationTask(task)) || stage === "finalize" && isUnboundFinalizationTask(task);
+        if (!operationAllowsNull) {
+          throw new Error("Steward returned an unbound Task in an incompatible response");
+        }
+      }
+      return task;
+    } catch {
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure(stage, "malformed-response", {
+        httpStatus: response.status,
+        ...correlationId === void 0 ? {} : { correlationId }
+      });
+    }
   }
   async submitTask(request, idempotencyKey) {
     const response = await this.#request("POST", "v1/tasks", {
+      stage: "submit",
       expectedStatus: [201, 202],
       headers: {
         "content-type": "application/json",
@@ -3517,10 +3556,11 @@ var StewardClient = class {
       },
       body: JSON.stringify(request)
     });
-    return this.#taskResponse(response);
+    return this.#taskResponse(response, "submit");
   }
   async uploadTaskInputs(taskUid, createArchive) {
     await this.#request("PUT", `v1/tasks/${encodeURIComponent(taskUid)}/inputs`, {
+      stage: "upload",
       expectedStatus: 204,
       headers: { "content-type": "application/x-tar" },
       body: async () => await createArchive(),
@@ -3530,15 +3570,22 @@ var StewardClient = class {
   async executeTask(taskUid) {
     return this.#taskResponse(
       await this.#request("POST", `v1/tasks/${encodeURIComponent(taskUid)}/execute`, {
+        stage: "execute",
         expectedStatus: 202
-      })
+      }),
+      "execute"
     );
   }
-  async getTask(taskUid) {
+  async getTask(taskUid, options = {}) {
     return this.#taskResponse(
       await this.#request("GET", `v1/tasks/${encodeURIComponent(taskUid)}`, {
-        expectedStatus: 200
-      })
+        stage: "poll",
+        expectedStatus: 200,
+        ...options.signal === void 0 ? {} : { signal: options.signal },
+        ...options.deadline === void 0 ? {} : { deadline: options.deadline }
+      }),
+      "poll",
+      options
     );
   }
   async downloadTaskOutputs(taskUid) {
@@ -3546,23 +3593,331 @@ var StewardClient = class {
       "GET",
       `v1/tasks/${encodeURIComponent(taskUid)}/outputs`,
       {
+        stage: "output",
         expectedStatus: 200,
         headers: { accept: "application/x-tar" }
       }
     );
     if (!response.headers.get("content-type")?.startsWith("application/x-tar") || !response.body) {
-      throw new Error("Steward returned an incompatible output archive response");
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure("output", "malformed-response", {
+        httpStatus: response.status,
+        ...correlationId === void 0 ? {} : { correlationId }
+      });
     }
     return import_node_stream.Readable.fromWeb(response.body);
   }
   async finalizeTask(taskUid) {
     return this.#taskResponse(
       await this.#request("DELETE", `v1/tasks/${encodeURIComponent(taskUid)}`, {
+        stage: "finalize",
         expectedStatus: 202
-      })
+      }),
+      "finalize"
     );
   }
 };
+
+// src/lifecycle.ts
+var terminalPhases = /* @__PURE__ */ new Set(["succeeded", "failed", "cancelled"]);
+var runtimeBindingPollAttempts = 60;
+var runtimeBindingTimeoutMilliseconds = 10 * 60 * 1e3;
+function identityField(environment, name) {
+  const value = environment[name]?.trim();
+  if (!value) throw new Error(`required GitHub job identity ${name} is missing`);
+  return value;
+}
+function createIdempotencyKey(environment) {
+  const identity = [
+    identityField(environment, "GITHUB_REPOSITORY"),
+    identityField(environment, "GITHUB_RUN_ID"),
+    identityField(environment, "GITHUB_RUN_ATTEMPT"),
+    identityField(environment, "GITHUB_JOB")
+  ].join("\0");
+  return (0, import_node_crypto2.createHash)("sha256").update(identity).digest("hex");
+}
+function abortError() {
+  const error = new Error("Steward Task was cancelled");
+  error.name = "AbortError";
+  return error;
+}
+function timeoutError() {
+  return new StewardRequestFailure("poll", "timeout");
+}
+function boundTask(task) {
+  return task.runtimeUid === null ? void 0 : task;
+}
+async function abortable(operation, signal) {
+  if (signal.aborted) throw abortError();
+  let rejectAbort;
+  const aborted = new Promise((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const cancel = () => rejectAbort?.(abortError());
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    return await Promise.race([operation, aborted]);
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+function assertPreExecutionTask(task) {
+  if (task.finalized || terminalPhases.has(task.phase)) {
+    throw new Error("Steward bound Task in an incompatible pre-execution state");
+  }
+  return task;
+}
+async function pollUntilRuntimeBound(initial, client, sleep, signal, timeoutMilliseconds = runtimeBindingTimeoutMilliseconds) {
+  const alreadyBound = boundTask(initial);
+  if (alreadyBound) return assertPreExecutionTask(alreadyBound);
+  const controller = new AbortController();
+  let deadlineExpired = false;
+  const timeout = Math.max(1, timeoutMilliseconds);
+  const deadline = Date.now() + timeout;
+  const expire = setTimeout(() => {
+    deadlineExpired = true;
+    controller.abort();
+  }, timeout);
+  const cancel = () => controller.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) controller.abort();
+  try {
+    let interval = 250;
+    for (let attempt = 0; attempt < runtimeBindingPollAttempts; attempt += 1) {
+      if (controller.signal.aborted) {
+        if (signal?.aborted) throw abortError();
+        throw timeoutError();
+      }
+      await abortable(sleep(interval, controller.signal), controller.signal);
+      const current = await abortable(
+        client.getTask(initial.taskUid, {
+          signal: controller.signal,
+          deadline
+        }),
+        controller.signal
+      );
+      if (current.taskUid !== initial.taskUid || current.runtimeOwnership !== initial.runtimeOwnership) {
+        throw new Error("Steward changed Task identity while waiting for runtime binding");
+      }
+      if (current.runtimeUid === null && current.phase === "cancelled") throw abortError();
+      const currentBound = boundTask(current);
+      if (currentBound) return assertPreExecutionTask(currentBound);
+      interval = Math.min(interval * 2, 1e4);
+    }
+    throw timeoutError();
+  } catch (error) {
+    if (controller.signal.aborted) {
+      if (signal?.aborted) throw abortError();
+      if (deadlineExpired) throw timeoutError();
+    }
+    throw error;
+  } finally {
+    clearTimeout(expire);
+    signal?.removeEventListener("abort", cancel);
+  }
+}
+async function pollUntilTerminal(initial, client, sleep, signal) {
+  let current = initial;
+  let interval = 1e3;
+  while (!terminalPhases.has(current.phase)) {
+    if (signal?.aborted) throw abortError();
+    await sleep(interval, signal);
+    if (signal?.aborted) throw abortError();
+    current = await client.getTask(current.taskUid);
+    if (current.taskUid !== initial.taskUid || current.runtimeUid !== initial.runtimeUid || current.runtimeOwnership !== initial.runtimeOwnership) {
+      throw new Error("Steward changed Task identity while polling");
+    }
+    interval = Math.min(interval * 2, 1e4);
+  }
+  return current;
+}
+var FinalizationFailure = class extends Error {
+  category;
+  constructor(category) {
+    super("Steward Task finalization failed");
+    this.name = "FinalizationFailure";
+    this.category = category;
+  }
+};
+async function finalizeAndConfirm(task, client, sleep) {
+  try {
+    let finalizationRuntimeUid = task.runtimeUid;
+    let current = await client.finalizeTask(task.taskUid);
+    if (current.taskUid !== task.taskUid || current.runtimeOwnership !== task.runtimeOwnership || finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid) {
+      throw new FinalizationFailure("identity-mismatch");
+    }
+    finalizationRuntimeUid ??= current.runtimeUid;
+    for (let attempt = 0; !current.finalized && attempt < 120; attempt += 1) {
+      await sleep(Math.min(250 * 2 ** attempt, 2e3));
+      current = await client.getTask(task.taskUid);
+      if (current.taskUid !== task.taskUid || current.runtimeOwnership !== task.runtimeOwnership || finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid) {
+        throw new FinalizationFailure("identity-mismatch");
+      }
+      finalizationRuntimeUid ??= current.runtimeUid;
+    }
+    if (!current.finalized) throw new FinalizationFailure("confirmation-timeout");
+  } catch (error) {
+    if (error instanceof FinalizationFailure) throw error;
+    throw new FinalizationFailure("request-failed");
+  }
+}
+function taskFailurePhase(task) {
+  if (task?.phase === "succeeded" || task?.phase === "failed" || task?.phase === "cancelled") {
+    return task.phase;
+  }
+  return "unavailable";
+}
+function stageFailureCategory(stage, error) {
+  if (error instanceof StewardRequestFailure) return error.category;
+  if (error instanceof Error && error.name === "AbortError") return "cancelled";
+  if (error instanceof Error && error.name === "TimeoutError") return "timeout";
+  switch (stage) {
+    case "input":
+    case "upload":
+    case "output":
+      return "input-output";
+    case "execute":
+      return "execution";
+    case "submit":
+    case "poll":
+      return "dependency";
+  }
+}
+async function runWorkflow(config, workspace, dependencies) {
+  let initialArchive;
+  let inputPaths = [];
+  let outputPaths = [];
+  const createArchive = async () => {
+    if (initialArchive) {
+      const archive = initialArchive;
+      initialArchive = void 0;
+      return archive;
+    }
+    return createInputArchive(workspace, inputPaths);
+  };
+  const sleep = dependencies.sleep ?? (async (milliseconds, signal) => (0, import_promises5.setTimeout)(milliseconds, void 0, { signal }));
+  let created;
+  let terminal;
+  let result;
+  let failurePhase = "unavailable";
+  let failureCategory = "unknown";
+  let assertionStage;
+  let providerConnectionStage;
+  let providerConnectionStageV2;
+  let providerConnectionStageV3;
+  let requestStage;
+  let httpStatus;
+  let correlationId;
+  let failed = false;
+  let stage = "input";
+  try {
+    inputPaths = parseWorkspacePaths(config.inputPaths);
+    outputPaths = parseWorkspacePaths(config.outputPaths);
+    initialArchive = await createInputArchive(workspace, inputPaths);
+    stage = "submit";
+    created = await dependencies.client.submitTask(
+      {
+        workflow: config.workflow,
+        codingAgentRuntime: config.codingAgentRuntime,
+        ...config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}
+      },
+      createIdempotencyKey(dependencies.environment)
+    );
+    const expectedOwnership = config.agentRuntime ? "adopted" : "provisioned";
+    if (created.runtimeOwnership !== expectedOwnership) {
+      throw new Error("Steward returned Task ownership inconsistent with the submission");
+    }
+    await dependencies.setOutput("task-uid", created.taskUid);
+    stage = "poll";
+    const bound = await pollUntilRuntimeBound(
+      created,
+      dependencies.client,
+      sleep,
+      dependencies.signal,
+      dependencies.runtimeBindingTimeoutMilliseconds
+    );
+    created = bound;
+    await dependencies.setOutput("runtime-uid", bound.runtimeUid);
+    stage = "upload";
+    await dependencies.client.uploadTaskInputs(bound.taskUid, createArchive);
+    stage = "execute";
+    const executing = await dependencies.client.executeTask(bound.taskUid);
+    const executingBound = boundTask(executing);
+    if (!executingBound || executingBound.taskUid !== bound.taskUid || executingBound.runtimeUid !== bound.runtimeUid || executingBound.runtimeOwnership !== bound.runtimeOwnership) {
+      throw new Error("Steward changed Task identity while requesting execution");
+    }
+    stage = "poll";
+    terminal = await pollUntilTerminal(
+      executingBound,
+      dependencies.client,
+      sleep,
+      dependencies.signal
+    );
+    failurePhase = taskFailurePhase(terminal);
+    if (terminal.phase !== "succeeded") {
+      failed = true;
+      failureCategory = terminal.phase === "cancelled" ? "cancelled" : classifyFailureReason(terminal.failureReason);
+      assertionStage = terminal.phase === "cancelled" ? void 0 : classifyAssertionStage(terminal.failureReason);
+      providerConnectionStage = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStage(terminal.failureReason);
+      providerConnectionStageV2 = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStageV2(terminal.failureReason);
+      providerConnectionStageV3 = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStageV3(terminal.failureReason);
+    }
+    await dependencies.setOutput("status", terminal.phase);
+    if (!failed) {
+      stage = "output";
+      await extractOutputArchive(
+        await dependencies.client.downloadTaskOutputs(terminal.taskUid),
+        workspace,
+        outputPaths
+      );
+      result = terminal;
+    }
+  } catch (error) {
+    if (!failed) {
+      failed = true;
+      failurePhase = terminal ? taskFailurePhase(terminal) : error instanceof Error && error.name === "AbortError" ? "cancelled" : "unavailable";
+      failureCategory = stageFailureCategory(stage, error);
+      if (error instanceof StewardRequestFailure) {
+        requestStage = error.stage;
+        httpStatus = error.httpStatus;
+        correlationId = error.correlationId;
+      }
+    }
+    if (created && error instanceof Error && error.name === "AbortError") {
+      try {
+        await dependencies.setOutput("status", "cancelled");
+      } catch {
+      }
+    }
+  }
+  let cleanupCategory = "not-required";
+  if (created) {
+    try {
+      await finalizeAndConfirm(created, dependencies.client, sleep);
+      cleanupCategory = "confirmed";
+    } catch (error) {
+      cleanupCategory = error instanceof FinalizationFailure ? error.category : "unknown";
+      failed = true;
+      failurePhase = terminal ? taskFailurePhase(terminal) : failurePhase;
+    }
+  }
+  if (failed || !result) {
+    throw new StewardRunFailure({
+      version: FAILURE_METADATA_VERSION,
+      phase: failurePhase,
+      failureCategory,
+      cleanupCategory,
+      ...assertionStage === void 0 ? {} : { assertionStage },
+      ...providerConnectionStage === void 0 ? {} : { providerConnectionStage },
+      ...providerConnectionStageV2 === void 0 ? {} : { providerConnectionStageV2 },
+      ...providerConnectionStageV3 === void 0 ? {} : { providerConnectionStageV3 },
+      ...requestStage === void 0 ? {} : { requestStage },
+      ...httpStatus === void 0 ? {} : { httpStatus },
+      ...correlationId === void 0 ? {} : { correlationId }
+    });
+  }
+  return result;
+}
 
 // src/transport.ts
 var import_node_crypto3 = require("node:crypto");

@@ -165,6 +165,10 @@ function isDeclaredOutput(path: string, outputs: readonly string[]): boolean {
   return outputs.some((root) => path === root || path.startsWith(`${root}/`));
 }
 
+function isStrictAncestorOfDeclaredOutput(path: string, outputs: readonly string[]): boolean {
+  return outputs.some((output) => output.startsWith(`${path}/`));
+}
+
 async function ensureSafeDirectories(workspace: string, relativeDirectory: string): Promise<void> {
   if (!relativeDirectory || relativeDirectory === ".") return;
   let current = workspace;
@@ -237,11 +241,17 @@ export async function extractOutputArchive(
           return;
         }
         const relative = normalizeArchivePath(header.name);
-        if (!isDeclaredOutput(relative, outputs)) {
+        const isDeclared = isDeclaredOutput(relative, outputs);
+        const isAncestor = isStrictAncestorOfDeclaredOutput(relative, outputs);
+        if (!isDeclared && !isAncestor) {
           throw new Error(`archive path is not a declared output: ${relative}`);
         }
         if (seen.has(relative)) throw new Error(`duplicate archive entry: ${relative}`);
         seen.add(relative);
+        if (!isDeclared && header.type !== "directory") {
+          stream.resume();
+          throw new Error(`archive ancestor entry type is not allowed: ${header.type ?? "unknown"}`);
+        }
         if (header.type === "directory") {
           stream.resume();
           await ensureSafeDirectories(workspace, relative);

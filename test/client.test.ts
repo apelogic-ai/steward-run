@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { getGitHubOidcToken } from "../src/oidc.ts";
-import { StewardClient, type Task } from "../src/steward-client.ts";
+import {
+  StewardClient,
+  StewardRequestFailure,
+  type Task,
+} from "../src/steward-client.ts";
 
 function jsonResponse(body: unknown, status = 200, headers?: HeadersInit): Response {
   return new Response(JSON.stringify(body), {
@@ -126,6 +130,211 @@ test("Task submission accepts admitted and parked responses with structured delt
   );
 });
 
+test("Task submission accepts only documented non-final pending runtime binding states", async () => {
+  const pending = ["submitted", "parked", "queued"].map((phase) => ({
+    ...task,
+    runtimeUid: null,
+    phase,
+  }));
+  const responses = pending.map((response) => jsonResponse(response, 202));
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () => responses.shift() ?? jsonResponse(task),
+  });
+
+  for (const expected of pending) {
+    assert.deepEqual(
+      await client.submitTask(
+        { workflow: "code-review", codingAgentRuntime: "base" },
+        "a".repeat(64),
+      ),
+      expected,
+    );
+  }
+});
+
+test("pending runtime binding fails closed on null misuse and response contradictions", async () => {
+  const privateToken = "private-binding-bearer";
+  const privateBody = "private-binding-response";
+  const incompatible = [
+    { ...task, runtimeUid: "" },
+    { ...task, runtimeUid: 7 },
+    { ...task, runtimeUid: null, phase: "running" },
+    { ...task, runtimeUid: null, phase: "succeeded" },
+    { ...task, runtimeUid: null, finalized: true },
+    { ...task, runtimeUid: null, runtimeOwnership: "adopted" },
+    { ...task, runtimeUid: null, failureReason: privateBody },
+    { ...task, runtimeUid: null, phase: "cancelled", failureReason: privateBody },
+    { ...task, runtimeUid: null, unknown: privateBody },
+  ];
+
+  for (const payload of incompatible) {
+    const client = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => privateToken,
+      fetch: async () => jsonResponse(payload, 202),
+      maxAttempts: 1,
+    });
+    await assert.rejects(
+      client.submitTask(
+        { workflow: "code-review", codingAgentRuntime: "base" },
+        "a".repeat(64),
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRequestFailure);
+        assert.equal(error.stage, "submit");
+        assert.equal(error.category, "malformed-response");
+        assert.doesNotMatch(error.message, /private-binding/u);
+        return true;
+      },
+    );
+  }
+});
+
+test("unbound cancellation and finalization preserve the real Steward response shape", async () => {
+  const cancelled = { ...task, runtimeUid: null, phase: "cancelled" as const };
+  const finalized = { ...cancelled, finalized: true };
+  const responses = [jsonResponse(cancelled, 202), jsonResponse(finalized, 200)];
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () => responses.shift() ?? jsonResponse(finalized),
+    maxAttempts: 1,
+  });
+
+  assert.deepEqual(await client.finalizeTask(task.taskUid), cancelled);
+  assert.deepEqual(await client.getTask(task.taskUid), finalized);
+});
+
+test("pending-binding polling never discloses bearer tokens or malformed bodies", async () => {
+  const privateToken = "private-poll-bearer";
+  const privateBody = "private-poll-body";
+  const responses = [
+    jsonResponse({ ...task, runtimeUid: null }, 202),
+    jsonResponse({ ...task, runtimeUid: null, phase: "running", privateBody }, 200),
+  ];
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => privateToken,
+    fetch: async () => responses.shift() ?? jsonResponse(task),
+    maxAttempts: 1,
+  });
+
+  const pending = await client.submitTask(
+    { workflow: "code-review", codingAgentRuntime: "base" },
+    "a".repeat(64),
+  );
+  assert.equal(pending.runtimeUid, null);
+  await assert.rejects(client.getTask(pending.taskUid), (error: unknown) => {
+    assert.ok(error instanceof StewardRequestFailure);
+    assert.equal(error.stage, "poll");
+    assert.equal(error.category, "malformed-response");
+    assert.doesNotMatch(error.message, /private-poll/u);
+    return true;
+  });
+});
+
+test("pending runtime binding is restricted to compatible response operations", async () => {
+  const pending = { ...task, runtimeUid: null };
+  const cancelled = { ...pending, phase: "cancelled" };
+  for (const [operation, status, payload] of [
+    ["submit", 201, pending],
+    ["submit", 202, cancelled],
+    ["execute", 202, pending],
+    ["finalize", 202, pending],
+  ] as const) {
+    const client = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => "private-operation-bearer",
+      fetch: async () => jsonResponse(payload, status),
+      maxAttempts: 1,
+    });
+    const request = operation === "submit"
+      ? client.submitTask(
+        { workflow: "code-review", codingAgentRuntime: "base" },
+        "a".repeat(64),
+      )
+      : operation === "execute"
+        ? client.executeTask(task.taskUid)
+        : client.finalizeTask(task.taskUid);
+    await assert.rejects(request, (error: unknown) => {
+      assert.ok(error instanceof StewardRequestFailure);
+      assert.equal(error.stage, operation);
+      assert.equal(error.category, "malformed-response");
+      assert.doesNotMatch(error.message, /private-operation/u);
+      return true;
+    });
+  }
+});
+
+test("Task submission preserves bounded HTTP failure classification", async (context) => {
+  for (const [status, category] of [
+    [400, "validation"],
+    [422, "validation"],
+    [401, "authentication"],
+    [403, "authorization"],
+    [409, "conflict"],
+    [503, "dependency"],
+  ] as const) {
+    await context.test(`${status} is ${category}`, async () => {
+      const secretBody = `private-response-${status}`;
+      const client = new StewardClient({
+        baseUrl: "https://steward.example.test",
+        getToken: async () => "private-bearer-token",
+        fetch: async () =>
+          new Response(secretBody, {
+            status,
+            headers: {
+              "content-type": "application/json",
+              "x-request-id": `request-${status}`,
+            },
+          }),
+        maxAttempts: 1,
+      });
+
+      await assert.rejects(
+        client.submitTask(
+          { workflow: "code-review", codingAgentRuntime: "base" },
+          "a".repeat(64),
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof StewardRequestFailure);
+          assert.equal(error.stage, "submit");
+          assert.equal(error.category, category);
+          assert.equal(error.httpStatus, status);
+          assert.equal(error.correlationId, `request-${status}`);
+          assert.doesNotMatch(error.message, /private-response|private-bearer-token/u);
+          return true;
+        },
+      );
+    });
+  }
+});
+
+test("Task submission rejects malformed successful responses without exposing their body", async () => {
+  const secretBody = "private-malformed-response";
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "private-bearer-token",
+    fetch: async () =>
+      jsonResponse(secretBody, 201, { "x-correlation-id": "correlation-malformed" }),
+  });
+
+  await assert.rejects(
+    client.submitTask({ workflow: "code-review", codingAgentRuntime: "base" }, "a".repeat(64)),
+    (error: unknown) => {
+      assert.ok(error instanceof StewardRequestFailure);
+      assert.equal(error.stage, "submit");
+      assert.equal(error.category, "malformed-response");
+      assert.equal(error.httpStatus, 201);
+      assert.equal(error.correlationId, "correlation-malformed");
+      assert.doesNotMatch(error.message, /private-malformed-response|private-bearer-token/u);
+      return true;
+    },
+  );
+});
+
 test("the Steward client retries transient responses and honors Retry-After", async () => {
   const delays: number[] = [];
   let calls = 0;
@@ -166,21 +375,142 @@ test("input upload retries recreate the archive stream", async () => {
   assert.equal(archives, 2);
 });
 
-test("transport failures retain only a safe error category", async () => {
-  const secret = "not-for-error-output";
+test("timeout and transport failures remain distinct and bounded", async (context) => {
+  for (const [code, category] of [
+    ["ETIMEDOUT", "timeout"],
+    ["ECONNRESET", "transport"],
+  ] as const) {
+    await context.test(category, async () => {
+      const secret = `not-for-${category}-output`;
+      const client = new StewardClient({
+        baseUrl: "https://steward.example.test",
+        getToken: async () => "token",
+        fetch: async () => {
+          throw Object.assign(new Error(secret), { code });
+        },
+        maxAttempts: 1,
+      });
+      await assert.rejects(client.getTask(task.taskUid), (error: unknown) => {
+        assert.ok(error instanceof StewardRequestFailure);
+        assert.equal(error.stage, "poll");
+        assert.equal(error.category, category);
+        assert.equal(error.httpStatus, undefined);
+        assert.equal(error.correlationId, undefined);
+        assert.doesNotMatch(error.message, new RegExp(secret, "u"));
+        return true;
+      });
+    });
+  }
+});
+
+test("binding GET cancellation bounds never-resolving token and fetch operations", async (context) => {
+  for (const stalled of ["token", "fetch"] as const) {
+    await context.test(stalled, async () => {
+      const controller = new AbortController();
+      let observedSignal: AbortSignal | undefined;
+      const client = new StewardClient({
+        baseUrl: "https://steward.example.test",
+        getToken: async (signal) => {
+          if (stalled === "token") {
+            observedSignal = signal;
+            return new Promise<string>(() => undefined);
+          }
+          return "token";
+        },
+        fetch: async (_input, init) => {
+          if (stalled === "fetch") {
+            observedSignal = init?.signal ?? undefined;
+            return new Promise<Response>(() => undefined);
+          }
+          return jsonResponse(task);
+        },
+        maxAttempts: 1,
+      });
+      const cancellation = setTimeout(() => controller.abort(), 10);
+      try {
+        await assert.rejects(
+          client.getTask(task.taskUid, { signal: controller.signal }),
+          (error: unknown) => {
+            assert.ok(error instanceof Error);
+            assert.equal(error.name, "AbortError");
+            assert.doesNotMatch(error.message, /token|response-body/u);
+            return true;
+          },
+        );
+        assert.equal(observedSignal?.aborted, true);
+      } finally {
+        clearTimeout(cancellation);
+      }
+    });
+  }
+});
+
+test("binding GET deadline bounds never-resolving token and fetch operations", async (context) => {
+  for (const stalled of ["token", "fetch"] as const) {
+    await context.test(stalled, async () => {
+      let observedSignal: AbortSignal | undefined;
+      const client = new StewardClient({
+        baseUrl: "https://steward.example.test",
+        getToken: async (signal) => {
+          if (stalled === "token") {
+            observedSignal = signal;
+            return new Promise<string>(() => undefined);
+          }
+          return "token";
+        },
+        fetch: async (_input, init) => {
+          if (stalled === "fetch") {
+            observedSignal = init?.signal ?? undefined;
+            return new Promise<Response>(() => undefined);
+          }
+          return jsonResponse(task);
+        },
+        maxAttempts: 1,
+      });
+      await assert.rejects(
+        client.getTask(task.taskUid, { deadline: Date.now() + 10 }),
+        (error: unknown) => {
+          assert.ok(error instanceof StewardRequestFailure);
+          assert.equal(error.stage, "poll");
+          assert.equal(error.category, "timeout");
+          assert.equal(error.httpStatus, undefined);
+          assert.equal(error.correlationId, undefined);
+          return true;
+        },
+      );
+      assert.equal(observedSignal?.aborted, true);
+    });
+  }
+});
+
+test("binding GET deadline bounds and cancels a never-ending JSON response body", async () => {
+  let bodyCancelled = false;
   const client = new StewardClient({
     baseUrl: "https://steward.example.test",
     getToken: async () => "token",
-    fetch: async () => {
-      throw Object.assign(new Error(secret), { code: "ECONNRESET" });
+    fetch: async (_input, _init) => {
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          cancel: () => void (bodyCancelled = true),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
     },
     maxAttempts: 1,
   });
-  await assert.rejects(client.getTask(task.taskUid), (error: Error) => {
-    assert.match(error.message, /failed after retries \(network\)/u);
-    assert.doesNotMatch(error.message, new RegExp(secret, "u"));
-    return true;
-  });
+
+  await assert.rejects(
+    client.getTask(task.taskUid, { deadline: Date.now() + 10 }),
+    (error: unknown) => {
+      assert.ok(error instanceof StewardRequestFailure);
+      assert.equal(error.stage, "poll");
+      assert.equal(error.category, "timeout");
+      assert.equal(error.httpStatus, undefined);
+      assert.equal(error.correlationId, undefined);
+      return true;
+    },
+  );
+  assert.equal(bodyCancelled, true);
 });
 
 test("the Steward client fails closed on incompatible payloads and unsafe base URLs", async () => {
@@ -199,5 +529,10 @@ test("the Steward client fails closed on incompatible payloads and unsafe base U
     fetch: async () => jsonResponse({ ...task, phase: "surprise" }),
     sleep: async () => undefined,
   });
-  await assert.rejects(client.getTask(task.taskUid), /incompatible Task response/);
+  await assert.rejects(client.getTask(task.taskUid), (error: unknown) => {
+    assert.ok(error instanceof StewardRequestFailure);
+    assert.equal(error.stage, "poll");
+    assert.equal(error.category, "malformed-response");
+    return true;
+  });
 });

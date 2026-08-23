@@ -16,6 +16,14 @@ stdout/stderr, headers, tokens, assertions, credentials, and Secret values are n
 GitHub metadata or the terminal error. Unknown details map to `unknown`; successful runs do not
 publish failure metadata.
 
+When a Steward API request itself fails, the existing failure contract is accompanied by
+`steward-run.request-failure/v1`. That bounded signal identifies the request stage and category,
+plus the numeric HTTP status and a syntactically constrained `X-Correlation-ID` or `X-Request-ID`
+when the response supplies them. Submit failures distinguish validation (400/422), authentication
+(401), authorization (403), conflict (409), dependency failures (including 503), timeout,
+transport, and malformed successful responses. Failure response bodies and all other headers are
+ignored.
+
 Governed smoke workflows may use the exact agent exit codes 70–75 for
 `provider-connection`, `provider-token-grant`, `provider-authorization`, `provider-upstream`,
 `assertion-mismatch`, and `workflow-cleanup`, respectively. Exact agent exit 76 maps to
@@ -100,6 +108,26 @@ For a standards-based service that projects rotating credentials into the job, s
 accepts only JWTs with `iat` and `exp` whose total lifetime is at most one hour. Exactly one of
 `identity-exchange-url`, `oidc-audience`, and `bearer-token-file` is required. Token contents must
 never be supplied as action inputs.
+
+Local cross-product harnesses should use that same `bearer-token-file` input with a short-lived,
+pre-minted test JWT. This is the supported non-GitHub invocation seam; it does not bypass token
+validation or introduce a second Steward client.
+
+The minimal local invocation contract is:
+
+- provide `workflow`, declared workspace-relative `inputs` and `outputs`, the loopback/local
+  `steward-api-url`, and `bearer-token-file` through the action inputs (or their corresponding
+  `STEWARD_RUN_*` environment variables when executing the bundled entry point);
+- point `GITHUB_WORKSPACE` at the harness workspace and provide the ordinary bounded
+  `GITHUB_REPOSITORY`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `GITHUB_JOB`, and `GITHUB_OUTPUT`
+  bookkeeping values used for idempotency and results;
+- pre-create every declared input path. Steward-run creates only declared output paths recovered
+  from the Task archive;
+- read successful `status`, `task-uid`, and `runtime-uid` values from `GITHUB_OUTPUT`; on failure,
+  read only the versioned bounded annotations/summary described above.
+
+The token file itself is never a result artifact. Harnesses must mount it outside the declared
+input/output paths and remove it with the disposable cluster.
 
 Dispatching the release workflow with version `X.Y.Z` builds `linux/amd64` under a unique candidate
 tag and attaches provenance and an SBOM. The workflow keylessly signs the OCI index using OCI 1.1,

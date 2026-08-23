@@ -61,11 +61,19 @@ The action runs inside the ARC runner job and does exactly two categories of thi
    `ACTIONS_ID_TOKEN_REQUEST_TOKEN`; the workflow must grant `id-token: write`).
 2. **Call Steward's REST API** as the translator: exchange the GitHub OIDC token server-side for a
    short-lived `steward-task-api` token, then submit a Steward `Task`. The exchange validates the
-   calling workflow and resolves the actor. Steward selects the versioned workflow envelope,
-   provisions or adopts its `AgentRuntime`, and returns the durable Task identity. The action
-   uploads inputs, requests execution, polls Task status through any approval hold, collects
+   calling workflow and resolves the actor. Steward selects the versioned workflow envelope and
+   returns the durable Task identity. For controller-owned creation, that first accepted response
+   has `runtimeUid: null`; the action polls that exact Task until the controller binds the immutable
+   runtime UID, and only then exposes `runtime-uid`, uploads inputs, or requests execution. The action
+   polls Task status through any approval hold, collects
    outputs after success, and requests finalization. A provisioned runtime is terminated; an
-   adopted runtime is detached (see D2).
+   adopted runtime is detached (see D2). If cancellation happens before binding, Steward keeps
+   `runtimeUid: null` while the cancelled Task reaches `finalized: true`; the action confirms that
+   cleanup without inventing or publishing a runtime UID.
+
+The controller-binding wait is bounded by both 60 attempts and a ten-minute wall-clock deadline.
+Cancellation and that deadline propagate through binding sleeps, token acquisition, and the
+in-flight Task-status request; a stalled credential provider or HTTP fetch cannot extend the wait.
 
 Flow: `download-artifact` (regular step) → `steward-run` (materialise in → API provision → run
 → collect out) → `upload-artifact` (regular step). The agentic step is invisible to the
@@ -128,8 +136,9 @@ versioned `steward-run.failure/v1` diagnostic contract. It contains exactly:
 The failure allowlist is `provider-connection`, `provider-token-grant`, `provider-grant`,
 `provider-protocol`,
 `provider-authorization`, `provider-upstream`, `assertion-mismatch`, `workflow-cleanup`,
-`authentication`, `authorization`, `configuration`, `dependency`, `input-output`, `runtime`,
-`timeout`, `execution`, `cancelled`, and `unknown`. Exact agent exit codes 70 through 75 map to
+`authentication`, `authorization`, `validation`, `conflict`, `configuration`, `dependency`,
+`transport`, `malformed-response`, `input-output`, `runtime`, `timeout`, `execution`, `cancelled`,
+and `unknown`. Exact agent exit codes 70 through 75 map to
 `provider-connection`, `provider-token-grant`, `provider-authorization`, `provider-upstream`,
 `assertion-mismatch`, and `workflow-cleanup`, respectively. Exact agent exit 76 maps to
 `provider-grant`; exact agent exit 77 maps to `provider-protocol`. Except for the staged assertion
@@ -146,6 +155,15 @@ retain `assertion-mismatch` and add one independently versioned, allowlisted
 summary row remain byte-for-byte compatible; a staged assertion adds a second bounded annotation
 and a second summary table. Legacy exact exit 74 remains `assertion-mismatch` with no stage.
 Malformed or decorated reasons, unknown codes, and runtime-supplied text cannot select a stage.
+
+A Steward HTTP/request failure adds a separately versioned
+`steward-run.request-failure/v1` annotation and summary row while retaining the original v1
+failure record. The request signal contains only an allowlisted stage, its bounded category, an
+optional integer HTTP status, and an optional correlation identifier accepted only from
+`X-Correlation-ID` or `X-Request-ID` after strict length and character validation. Validation
+(400/422), authentication (401), authorization (403), conflict (409), dependency (including 503),
+timeout, transport, and malformed-response remain distinct. Response bodies and arbitrary headers
+are never parsed into diagnostics.
 
 Only those literals are rendered. Arbitrary failure reasons and command output, HTTP bodies or
 headers, JWTs, assertions, provider tokens, API keys, cookies, credentials, and Kubernetes Secret

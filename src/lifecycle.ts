@@ -14,18 +14,24 @@ import {
   type AssertionStage,
   type CleanupCategory,
   type FailureCategory,
+  type FailureMetadata,
   type FailurePhase,
   type ProviderConnectionStage,
   type ProviderConnectionStageV2,
   type ProviderConnectionStageV3,
 } from "./failure-metadata.js";
-import type { Task, TaskSubmissionRequest } from "./steward-client.js";
+import {
+  StewardRequestFailure,
+  type Task,
+  type TaskRequestOptions,
+  type TaskSubmissionRequest,
+} from "./steward-client.js";
 
 export interface TaskClient {
   submitTask(request: TaskSubmissionRequest, idempotencyKey: string): Promise<Task>;
   uploadTaskInputs(taskUid: string, createArchive: () => Promise<Readable>): Promise<void>;
   executeTask(taskUid: string): Promise<Task>;
-  getTask(taskUid: string): Promise<Task>;
+  getTask(taskUid: string, options?: TaskRequestOptions): Promise<Task>;
   downloadTaskOutputs(taskUid: string): Promise<Readable>;
   finalizeTask(taskUid: string): Promise<Task>;
 }
@@ -36,9 +42,14 @@ interface LifecycleDependencies {
   setOutput: (name: "status" | "task-uid" | "runtime-uid", value: string) => Promise<void>;
   sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
+  runtimeBindingTimeoutMilliseconds?: number;
 }
 
 const terminalPhases = new Set<Task["phase"]>(["succeeded", "failed", "cancelled"]);
+const runtimeBindingPollAttempts = 60;
+const runtimeBindingTimeoutMilliseconds = 10 * 60 * 1_000;
+
+type BoundTask = Task & { runtimeUid: string };
 
 function identityField(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name]?.trim();
@@ -62,20 +73,114 @@ function abortError(): Error {
   return error;
 }
 
-async function pollUntilTerminal(
+function timeoutError(): Error {
+  return new StewardRequestFailure("poll", "timeout");
+}
+
+function boundTask(task: Task): BoundTask | undefined {
+  return task.runtimeUid === null ? undefined : (task as BoundTask);
+}
+
+async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw abortError();
+  let rejectAbort: ((error: Error) => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const cancel = () => rejectAbort?.(abortError());
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    return await Promise.race([operation, aborted]);
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
+function assertPreExecutionTask(task: BoundTask): BoundTask {
+  if (task.finalized || terminalPhases.has(task.phase)) {
+    throw new Error("Steward bound Task in an incompatible pre-execution state");
+  }
+  return task;
+}
+
+async function pollUntilRuntimeBound(
   initial: Task,
   client: TaskClient,
   sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>,
   signal?: AbortSignal,
+  timeoutMilliseconds = runtimeBindingTimeoutMilliseconds,
+): Promise<BoundTask> {
+  const alreadyBound = boundTask(initial);
+  if (alreadyBound) return assertPreExecutionTask(alreadyBound);
+
+  const controller = new AbortController();
+  let deadlineExpired = false;
+  const timeout = Math.max(1, timeoutMilliseconds);
+  const deadline = Date.now() + timeout;
+  const expire = setTimeout(() => {
+    deadlineExpired = true;
+    controller.abort();
+  }, timeout);
+  const cancel = () => controller.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) controller.abort();
+  try {
+    let interval = 250;
+    for (let attempt = 0; attempt < runtimeBindingPollAttempts; attempt += 1) {
+      if (controller.signal.aborted) {
+        if (signal?.aborted) throw abortError();
+        throw timeoutError();
+      }
+      await abortable(sleep(interval, controller.signal), controller.signal);
+      const current = await abortable(
+        client.getTask(initial.taskUid, {
+          signal: controller.signal,
+          deadline,
+        }),
+        controller.signal,
+      );
+      if (
+        current.taskUid !== initial.taskUid ||
+        current.runtimeOwnership !== initial.runtimeOwnership
+      ) {
+        throw new Error("Steward changed Task identity while waiting for runtime binding");
+      }
+      if (current.runtimeUid === null && current.phase === "cancelled") throw abortError();
+      const currentBound = boundTask(current);
+      if (currentBound) return assertPreExecutionTask(currentBound);
+      interval = Math.min(interval * 2, 10_000);
+    }
+    throw timeoutError();
+  } catch (error) {
+    if (controller.signal.aborted) {
+      if (signal?.aborted) throw abortError();
+      if (deadlineExpired) throw timeoutError();
+    }
+    throw error;
+  } finally {
+    clearTimeout(expire);
+    signal?.removeEventListener("abort", cancel);
+  }
+}
+
+async function pollUntilTerminal(
+  initial: BoundTask,
+  client: TaskClient,
+  sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<Task> {
-  let current = initial;
+  let current: Task = initial;
   let interval = 1_000;
   while (!terminalPhases.has(current.phase)) {
     if (signal?.aborted) throw abortError();
     await sleep(interval, signal);
     if (signal?.aborted) throw abortError();
     current = await client.getTask(current.taskUid);
-    if (current.taskUid !== initial.taskUid || current.runtimeUid !== initial.runtimeUid) {
+    if (
+      current.taskUid !== initial.taskUid ||
+      current.runtimeUid !== initial.runtimeUid ||
+      current.runtimeOwnership !== initial.runtimeOwnership
+    ) {
       throw new Error("Steward changed Task identity while polling");
     }
     interval = Math.min(interval * 2, 10_000);
@@ -99,13 +204,27 @@ async function finalizeAndConfirm(
   sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>,
 ): Promise<void> {
   try {
+    let finalizationRuntimeUid = task.runtimeUid;
     let current = await client.finalizeTask(task.taskUid);
+    if (
+      current.taskUid !== task.taskUid ||
+      current.runtimeOwnership !== task.runtimeOwnership ||
+      (finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid)
+    ) {
+      throw new FinalizationFailure("identity-mismatch");
+    }
+    finalizationRuntimeUid ??= current.runtimeUid;
     for (let attempt = 0; !current.finalized && attempt < 120; attempt += 1) {
       await sleep(Math.min(250 * 2 ** attempt, 2_000));
       current = await client.getTask(task.taskUid);
-      if (current.taskUid !== task.taskUid || current.runtimeUid !== task.runtimeUid) {
+      if (
+        current.taskUid !== task.taskUid ||
+        current.runtimeOwnership !== task.runtimeOwnership ||
+        (finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid)
+      ) {
         throw new FinalizationFailure("identity-mismatch");
       }
+      finalizationRuntimeUid ??= current.runtimeUid;
     }
     if (!current.finalized) throw new FinalizationFailure("confirmation-timeout");
   } catch (error) {
@@ -128,7 +247,9 @@ function taskFailurePhase(task: Task | undefined): FailurePhase {
 }
 
 function stageFailureCategory(stage: WorkflowStage, error: unknown): FailureCategory {
+  if (error instanceof StewardRequestFailure) return error.category;
   if (error instanceof Error && error.name === "AbortError") return "cancelled";
+  if (error instanceof Error && error.name === "TimeoutError") return "timeout";
   switch (stage) {
     case "input":
     case "upload":
@@ -170,6 +291,9 @@ export async function runWorkflow(
   let providerConnectionStage: ProviderConnectionStage | undefined;
   let providerConnectionStageV2: ProviderConnectionStageV2 | undefined;
   let providerConnectionStageV3: ProviderConnectionStageV3 | undefined;
+  let requestStage: FailureMetadata["requestStage"];
+  let httpStatus: FailureMetadata["httpStatus"];
+  let correlationId: FailureMetadata["correlationId"];
   let failed = false;
   let stage: WorkflowStage = "input";
   try {
@@ -185,15 +309,37 @@ export async function runWorkflow(
       },
       createIdempotencyKey(dependencies.environment),
     );
+    const expectedOwnership = config.agentRuntime ? "adopted" : "provisioned";
+    if (created.runtimeOwnership !== expectedOwnership) {
+      throw new Error("Steward returned Task ownership inconsistent with the submission");
+    }
     await dependencies.setOutput("task-uid", created.taskUid);
-    await dependencies.setOutput("runtime-uid", created.runtimeUid);
+    stage = "poll";
+    const bound = await pollUntilRuntimeBound(
+      created,
+      dependencies.client,
+      sleep,
+      dependencies.signal,
+      dependencies.runtimeBindingTimeoutMilliseconds,
+    );
+    created = bound;
+    await dependencies.setOutput("runtime-uid", bound.runtimeUid);
     stage = "upload";
-    await dependencies.client.uploadTaskInputs(created.taskUid, createArchive);
+    await dependencies.client.uploadTaskInputs(bound.taskUid, createArchive);
     stage = "execute";
-    const executing = await dependencies.client.executeTask(created.taskUid);
+    const executing = await dependencies.client.executeTask(bound.taskUid);
+    const executingBound = boundTask(executing);
+    if (
+      !executingBound ||
+      executingBound.taskUid !== bound.taskUid ||
+      executingBound.runtimeUid !== bound.runtimeUid ||
+      executingBound.runtimeOwnership !== bound.runtimeOwnership
+    ) {
+      throw new Error("Steward changed Task identity while requesting execution");
+    }
     stage = "poll";
     terminal = await pollUntilTerminal(
-      executing,
+      executingBound,
       dependencies.client,
       sleep,
       dependencies.signal,
@@ -234,6 +380,11 @@ export async function runWorkflow(
         ? taskFailurePhase(terminal)
         : (error instanceof Error && error.name === "AbortError" ? "cancelled" : "unavailable");
       failureCategory = stageFailureCategory(stage, error);
+      if (error instanceof StewardRequestFailure) {
+        requestStage = error.stage;
+        httpStatus = error.httpStatus;
+        correlationId = error.correlationId;
+      }
     }
     if (created && error instanceof Error && error.name === "AbortError") {
       try {
@@ -266,6 +417,9 @@ export async function runWorkflow(
       ...(providerConnectionStage === undefined ? {} : { providerConnectionStage }),
       ...(providerConnectionStageV2 === undefined ? {} : { providerConnectionStageV2 }),
       ...(providerConnectionStageV3 === undefined ? {} : { providerConnectionStageV3 }),
+      ...(requestStage === undefined ? {} : { requestStage }),
+      ...(httpStatus === undefined ? {} : { httpStatus }),
+      ...(correlationId === undefined ? {} : { correlationId }),
     });
   }
   return result;

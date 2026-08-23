@@ -6,6 +6,7 @@ import {
   PROVIDER_CONNECTION_STAGE_METADATA_VERSION,
   PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION,
   PROVIDER_CONNECTION_STAGE_V3_METADATA_VERSION,
+  REQUEST_FAILURE_METADATA_VERSION,
   StewardRunFailure,
   assertionStages,
   classifyAssertionStage,
@@ -20,6 +21,8 @@ import {
   providerConnectionStages,
   providerConnectionStagesV2,
   providerConnectionStagesV3,
+  requestFailureCategories,
+  requestStages,
   type FailureMetadata,
 } from "../src/failure-metadata.ts";
 
@@ -44,8 +47,12 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
     "workflow-cleanup",
     "authentication",
     "authorization",
+    "validation",
+    "conflict",
     "configuration",
     "dependency",
+    "transport",
+    "malformed-response",
     "input-output",
     "runtime",
     "timeout",
@@ -80,6 +87,88 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
   assert.equal(classifyFailureReason("command exited unsuccessfully"), "execution");
   assert.equal(classifyFailureReason("unrecognized server detail"), "unknown");
   assert.equal(classifyFailureReason(undefined), "unknown");
+});
+
+test("request failures publish a separate bounded diagnostic contract", async () => {
+  assert.equal(REQUEST_FAILURE_METADATA_VERSION, "steward-run.request-failure/v1");
+  assert.deepEqual(requestStages, ["submit", "upload", "execute", "poll", "output", "finalize"]);
+  assert.deepEqual(requestFailureCategories, [
+    "validation",
+    "authentication",
+    "authorization",
+    "conflict",
+    "dependency",
+    "timeout",
+    "transport",
+    "malformed-response",
+  ]);
+
+  const annotations: string[] = [];
+  const summaries: string[] = [];
+  await publishFailureMetadata(
+    {
+      version: FAILURE_METADATA_VERSION,
+      phase: "unavailable",
+      failureCategory: "authentication",
+      cleanupCategory: "not-required",
+      requestStage: "submit",
+      httpStatus: 401,
+      correlationId: "request-01HZABC",
+    },
+    {
+      writeAnnotation: async (value) => void annotations.push(value),
+      writeStepSummary: async (value) => void summaries.push(value),
+    },
+  );
+
+  assert.deepEqual(annotations, [
+    "steward-run.failure/v1 phase=unavailable failure-category=authentication cleanup-category=not-required",
+    "steward-run.request-failure/v1 stage=submit category=authentication status=401 correlation-id=request-01HZABC",
+  ]);
+  assert.match(
+    summaries[0] ?? "",
+    /\| steward-run\.request-failure\/v1 \| submit \| authentication \| 401 \| request-01HZABC \|/u,
+  );
+});
+
+test("request diagnostics reject unbounded or hostile header data", async () => {
+  const visible: string[] = [];
+  await publishFailureMetadata(
+    {
+      version: FAILURE_METADATA_VERSION,
+      phase: "unavailable",
+      failureCategory: "authentication",
+      cleanupCategory: "not-required",
+      requestStage: "submit",
+      httpStatus: 999,
+      correlationId: "Bearer private-token\nset-cookie: private-session",
+    },
+    {
+      writeAnnotation: async (value) => void visible.push(value),
+      writeStepSummary: async (value) => void visible.push(value),
+    },
+  );
+  const rendered = visible.join("\n");
+  assert.match(rendered, /steward-run\.request-failure\/v1 stage=submit category=authentication/u);
+  assert.doesNotMatch(rendered, /status=999|Bearer|private-token|set-cookie|private-session/u);
+
+  const noRequestSignal: string[] = [];
+  await publishFailureMetadata(
+    {
+      version: FAILURE_METADATA_VERSION,
+      phase: "failed",
+      failureCategory: "runtime",
+      cleanupCategory: "confirmed",
+      requestStage: "submit",
+      httpStatus: 401,
+      correlationId: "request-unsafe-context",
+    },
+    {
+      writeAnnotation: async (value) => void noRequestSignal.push(value),
+      writeStepSummary: async (value) => void noRequestSignal.push(value),
+    },
+  );
+  assert.doesNotMatch(noRequestSignal.join("\n"), /request-failure|request-unsafe-context/u);
 });
 
 test("provider-connection exits map to an independently versioned bounded signal", async () => {
