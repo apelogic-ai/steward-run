@@ -164,6 +164,19 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   };
 
   assert.ok(workflow.on.workflow_call);
+  assert.deepEqual(
+    Object.keys(workflow.on.workflow_call.inputs).sort(),
+    [
+      "agent-runtime",
+      "identity-exchange-url",
+      "input-artifact",
+      "output-artifact",
+      "runner-label",
+      "steward-api-url",
+      "steward-ca-certificate-file",
+      "workflow",
+    ].sort(),
+  );
   for (const name of [
     "identity-exchange-url",
     "input-artifact",
@@ -178,6 +191,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.equal(workflow.on.workflow_call.inputs["action-commit"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["identity-exchange-url"]?.required, true);
   assert.equal(workflow.on.workflow_call.inputs["runner-label"]?.required, true);
+  assert.equal(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.deepEqual(
     Object.keys(workflow.on.workflow_call.outputs).sort(),
     ["runtime-uid", "status", "task-uid"],
