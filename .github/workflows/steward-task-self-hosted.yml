@@ -27,6 +27,10 @@ on:
         description: GitHub OIDC exchange endpoint
         required: true
         type: string
+      oidc-audience:
+        description: Exact GitHub OIDC audience accepted by the Identity exchange
+        required: true
+        type: string
       steward-ca-certificate-file:
         description: Filesystem path to the Steward CA bundle
         required: false
@@ -72,6 +76,7 @@ jobs:
           outputs: out
           steward-api-url: ${{ inputs.steward-api-url }}
           identity-exchange-url: ${{ inputs.identity-exchange-url }}
+          oidc-audience: ${{ inputs.oidc-audience }}
           steward-ca-certificate-file: ${{ inputs.steward-ca-certificate-file }}
           agent-runtime: ${{ inputs.agent-runtime }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

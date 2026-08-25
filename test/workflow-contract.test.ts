@@ -257,7 +257,8 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   assert.match(source, new RegExp(`uses:\\s*apelogic-ai/steward-run@${actionCommit}`, "u"));
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /actions\/upload-artifact@/);
-  assert.doesNotMatch(source, /amazonaws\.com|container:|oidc-audience|bearer-token|identity\.dev|cluster|secret/iu);
+  assert.match(source, /oidc-audience:\s*\$\{\{ inputs\.oidc-audience \}\}/u);
+  assert.doesNotMatch(source, /amazonaws\.com|container:|bearer-token|identity\.dev|cluster|secret/iu);
 });
 
 test("CI and release execute the governed job-container runtime contract", async () => {
