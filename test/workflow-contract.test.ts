@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parse } from "yaml";
 
-const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml"];
+const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml", "steward-task-self-hosted.yml"];
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
@@ -235,6 +235,29 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   const action = source.indexOf(`uses: apelogic-ai/steward-run@${actionCommit}`);
   const upload = source.indexOf("actions/upload-artifact@");
   assert.ok(download >= 0 && download < action && action < upload);
+});
+
+test("the self-hosted reusable workflow preserves GitHub OIDC provenance without an ECR job container", async () => {
+  const source = await readFile(
+    new URL("../.github/workflows/steward-task-self-hosted.yml", import.meta.url),
+    "utf8",
+  );
+  const workflow = parse(source) as {
+    on: { workflow_call: { inputs: Record<string, unknown>; outputs: Record<string, unknown> } };
+    jobs: Record<string, { container?: unknown; permissions?: Record<string, string>; "runs-on"?: string; "timeout-minutes"?: number }>;
+  };
+
+  assert.ok(workflow.on.workflow_call);
+  assert.deepEqual(Object.keys(workflow.on.workflow_call.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
+  assert.equal(workflow.jobs.governed?.["runs-on"], "${{ inputs.runner-label }}");
+  assert.equal(workflow.jobs.governed?.["timeout-minutes"], 15);
+  assert.equal(workflow.jobs.governed?.permissions?.contents, "read");
+  assert.equal(workflow.jobs.governed?.permissions?.["id-token"], "write");
+  assert.equal(workflow.jobs.governed?.container, undefined);
+  assert.match(source, new RegExp(`uses:\\s*apelogic-ai/steward-run@${actionCommit}`, "u"));
+  assert.match(source, /actions\/download-artifact@/);
+  assert.match(source, /actions\/upload-artifact@/);
+  assert.doesNotMatch(source, /amazonaws\.com|container:|oidc-audience|bearer-token|identity\.dev|cluster|secret/iu);
 });
 
 test("CI and release execute the governed job-container runtime contract", async () => {

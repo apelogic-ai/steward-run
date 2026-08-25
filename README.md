@@ -95,6 +95,14 @@ digest in `steward-task.yml`. The image is not a workflow input and the workflow
 registry credential; Kubernetes-mode ARC nodes use their scoped ECR pull access. The container
 provides Bash, Node, Git, and tar for artifact and composite-action steps.
 
+For a dedicated self-hosted runner that must not pull the ARC job container, use the separately
+pinned `steward-task-self-hosted.yml` reusable workflow. It has the same artifact, immutable
+Action, output, and `id-token: write` contract, so GitHub emits an exact `job_workflow_ref`; it
+does not declare a container. The runner operator is responsible for a vetted Node 24, Bash,
+Git, and tar installation and must restrict the runner label to that local environment. This is a
+separate workflow identity and must be authorized explicitly by the identity policy; it is not a
+caller switch on the ARC workflow.
+
 `steward-ca-certificate-file` is an optional filesystem path to a PEM CA bundle used only for
 Steward API TLS. Missing or malformed files, an untrusted chain, and hostname mismatch fail closed.
 Remote Steward URLs must use HTTPS; plaintext HTTP is accepted only for loopback tests.
