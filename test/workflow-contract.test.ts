@@ -7,7 +7,7 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "9203b06ec12ecbaa6f62d6f1c1627ae6e4cde02b";
+const actionCommit = "19230cc59a6b1246224912961e35c7044b0808d3";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -165,7 +165,6 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
 
   assert.ok(workflow.on.workflow_call);
   for (const name of [
-    "coding-agent-runtime",
     "identity-exchange-url",
     "input-artifact",
     "output-artifact",
@@ -175,6 +174,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   ]) {
     assert.equal(workflow.on.workflow_call.inputs[name]?.type, "string", name);
   }
+  assert.equal(workflow.on.workflow_call.inputs["coding-agent-runtime"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["action-commit"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["identity-exchange-url"]?.required, true);
   assert.equal(workflow.on.workflow_call.inputs["runner-label"]?.required, true);
@@ -211,6 +211,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.match(source, /identity-exchange-url:\s*\$\{\{ inputs\.identity-exchange-url \}\}/);
   assert.match(source, /inputs:\s*in/);
   assert.match(source, /outputs:\s*out/);
+  assert.doesNotMatch(source, /coding-agent-runtime|codingAgentRuntime/u);
   assert.match(source, /actions\/upload-artifact@/);
   assert.match(source, /name:\s*\$\{\{ inputs\.output-artifact \}\}/);
   assert.match(source, /path:\s*out/);

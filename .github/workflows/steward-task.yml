@@ -37,11 +37,6 @@ on:
         required: false
         type: string
         default: ""
-      coding-agent-runtime:
-        description: Versioned coding-agent runtime
-        required: false
-        type: string
-        default: claude-code@2.1.220
     outputs:
       status:
         description: Terminal Steward Task phase
@@ -72,7 +67,7 @@ jobs:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: apelogic-ai/steward-run@9203b06ec12ecbaa6f62d6f1c1627ae6e4cde02b
+        uses: apelogic-ai/steward-run@19230cc59a6b1246224912961e35c7044b0808d3
         with:
           workflow: ${{ inputs.workflow }}
           inputs: in
@@ -81,7 +76,6 @@ jobs:
           identity-exchange-url: ${{ inputs.identity-exchange-url }}
           steward-ca-certificate-file: ${{ inputs.steward-ca-certificate-file }}
           agent-runtime: ${{ inputs.agent-runtime }}
-          coding-agent-runtime: ${{ inputs.coding-agent-runtime }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.output-artifact }}
