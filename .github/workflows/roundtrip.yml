@@ -53,7 +53,7 @@ jobs:
       - id: governed
         uses: ./
         with:
-          workflow: copy-smoke
+          workflow: repository-review@1
           inputs: in
           outputs: out
           steward-api-url: ${{ steps.mock.outputs.url }}

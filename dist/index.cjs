@@ -2498,6 +2498,13 @@ function required(environment, name) {
   }
   return value;
 }
+function requiredVerbatim(environment, name) {
+  const value = environment[name];
+  if (!value?.trim()) {
+    throw new Error(`required action input ${name} is missing`);
+  }
+  return value;
+}
 function readActionConfig(environment) {
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
   const identityExchangeUrl = environment.STEWARD_RUN_IDENTITY_EXCHANGE_URL?.trim();
@@ -2526,12 +2533,11 @@ function readActionConfig(environment) {
     }
   }
   return {
-    workflow: required(environment, "STEWARD_RUN_WORKFLOW"),
+    workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
     inputPaths: required(environment, "STEWARD_RUN_INPUTS"),
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
     apiUrl,
     ...agentRuntime ? { agentRuntime } : {},
-    codingAgentRuntime: environment.STEWARD_RUN_CODING_AGENT_RUNTIME?.trim() || "claude-code@2.1.220",
     authentication: identityExchangeUrl ? { kind: "github-oidc-exchange", url: identityExchangeUrl } : oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile },
     ...caCertificateFile ? { caCertificateFile } : {}
   };
@@ -3818,7 +3824,6 @@ async function runWorkflow(config, workspace, dependencies) {
     created = await dependencies.client.submitTask(
       {
         workflow: config.workflow,
-        codingAgentRuntime: config.codingAgentRuntime,
         ...config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}
       },
       createIdempotencyKey(dependencies.environment)

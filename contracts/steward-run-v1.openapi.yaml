@@ -143,10 +143,9 @@ components:
     TaskSubmissionRequest:
       type: object
       additionalProperties: false
-      required: [workflow, codingAgentRuntime]
+      required: [workflow]
       properties:
         workflow: { type: string, minLength: 1 }
-        codingAgentRuntime: { type: string, minLength: 1 }
         agentRuntimeUid: { type: string, minLength: 1 }
     TaskPhase:
       type: string

@@ -31,6 +31,7 @@ export interface MockSteward {
     stewardTokenAtExchange: number;
     stewardTokenAtSteward: number;
     operations: MockOperation[];
+    taskSubmission?: unknown;
   };
   close: () => Promise<void>;
 }
@@ -195,13 +196,11 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
       observations.stewardTokenAtSteward += 1;
       if (request.method === "POST" && url.pathname === "/v1/tasks") {
         const createRequest: unknown = JSON.parse((await requestBody(request)).toString("utf8"));
+        observations.taskSubmission = createRequest;
         if (
-          !createRequest ||
-          typeof createRequest !== "object" ||
-          Array.isArray(createRequest) ||
-          (createRequest as Record<string, unknown>).workflow !== "copy-smoke"
+          JSON.stringify(createRequest) !== JSON.stringify({ workflow: "repository-review@1" })
         ) {
-          json(response, 400, { message: "mock only supports workflow copy-smoke" });
+          json(response, 400, { message: "mock requires the versioned Workflow request" });
           return;
         }
         observations.created = true;

@@ -29,11 +29,6 @@ inputs:
   agent-runtime:
     description: Existing AgentRuntime UID to adopt instead of provisioning one
     required: false
-  coding-agent-runtime:
-    description: Versioned coding-agent runtime executed inside the Steward sandbox
-    required: false
-    default: claude-code@2.1.220
-
 outputs:
   status:
     description: Terminal Steward Task phase
@@ -60,5 +55,4 @@ runs:
         STEWARD_RUN_OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
         STEWARD_RUN_BEARER_TOKEN_FILE: ${{ inputs.bearer-token-file }}
         STEWARD_RUN_AGENT_RUNTIME: ${{ inputs.agent-runtime }}
-        STEWARD_RUN_CODING_AGENT_RUNTIME: ${{ inputs.coding-agent-runtime }}
       run: exec node "$GITHUB_ACTION_PATH/dist/index.cjs"

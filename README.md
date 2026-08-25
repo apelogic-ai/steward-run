@@ -77,7 +77,7 @@ jobs:
     uses: apelogic-ai/steward-run/.github/workflows/steward-task.yml@<WORKFLOW_COMMIT>
     with:
       runner-label: ${{ vars.STEWARD_RUNNER_LABEL }}
-      workflow: cve-triage
+      workflow: repository-review@1
       input-artifact: request
       output-artifact: result
       steward-api-url: ${{ vars.STEWARD_API_URL }}
@@ -87,7 +87,8 @@ jobs:
 
 The caller first uploads `request`; the reusable job downloads it under `in/`, runs the action,
 and uploads `out/` as `result`. Direct action use remains available when another workflow owns the
-artifact steps. All action paths are relative to `GITHUB_WORKSPACE`.
+artifact steps. All action paths are relative to `GITHUB_WORKSPACE`. The `workflow` value is an
+immutable Steward Workflow reference and is forwarded unchanged; Steward parses and resolves it.
 
 The governed job always runs inside the signed v0.3.0 `steward-run` image pinned by its full ECR
 digest in `steward-task.yml`. The image is not a workflow input and the workflow supplies no

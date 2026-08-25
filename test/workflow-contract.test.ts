@@ -43,7 +43,7 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(roundtrip, /actions\/download-artifact@/);
   assert.match(roundtrip, /uses:\s*\.\//);
   assert.match(roundtrip, /actions\/upload-artifact@/);
-  assert.match(roundtrip, /workflow:\s*copy-smoke/);
+  assert.match(roundtrip, /workflow:\s*repository-review@1/);
   assert.match(roundtrip, /inputs:\s*in/);
   assert.match(roundtrip, /outputs:\s*out/);
   assert.match(roundtrip, /status.*succeeded/);

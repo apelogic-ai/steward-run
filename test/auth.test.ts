@@ -7,7 +7,7 @@ import { shortLivedBearerTokenFileProvider } from "../src/auth.ts";
 import { readActionConfig } from "../src/config.ts";
 
 const baseEnvironment: NodeJS.ProcessEnv = {
-  STEWARD_RUN_WORKFLOW: "copy-smoke",
+  STEWARD_RUN_WORKFLOW: "repository-review@1",
   STEWARD_RUN_INPUTS: "in",
   STEWARD_RUN_OUTPUTS: "out",
   STEWARD_RUN_API_URL: "https://steward.example.test",
@@ -84,6 +84,17 @@ test("the trusted CA input is an optional trimmed filesystem path", () => {
     }).caCertificateFile,
     undefined,
   );
+});
+
+test("the Workflow reference is preserved byte-for-byte and runtime selection is ignored", () => {
+  const config = readActionConfig({
+    ...baseEnvironment,
+    STEWARD_RUN_WORKFLOW: " repository-review@1 ",
+    STEWARD_RUN_CODING_AGENT_RUNTIME: "caller-controlled-runtime",
+    STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://identity.example/v1/exchange",
+  });
+  assert.equal(config.workflow, " repository-review@1 ");
+  assert.equal("codingAgentRuntime" in config, false);
 });
 
 test("short-lived bearer token files are reread so projected credentials can rotate", async () => {

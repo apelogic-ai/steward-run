@@ -4,7 +4,6 @@ export interface WorkflowConfig {
   outputPaths: string;
   apiUrl: string;
   agentRuntime?: string;
-  codingAgentRuntime: string;
 }
 
 export type ActionAuthentication =
@@ -20,6 +19,14 @@ export interface ActionConfig extends WorkflowConfig {
 function required(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name]?.trim();
   if (!value) {
+    throw new Error(`required action input ${name} is missing`);
+  }
+  return value;
+}
+
+function requiredVerbatim(environment: NodeJS.ProcessEnv, name: string): string {
+  const value = environment[name];
+  if (!value?.trim()) {
     throw new Error(`required action input ${name} is missing`);
   }
   return value;
@@ -55,13 +62,11 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
     }
   }
   return {
-    workflow: required(environment, "STEWARD_RUN_WORKFLOW"),
+    workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
     inputPaths: required(environment, "STEWARD_RUN_INPUTS"),
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
     apiUrl,
     ...(agentRuntime ? { agentRuntime } : {}),
-    codingAgentRuntime:
-      environment.STEWARD_RUN_CODING_AGENT_RUNTIME?.trim() || "claude-code@2.1.220",
     authentication: identityExchangeUrl
       ? { kind: "github-oidc-exchange", url: identityExchangeUrl }
       : oidcAudience

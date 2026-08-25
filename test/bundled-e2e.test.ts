@@ -37,11 +37,10 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
         GITHUB_STEP_SUMMARY: summaryFile,
         GITHUB_WORKSPACE: workspace,
         STEWARD_RUN_API_URL: mock.url,
-        STEWARD_RUN_CODING_AGENT_RUNTIME: "claude-code@2.1.220",
         STEWARD_RUN_IDENTITY_EXCHANGE_URL: `${mock.url}/v1/exchange`,
         STEWARD_RUN_INPUTS: "in",
         STEWARD_RUN_OUTPUTS: "out/payload.bin",
-        STEWARD_RUN_WORKFLOW: "copy-smoke",
+        STEWARD_RUN_WORKFLOW: "repository-review@1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -60,6 +59,7 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
     assert.equal(mock.observations.sourceTokenAtSteward, 0);
     assert.equal(mock.observations.stewardTokenAtExchange, 0);
     assert.ok(mock.observations.stewardTokenAtSteward >= 5);
+    assert.deepEqual(mock.observations.taskSubmission, { workflow: "repository-review@1" });
     assert.deepEqual(mock.observations.operations, [
       "submit",
       "upload-inputs",
@@ -92,6 +92,52 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
   }
 });
 
+test("the checked-in bundle rejects a missing Workflow before any Steward request", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "steward-run-bundle-missing-workflow-"));
+  const outputFile = join(workspace, "github-output");
+  const summaryFile = join(workspace, "github-summary");
+  const mock = await startMockSteward();
+  try {
+    await mkdir(join(workspace, "in"));
+    await writeFile(join(workspace, "in", "payload.bin"), "fixture");
+    await writeFile(outputFile, "");
+    await writeFile(summaryFile, "");
+    const child = spawn(process.execPath, ["dist/index.cjs"], {
+      cwd: new URL("..", import.meta.url),
+      env: {
+        ...process.env,
+        ACTIONS_ID_TOKEN_REQUEST_URL: `${mock.url}/oidc?api-version=1`,
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-secret",
+        GITHUB_JOB: "agent",
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_REPOSITORY: "apelogic-ai/example",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_RUN_ID: "123",
+        GITHUB_STEP_SUMMARY: summaryFile,
+        GITHUB_WORKSPACE: workspace,
+        STEWARD_RUN_API_URL: mock.url,
+        STEWARD_RUN_IDENTITY_EXCHANGE_URL: `${mock.url}/v1/exchange`,
+        STEWARD_RUN_INPUTS: "in",
+        STEWARD_RUN_OUTPUTS: "out/payload.bin",
+        STEWARD_RUN_WORKFLOW: "",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
+    const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+
+    assert.equal(code, 1);
+    assert.match(stderr, /Steward governed Task failed/u);
+    assert.equal(mock.observations.oidcRequests, 0);
+    assert.equal(mock.observations.exchangeRequests, 0);
+    assert.deepEqual(mock.observations.operations, []);
+  } finally {
+    await mock.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("the checked-in bundle emits only bounded GitHub failure metadata", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "steward-run-bundle-failure-"));
   const outputFile = join(workspace, "github-output");
@@ -112,10 +158,9 @@ test("the checked-in bundle emits only bounded GitHub failure metadata", async (
         GITHUB_WORKSPACE: workspace,
         STEWARD_RUN_API_URL: "http://127.0.0.1:9",
         STEWARD_RUN_BEARER_TOKEN_FILE: "/not-used/bundle-private-value.jwt",
-        STEWARD_RUN_CODING_AGENT_RUNTIME: "claude-code@2.1.220",
         STEWARD_RUN_INPUTS: "missing-bundle-private-value",
         STEWARD_RUN_OUTPUTS: "out",
-        STEWARD_RUN_WORKFLOW: "copy-smoke",
+        STEWARD_RUN_WORKFLOW: "repository-review@1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -248,11 +293,10 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
           GITHUB_STEP_SUMMARY: summaryFile,
           GITHUB_WORKSPACE: workspace,
           STEWARD_RUN_API_URL: mock.url,
-          STEWARD_RUN_CODING_AGENT_RUNTIME: "claude-code@2.1.220",
           STEWARD_RUN_IDENTITY_EXCHANGE_URL: `${mock.url}/v1/exchange`,
           STEWARD_RUN_INPUTS: "in",
           STEWARD_RUN_OUTPUTS: "out",
-          STEWARD_RUN_WORKFLOW: "copy-smoke",
+          STEWARD_RUN_WORKFLOW: "repository-review@1",
         },
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -353,7 +397,7 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
   }
 });
 
-test("the mock rejects workflows other than copy-smoke", async () => {
+test("the mock rejects Task submissions with caller-selected runtime properties", async () => {
   const mock = await startMockSteward();
   try {
     const oidcResponse = await fetch(
@@ -373,13 +417,13 @@ test("the mock rejects workflows other than copy-smoke", async () => {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        workflow: "cve-triage",
+        workflow: "repository-review@1",
         codingAgentRuntime: "claude-code@2.1.220",
       }),
     });
 
     assert.equal(response.status, 400);
-    assert.deepEqual(await response.json(), { message: "mock only supports workflow copy-smoke" });
+    assert.deepEqual(await response.json(), { message: "mock requires the versioned Workflow request" });
   } finally {
     await mock.close();
   }

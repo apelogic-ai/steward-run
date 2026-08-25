@@ -22,8 +22,8 @@ tests + image + action, released **by version**, and **environment-agnostic**.
 
 **In scope.**
 - The **`steward-run` composite action** (`action.yml` + its scripts).
-- The **runner image** (Dockerfile): `actions/runner` base + the coding-agent runtime
-  (pluggable) + base skills + the action's prerequisites. Minimal, no baked secrets.
+- The **runner image** (Dockerfile): `actions/runner` base + the action's prerequisites. Minimal,
+  no baked secrets. Steward's immutable Workflow selects runtime configuration and skills.
 - App CI: build + test → push image to ECR (OCI) → tag/release by version.
 - The **thin-shell CI check** (§4) as a first-class test.
 
@@ -104,7 +104,7 @@ the resumed invocation (a new job, new token).
 
 | Input | Meaning |
 |---|---|
-| `workflow` | Which agentic workflow / agent-type + envelope to run (e.g. `cve-triage`) |
+| `workflow` | Immutable Steward Workflow reference forwarded unchanged (e.g. `repository-review@1`) |
 | `inputs` | Workspace path(s) materialised into the sandbox as its input directory |
 | `outputs` | Sandbox output path(s) written back to the workspace |
 | `steward-api-url` | The control-plane API base (env-supplied; not hardcoded) |
@@ -178,8 +178,8 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 ## 6. The runner image
 
 - Base: pinned `actions/runner`.
-- Plus: the coding-agent runtime (pluggable — Claude Code to start; the runtime is an input, not
-  a weld), base skills, and the `steward-run` prerequisites.
+- Plus the `steward-run` prerequisites; agent runtime configuration and skills belong to the
+  immutable Steward Workflow and are not caller inputs or image contents.
 - **No secrets, minimal packages** (the modern runner image ships lean on purpose; add only what
   the agent needs). Multi-stage build; pinned digests.
 - Published to ECR OCI by version. `gitops` pins the ARC runner by digest; the governed workflow
@@ -224,7 +224,7 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 |---|---|---|---|
 | D1 | Repo name | `steward-run` (matches the `uses:` line). `arc-runner` if a Steward-agnostic name is wanted | Low |
 | D2 | Provision-per-job vs adopt a standing `AgentRuntime` | Resolved: provision and terminate by default; explicit `agent-runtime` adopts and detaches an existing runtime | — |
-| D3 | Coding-agent runtime | Pluggable via input; Claude Code first. Do not weld it into the image | Low |
+| D3 | Coding-agent runtime | Resolved by Steward from the immutable Workflow reference | — |
 | D4 | Visibility | Internal by default; private if the API contract is sensitive | Low |
 | D5 | `containerMode` coupling | The action must work under both `kubernetes` and `dind`; the choice is `gitops`', not baked here | Low |
 

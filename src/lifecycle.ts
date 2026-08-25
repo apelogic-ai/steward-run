@@ -304,7 +304,6 @@ export async function runWorkflow(
     created = await dependencies.client.submitTask(
       {
         workflow: config.workflow,
-        codingAgentRuntime: config.codingAgentRuntime,
         ...(config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}),
       },
       createIdempotencyKey(dependencies.environment),
