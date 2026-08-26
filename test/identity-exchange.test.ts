@@ -73,6 +73,34 @@ test("identity exchange requests the fixed GitHub audience and returns the Stewa
   assert.equal(exchangeRequest?.signal.aborted, true);
 });
 
+test("identity exchange can use a private-CA transport without replacing GitHub OIDC trust", async () => {
+  const sourceRequests: Request[] = [];
+  const exchangeRequests: Request[] = [];
+  const provider = identityExchangeTokenProvider(
+    {
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "github-request-secret",
+      ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.actions.example/id",
+    },
+    "https://identity.example/v1/exchange",
+    async (input, init) => {
+      sourceRequests.push(new Request(input, init));
+      return jsonResponse({ value: sourceToken });
+    },
+    () => now,
+    GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
+    async (input, init) => {
+      exchangeRequests.push(new Request(input, init));
+      return jsonResponse({ access_token: stewardToken, expires_in: 120, token_type: "Bearer" });
+    },
+  );
+
+  assert.equal(await provider(), stewardToken);
+  assert.equal(sourceRequests.length, 1);
+  assert.equal(exchangeRequests.length, 1);
+  assert.equal(sourceRequests[0]?.url.startsWith("https://token.actions.example/"), true);
+  assert.equal(exchangeRequests[0]?.url, "https://identity.example/v1/exchange");
+});
+
 test("identity exchange requires HTTPS except for loopback tests", async () => {
   assert.throws(
     () =>

@@ -63,6 +63,7 @@ export async function main(): Promise<void> {
   process.once("SIGTERM", cancel);
   try {
     const config = readActionConfig(process.env);
+    const stewardFetch = await createStewardFetch(config.caCertificateFile);
     const getToken = (() => {
       switch (config.authentication.kind) {
         case "github-oidc-exchange":
@@ -72,6 +73,7 @@ export async function main(): Promise<void> {
             undefined,
             undefined,
             config.authentication.audience,
+            stewardFetch,
           );
         case "github-oidc":
           return oidcTokenProvider(process.env, config.authentication.audience);
@@ -82,7 +84,7 @@ export async function main(): Promise<void> {
     const client = new StewardClient({
       baseUrl: config.apiUrl,
       getToken,
-      fetch: await createStewardFetch(config.caCertificateFile),
+      fetch: stewardFetch,
     });
     await runWorkflow(config, requiredEnvironment("GITHUB_WORKSPACE"), {
       client,
