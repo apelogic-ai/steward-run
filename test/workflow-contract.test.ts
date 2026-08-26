@@ -243,7 +243,12 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
     "utf8",
   );
   const workflow = parse(source) as {
-    on: { workflow_call: { inputs: Record<string, unknown>; outputs: Record<string, unknown> } };
+    on: {
+      workflow_call: {
+        inputs: Record<string, { required?: boolean }>;
+        outputs: Record<string, unknown>;
+      };
+    };
     jobs: Record<string, { container?: unknown; permissions?: Record<string, string>; "runs-on"?: string; "timeout-minutes"?: number }>;
   };
 
