@@ -20,6 +20,9 @@ inputs:
   identity-exchange-url:
     description: HTTPS endpoint that exchanges GitHub OIDC for a short-lived Steward token
     required: false
+  identity-exchange-audience:
+    description: Optional exact GitHub OIDC audience accepted by the configured Identity exchange
+    required: false
   oidc-audience:
     description: Test-only direct GitHub OIDC audience; allowed only with a loopback Steward API
     required: false
@@ -52,6 +55,7 @@ runs:
         STEWARD_RUN_API_URL: ${{ inputs.steward-api-url }}
         STEWARD_RUN_CA_CERTIFICATE_FILE: ${{ inputs.steward-ca-certificate-file }}
         STEWARD_RUN_IDENTITY_EXCHANGE_URL: ${{ inputs.identity-exchange-url }}
+        STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE: ${{ inputs.identity-exchange-audience }}
         STEWARD_RUN_OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
         STEWARD_RUN_BEARER_TOKEN_FILE: ${{ inputs.bearer-token-file }}
         STEWARD_RUN_AGENT_RUNTIME: ${{ inputs.agent-runtime }}

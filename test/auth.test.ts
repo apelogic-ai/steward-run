@@ -23,8 +23,13 @@ test("action authentication selects exactly one pluggable credential source", ()
     readActionConfig({
       ...baseEnvironment,
       STEWARD_RUN_IDENTITY_EXCHANGE_URL: " https://identity.example/v1/exchange ",
+      STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE: " local-github-actions-exchange ",
     }).authentication,
-    { kind: "github-oidc-exchange", url: "https://identity.example/v1/exchange" },
+    {
+      kind: "github-oidc-exchange",
+      url: "https://identity.example/v1/exchange",
+      audience: "local-github-actions-exchange",
+    },
   );
   assert.deepEqual(
     readActionConfig({
@@ -57,6 +62,14 @@ test("action authentication selects exactly one pluggable credential source", ()
         STEWARD_RUN_BEARER_TOKEN_FILE: "/var/run/token",
       }),
     /exactly one authentication method/,
+  );
+  assert.throws(
+    () =>
+      readActionConfig({
+        ...baseEnvironment,
+        STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE: "local-github-actions-exchange",
+      }),
+    /identity-exchange-audience requires identity-exchange-url/,
   );
 });
 

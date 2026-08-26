@@ -2508,10 +2508,14 @@ function requiredVerbatim(environment, name) {
 function readActionConfig(environment) {
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
   const identityExchangeUrl = environment.STEWARD_RUN_IDENTITY_EXCHANGE_URL?.trim();
+  const identityExchangeAudience = environment.STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE?.trim();
   const oidcAudience = environment.STEWARD_RUN_OIDC_AUDIENCE?.trim();
   const bearerTokenFile = environment.STEWARD_RUN_BEARER_TOKEN_FILE?.trim();
   const caCertificateFile = environment.STEWARD_RUN_CA_CERTIFICATE_FILE?.trim();
   const apiUrl = required(environment, "STEWARD_RUN_API_URL");
+  if (identityExchangeAudience && !identityExchangeUrl) {
+    throw new Error("identity-exchange-audience requires identity-exchange-url");
+  }
   const authenticationCount = [identityExchangeUrl, oidcAudience, bearerTokenFile].filter(Boolean).length;
   if (authenticationCount !== 1) {
     throw new Error(
@@ -2538,7 +2542,11 @@ function readActionConfig(environment) {
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
     apiUrl,
     ...agentRuntime ? { agentRuntime } : {},
-    authentication: identityExchangeUrl ? { kind: "github-oidc-exchange", url: identityExchangeUrl } : oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile },
+    authentication: identityExchangeUrl ? {
+      kind: "github-oidc-exchange",
+      url: identityExchangeUrl,
+      ...identityExchangeAudience ? { audience: identityExchangeAudience } : {}
+    } : oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile },
     ...caCertificateFile ? { caCertificateFile } : {}
   };
 }
@@ -2945,11 +2953,11 @@ function validateStewardToken(token, nowSeconds) {
   }
   return token;
 }
-function identityExchangeTokenProvider(environment, exchangeUrl, fetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3)) {
+function identityExchangeTokenProvider(environment, exchangeUrl, fetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3), audience = GITHUB_IDENTITY_EXCHANGE_AUDIENCE) {
   const url = validateExchangeUrl(exchangeUrl);
   const getSourceToken = oidcTokenProvider(
     environment,
-    GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
+    audience,
     fetchImplementation
   );
   return async (signal) => {
@@ -4114,7 +4122,13 @@ async function main() {
     const getToken = (() => {
       switch (config.authentication.kind) {
         case "github-oidc-exchange":
-          return identityExchangeTokenProvider(process.env, config.authentication.url);
+          return identityExchangeTokenProvider(
+            process.env,
+            config.authentication.url,
+            void 0,
+            void 0,
+            config.authentication.audience
+          );
         case "github-oidc":
           return oidcTokenProvider(process.env, config.authentication.audience);
         case "bearer-token-file":

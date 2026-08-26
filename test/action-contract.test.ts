@@ -17,7 +17,8 @@ test("the composite action exposes the versioned steward-run contract", async ()
     [
       "agent-runtime",
       "bearer-token-file",
-      "identity-exchange-url",
+    "identity-exchange-url",
+    "identity-exchange-audience",
       "inputs",
       "oidc-audience",
       "outputs",

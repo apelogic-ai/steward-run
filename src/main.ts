@@ -66,7 +66,13 @@ export async function main(): Promise<void> {
     const getToken = (() => {
       switch (config.authentication.kind) {
         case "github-oidc-exchange":
-          return identityExchangeTokenProvider(process.env, config.authentication.url);
+          return identityExchangeTokenProvider(
+            process.env,
+            config.authentication.url,
+            undefined,
+            undefined,
+            config.authentication.audience,
+          );
         case "github-oidc":
           return oidcTokenProvider(process.env, config.authentication.audience);
         case "bearer-token-file":

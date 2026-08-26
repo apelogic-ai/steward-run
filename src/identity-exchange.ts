@@ -67,11 +67,12 @@ export function identityExchangeTokenProvider(
   exchangeUrl: string,
   fetchImplementation: FetchLike = fetch,
   now: () => number = () => Math.floor(Date.now() / 1_000),
+  audience: string = GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
 ): (signal?: AbortSignal) => Promise<string> {
   const url = validateExchangeUrl(exchangeUrl);
   const getSourceToken = oidcTokenProvider(
     environment,
-    GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
+    audience,
     fetchImplementation,
   );
 
