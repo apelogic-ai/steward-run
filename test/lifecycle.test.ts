@@ -29,11 +29,10 @@ const baseTask: Task = {
 };
 
 const config: WorkflowConfig = {
-  workflow: "cve-triage",
+  workflow: "repository-review@1",
   inputPaths: "in",
   outputPaths: "results",
   apiUrl: "https://steward.example.test",
-  codingAgentRuntime: "claude-code@2.1.220",
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -146,6 +145,7 @@ test("a provisioned Task round-trips files, reports identities, and finalizes", 
       "task-uid": baseTask.taskUid,
       "runtime-uid": "runtime-uid-1",
     });
+    assert.deepEqual(client.requests, [{ workflow: "repository-review@1" }]);
     assert.deepEqual(client.calls, ["create", "upload", "execute", "poll", "poll", "download", "finalize"]);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -580,6 +580,60 @@ test("Task failure and corrupt outputs still finalize and fail the action", asyn
   }
 });
 
+test("every post-submission lifecycle failure still finalizes the Task", async (context) => {
+  for (const failurePoint of [
+    "task-output",
+    "runtime-output",
+    "upload",
+    "execute",
+    "poll",
+    "status-output",
+    "download",
+  ] as const) {
+    await context.test(failurePoint, async () => {
+      const root = await fixture();
+      const client = new FakeClient();
+      const lifecycleDependencies = dependencies(client, {});
+      if (failurePoint === "task-output" || failurePoint === "runtime-output" || failurePoint === "status-output") {
+        const outputName = failurePoint === "task-output"
+          ? "task-uid"
+          : failurePoint === "runtime-output"
+            ? "runtime-uid"
+            : "status";
+        lifecycleDependencies.setOutput = async (name: string) => {
+          if (name === outputName) throw new Error(`failed ${failurePoint}`);
+        };
+      } else if (failurePoint === "upload") {
+        client.uploadTaskInputs = async () => {
+          client.calls.push("upload");
+          throw new Error("failed upload");
+        };
+      } else if (failurePoint === "execute") {
+        client.executeTask = async () => {
+          client.calls.push("execute");
+          throw new Error("failed execute");
+        };
+      } else if (failurePoint === "poll") {
+        client.getTask = async () => {
+          client.calls.push("poll");
+          throw new Error("failed poll");
+        };
+      } else {
+        client.downloadTaskOutputs = async () => {
+          client.calls.push("download");
+          throw new Error("failed download");
+        };
+      }
+      try {
+        await assert.rejects(runWorkflow(config, root, lifecycleDependencies), StewardRunFailure);
+        assert.equal(client.calls.at(-1), "finalize");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 test("terminal Task and cleanup failures expose only independent allowlisted metadata", async () => {
   const root = await fixture();
   try {
@@ -929,6 +983,17 @@ test("idempotency keys are stable for one job identity", () => {
     GITHUB_JOB: "agent",
   };
   assert.equal(createIdempotencyKey(identity), createIdempotencyKey(identity));
-  assert.notEqual(createIdempotencyKey(identity), createIdempotencyKey({ ...identity, GITHUB_JOB: "other" }));
+  for (const [field, value] of [
+    ["GITHUB_REPOSITORY", "apelogic-ai/other"],
+    ["GITHUB_RUN_ID", "456"],
+    ["GITHUB_RUN_ATTEMPT", "2"],
+    ["GITHUB_JOB", "other"],
+  ] as const) {
+    assert.notEqual(
+      createIdempotencyKey(identity),
+      createIdempotencyKey({ ...identity, [field]: value }),
+      field,
+    );
+  }
   assert.match(createIdempotencyKey(identity), /^[a-f0-9]{64}$/);
 });

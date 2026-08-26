@@ -77,7 +77,7 @@ jobs:
     uses: apelogic-ai/steward-run/.github/workflows/steward-task.yml@<WORKFLOW_COMMIT>
     with:
       runner-label: ${{ vars.STEWARD_RUNNER_LABEL }}
-      workflow: cve-triage
+      workflow: repository-review@1
       input-artifact: request
       output-artifact: result
       steward-api-url: ${{ vars.STEWARD_API_URL }}
@@ -87,12 +87,21 @@ jobs:
 
 The caller first uploads `request`; the reusable job downloads it under `in/`, runs the action,
 and uploads `out/` as `result`. Direct action use remains available when another workflow owns the
-artifact steps. All action paths are relative to `GITHUB_WORKSPACE`.
+artifact steps. All action paths are relative to `GITHUB_WORKSPACE`. The `workflow` value is an
+immutable Steward Workflow reference and is forwarded unchanged; Steward parses and resolves it.
 
 The governed job always runs inside the signed v0.3.0 `steward-run` image pinned by its full ECR
 digest in `steward-task.yml`. The image is not a workflow input and the workflow supplies no
 registry credential; Kubernetes-mode ARC nodes use their scoped ECR pull access. The container
 provides Bash, Node, Git, and tar for artifact and composite-action steps.
+
+For a dedicated self-hosted runner that must not pull the ARC job container, use the separately
+pinned `steward-task-self-hosted.yml` reusable workflow. It has the same artifact, immutable
+Action, output, and `id-token: write` contract, so GitHub emits an exact `job_workflow_ref`; it
+does not declare a container. The runner operator is responsible for a vetted Node 24, Bash,
+Git, and tar installation and must restrict the runner label to that local environment. This is a
+separate workflow identity and must be authorized explicitly by the identity policy; it is not a
+caller switch on the ARC workflow.
 
 `steward-ca-certificate-file` is an optional filesystem path to a PEM CA bundle used only for
 Steward API TLS. Missing or malformed files, an untrusted chain, and hostname mismatch fail closed.

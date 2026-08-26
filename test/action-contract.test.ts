@@ -17,8 +17,8 @@ test("the composite action exposes the versioned steward-run contract", async ()
     [
       "agent-runtime",
       "bearer-token-file",
-      "coding-agent-runtime",
-      "identity-exchange-url",
+    "identity-exchange-url",
+    "identity-exchange-audience",
       "inputs",
       "oidc-audience",
       "outputs",
@@ -39,7 +39,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
   assert.notEqual(action.inputs["identity-exchange-url"]?.required, true);
   assert.notEqual(action.inputs["bearer-token-file"]?.required, true);
   assert.notEqual(action.inputs["steward-ca-certificate-file"]?.required, true);
-  assert.equal(action.inputs["coding-agent-runtime"]?.default, "claude-code@2.1.220");
+  assert.equal(action.inputs["coding-agent-runtime"], undefined);
   assert.deepEqual(Object.keys(action.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
   assert.match(action.runs.steps[0]?.run ?? "", /dist\/index\.cjs/);
 });
@@ -54,6 +54,11 @@ test("the Steward Task API contract covers the complete lifecycle", async () => 
     paths: Record<string, Record<string, unknown>>;
     components: {
       schemas: {
+        TaskSubmissionRequest: {
+          required: string[];
+          properties: Record<string, unknown>;
+          additionalProperties: boolean;
+        };
         TaskStatusResponse: {
           properties: { runtimeUid: { oneOf: Array<{ type: string; minLength?: number }> } };
         };
@@ -72,6 +77,12 @@ test("the Steward Task API contract covers the complete lifecycle", async () => 
   assert.match(source, /steward-task-api/);
   assert.match(source, /67108864/);
   assert.match(source, /Task accepted for controller-owned runtime binding/u);
+  assert.deepEqual(api.components.schemas.TaskSubmissionRequest.required, ["workflow"]);
+  assert.deepEqual(Object.keys(api.components.schemas.TaskSubmissionRequest.properties), [
+    "workflow",
+    "agentRuntimeUid",
+  ]);
+  assert.equal(api.components.schemas.TaskSubmissionRequest.additionalProperties, false);
   assert.deepEqual(api.components.schemas.TaskStatusResponse.properties.runtimeUid.oneOf, [
     { type: "string", minLength: 1 },
     { type: "null" },

@@ -1,10 +1,10 @@
-name: Governed Steward task
+name: Governed Steward task (self-hosted)
 
 on:
   workflow_call:
     inputs:
       runner-label:
-        description: Runner label for the governed job
+        description: Dedicated self-hosted runner label for the governed job
         required: true
         type: string
       workflow:
@@ -25,6 +25,10 @@ on:
         type: string
       identity-exchange-url:
         description: GitHub OIDC exchange endpoint
+        required: true
+        type: string
+      identity-exchange-audience:
+        description: Exact GitHub OIDC audience accepted by the Identity exchange
         required: true
         type: string
       steward-ca-certificate-file:
@@ -52,8 +56,6 @@ jobs:
   governed:
     runs-on: ${{ inputs.runner-label }}
     timeout-minutes: 15
-    container:
-      image: 663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61
     permissions:
       contents: read
       id-token: write
@@ -67,13 +69,14 @@ jobs:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: apelogic-ai/steward-run@19230cc59a6b1246224912961e35c7044b0808d3
+        uses: apelogic-ai/steward-run@0707623836cd4cdf063938e1e049c694397bc31c
         with:
           workflow: ${{ inputs.workflow }}
           inputs: in
           outputs: out
           steward-api-url: ${{ inputs.steward-api-url }}
           identity-exchange-url: ${{ inputs.identity-exchange-url }}
+          identity-exchange-audience: ${{ inputs.identity-exchange-audience }}
           steward-ca-certificate-file: ${{ inputs.steward-ca-certificate-file }}
           agent-runtime: ${{ inputs.agent-runtime }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

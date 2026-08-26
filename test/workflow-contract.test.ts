@@ -3,11 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parse } from "yaml";
 
-const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml"];
+const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml", "steward-task-self-hosted.yml"];
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "9203b06ec12ecbaa6f62d6f1c1627ae6e4cde02b";
+const actionCommit = "19230cc59a6b1246224912961e35c7044b0808d3";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -43,7 +43,7 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(roundtrip, /actions\/download-artifact@/);
   assert.match(roundtrip, /uses:\s*\.\//);
   assert.match(roundtrip, /actions\/upload-artifact@/);
-  assert.match(roundtrip, /workflow:\s*copy-smoke/);
+  assert.match(roundtrip, /workflow:\s*repository-review@1/);
   assert.match(roundtrip, /inputs:\s*in/);
   assert.match(roundtrip, /outputs:\s*out/);
   assert.match(roundtrip, /status.*succeeded/);
@@ -164,8 +164,20 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   };
 
   assert.ok(workflow.on.workflow_call);
+  assert.deepEqual(
+    Object.keys(workflow.on.workflow_call.inputs).sort(),
+    [
+      "agent-runtime",
+      "identity-exchange-url",
+      "input-artifact",
+      "output-artifact",
+      "runner-label",
+      "steward-api-url",
+      "steward-ca-certificate-file",
+      "workflow",
+    ].sort(),
+  );
   for (const name of [
-    "coding-agent-runtime",
     "identity-exchange-url",
     "input-artifact",
     "output-artifact",
@@ -175,9 +187,11 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   ]) {
     assert.equal(workflow.on.workflow_call.inputs[name]?.type, "string", name);
   }
+  assert.equal(workflow.on.workflow_call.inputs["coding-agent-runtime"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["action-commit"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["identity-exchange-url"]?.required, true);
   assert.equal(workflow.on.workflow_call.inputs["runner-label"]?.required, true);
+  assert.equal(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.deepEqual(
     Object.keys(workflow.on.workflow_call.outputs).sort(),
     ["runtime-uid", "status", "task-uid"],
@@ -211,6 +225,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.match(source, /identity-exchange-url:\s*\$\{\{ inputs\.identity-exchange-url \}\}/);
   assert.match(source, /inputs:\s*in/);
   assert.match(source, /outputs:\s*out/);
+  assert.doesNotMatch(source, /coding-agent-runtime|codingAgentRuntime/u);
   assert.match(source, /actions\/upload-artifact@/);
   assert.match(source, /name:\s*\$\{\{ inputs\.output-artifact \}\}/);
   assert.match(source, /path:\s*out/);
@@ -220,6 +235,42 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   const action = source.indexOf(`uses: apelogic-ai/steward-run@${actionCommit}`);
   const upload = source.indexOf("actions/upload-artifact@");
   assert.ok(download >= 0 && download < action && action < upload);
+});
+
+test("the self-hosted reusable workflow preserves GitHub OIDC provenance without an ECR job container", async () => {
+  const source = await readFile(
+    new URL("../.github/workflows/steward-task-self-hosted.yml", import.meta.url),
+    "utf8",
+  );
+  const workflow = parse(source) as {
+    on: {
+      workflow_call: {
+        inputs: Record<string, { required?: boolean }>;
+        outputs: Record<string, unknown>;
+      };
+    };
+    jobs: Record<string, { container?: unknown; permissions?: Record<string, string>; "runs-on"?: string; "timeout-minutes"?: number }>;
+  };
+
+  assert.ok(workflow.on.workflow_call);
+  assert.deepEqual(Object.keys(workflow.on.workflow_call.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
+  assert.equal(workflow.jobs.governed?.["runs-on"], "${{ inputs.runner-label }}");
+  assert.equal(workflow.jobs.governed?.["timeout-minutes"], 15);
+  assert.equal(workflow.jobs.governed?.permissions?.contents, "read");
+  assert.equal(workflow.jobs.governed?.permissions?.["id-token"], "write");
+  assert.equal(workflow.jobs.governed?.container, undefined);
+  assert.equal(workflow.on.workflow_call.inputs["identity-exchange-audience"]?.required, true);
+  assert.match(
+    source,
+    /uses:\s*apelogic-ai\/steward-run@0707623836cd4cdf063938e1e049c694397bc31c/u,
+  );
+  assert.match(source, /actions\/download-artifact@/);
+  assert.match(source, /actions\/upload-artifact@/);
+  assert.match(
+    source,
+    /identity-exchange-audience:\s*\$\{\{ inputs\.identity-exchange-audience \}\}/u,
+  );
+  assert.doesNotMatch(source, /amazonaws\.com|container:|bearer-token|identity\.dev|cluster|secret/iu);
 });
 
 test("CI and release execute the governed job-container runtime contract", async () => {

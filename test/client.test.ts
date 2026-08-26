@@ -71,15 +71,13 @@ test("the Steward client submits Tasks with fresh OIDC tokens and an idempotency
     sleep: async () => undefined,
   });
 
-  await client.submitTask(
-    { workflow: "cve-triage", codingAgentRuntime: "claude-code@2.1.220" },
-    "a".repeat(64),
-  );
+  await client.submitTask({ workflow: "repository-review@1" }, "a".repeat(64));
   await client.getTask(task.taskUid);
 
   assert.equal(requests[0]?.url, "https://steward.example.test/control/v1/tasks");
   assert.equal(requests[0]?.headers.get("authorization"), "Bearer token-1");
   assert.equal(requests[0]?.headers.get("idempotency-key"), "a".repeat(64));
+  assert.deepEqual(await requests[0]?.json(), { workflow: "repository-review@1" });
   assert.equal(requests[1]?.headers.get("authorization"), "Bearer token-2");
 });
 
@@ -109,12 +107,12 @@ test("Task submission accepts admitted and parked responses with structured delt
   });
 
   assert.equal(
-    (await client.submitTask({ workflow: "code-review", codingAgentRuntime: "base" }, "a".repeat(64)))
+    (await client.submitTask({ workflow: "code-review@1" }, "a".repeat(64)))
       .phase,
     "submitted",
   );
   assert.deepEqual(
-    await client.submitTask({ workflow: "wide-review", codingAgentRuntime: "base" }, "b".repeat(64)),
+    await client.submitTask({ workflow: "wide-review@1" }, "b".repeat(64)),
     {
       ...task,
       phase: "parked",
@@ -146,7 +144,7 @@ test("Task submission accepts only documented non-final pending runtime binding 
   for (const expected of pending) {
     assert.deepEqual(
       await client.submitTask(
-        { workflow: "code-review", codingAgentRuntime: "base" },
+        { workflow: "code-review@1" },
         "a".repeat(64),
       ),
       expected,
@@ -178,7 +176,7 @@ test("pending runtime binding fails closed on null misuse and response contradic
     });
     await assert.rejects(
       client.submitTask(
-        { workflow: "code-review", codingAgentRuntime: "base" },
+        { workflow: "code-review@1" },
         "a".repeat(64),
       ),
       (error: unknown) => {
@@ -222,7 +220,7 @@ test("pending-binding polling never discloses bearer tokens or malformed bodies"
   });
 
   const pending = await client.submitTask(
-    { workflow: "code-review", codingAgentRuntime: "base" },
+    { workflow: "code-review@1" },
     "a".repeat(64),
   );
   assert.equal(pending.runtimeUid, null);
@@ -252,7 +250,7 @@ test("pending runtime binding is restricted to compatible response operations", 
     });
     const request = operation === "submit"
       ? client.submitTask(
-        { workflow: "code-review", codingAgentRuntime: "base" },
+        { workflow: "code-review@1" },
         "a".repeat(64),
       )
       : operation === "execute"
@@ -295,7 +293,7 @@ test("Task submission preserves bounded HTTP failure classification", async (con
 
       await assert.rejects(
         client.submitTask(
-          { workflow: "code-review", codingAgentRuntime: "base" },
+          { workflow: "code-review@1" },
           "a".repeat(64),
         ),
         (error: unknown) => {
@@ -322,7 +320,7 @@ test("Task submission rejects malformed successful responses without exposing th
   });
 
   await assert.rejects(
-    client.submitTask({ workflow: "code-review", codingAgentRuntime: "base" }, "a".repeat(64)),
+    client.submitTask({ workflow: "code-review@1" }, "a".repeat(64)),
     (error: unknown) => {
       assert.ok(error instanceof StewardRequestFailure);
       assert.equal(error.stage, "submit");

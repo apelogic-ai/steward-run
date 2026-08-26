@@ -2498,13 +2498,24 @@ function required(environment, name) {
   }
   return value;
 }
+function requiredVerbatim(environment, name) {
+  const value = environment[name];
+  if (!value?.trim()) {
+    throw new Error(`required action input ${name} is missing`);
+  }
+  return value;
+}
 function readActionConfig(environment) {
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
   const identityExchangeUrl = environment.STEWARD_RUN_IDENTITY_EXCHANGE_URL?.trim();
+  const identityExchangeAudience = environment.STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE?.trim();
   const oidcAudience = environment.STEWARD_RUN_OIDC_AUDIENCE?.trim();
   const bearerTokenFile = environment.STEWARD_RUN_BEARER_TOKEN_FILE?.trim();
   const caCertificateFile = environment.STEWARD_RUN_CA_CERTIFICATE_FILE?.trim();
   const apiUrl = required(environment, "STEWARD_RUN_API_URL");
+  if (identityExchangeAudience && !identityExchangeUrl) {
+    throw new Error("identity-exchange-audience requires identity-exchange-url");
+  }
   const authenticationCount = [identityExchangeUrl, oidcAudience, bearerTokenFile].filter(Boolean).length;
   if (authenticationCount !== 1) {
     throw new Error(
@@ -2526,13 +2537,16 @@ function readActionConfig(environment) {
     }
   }
   return {
-    workflow: required(environment, "STEWARD_RUN_WORKFLOW"),
+    workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
     inputPaths: required(environment, "STEWARD_RUN_INPUTS"),
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
     apiUrl,
     ...agentRuntime ? { agentRuntime } : {},
-    codingAgentRuntime: environment.STEWARD_RUN_CODING_AGENT_RUNTIME?.trim() || "claude-code@2.1.220",
-    authentication: identityExchangeUrl ? { kind: "github-oidc-exchange", url: identityExchangeUrl } : oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile },
+    authentication: identityExchangeUrl ? {
+      kind: "github-oidc-exchange",
+      url: identityExchangeUrl,
+      ...identityExchangeAudience ? { audience: identityExchangeAudience } : {}
+    } : oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile },
     ...caCertificateFile ? { caCertificateFile } : {}
   };
 }
@@ -2939,18 +2953,18 @@ function validateStewardToken(token, nowSeconds) {
   }
   return token;
 }
-function identityExchangeTokenProvider(environment, exchangeUrl, fetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3)) {
+function identityExchangeTokenProvider(environment, exchangeUrl, sourceFetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3), audience = GITHUB_IDENTITY_EXCHANGE_AUDIENCE, exchangeFetchImplementation = sourceFetchImplementation) {
   const url = validateExchangeUrl(exchangeUrl);
   const getSourceToken = oidcTokenProvider(
     environment,
-    GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
-    fetchImplementation
+    audience,
+    sourceFetchImplementation
   );
   return async (signal) => {
     const sourceToken = await getSourceToken(signal);
     let response;
     try {
-      response = await fetchImplementation(url, {
+      response = await exchangeFetchImplementation(url, {
         method: "POST",
         headers: {
           accept: "application/json",
@@ -3818,7 +3832,6 @@ async function runWorkflow(config, workspace, dependencies) {
     created = await dependencies.client.submitTask(
       {
         workflow: config.workflow,
-        codingAgentRuntime: config.codingAgentRuntime,
         ...config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}
       },
       createIdempotencyKey(dependencies.environment)
@@ -4106,10 +4119,18 @@ async function main() {
   process.once("SIGTERM", cancel);
   try {
     const config = readActionConfig(process.env);
+    const stewardFetch = await createStewardFetch(config.caCertificateFile);
     const getToken = (() => {
       switch (config.authentication.kind) {
         case "github-oidc-exchange":
-          return identityExchangeTokenProvider(process.env, config.authentication.url);
+          return identityExchangeTokenProvider(
+            process.env,
+            config.authentication.url,
+            void 0,
+            void 0,
+            config.authentication.audience,
+            stewardFetch
+          );
         case "github-oidc":
           return oidcTokenProvider(process.env, config.authentication.audience);
         case "bearer-token-file":
@@ -4119,7 +4140,7 @@ async function main() {
     const client = new StewardClient({
       baseUrl: config.apiUrl,
       getToken,
-      fetch: await createStewardFetch(config.caCertificateFile)
+      fetch: stewardFetch
     });
     await runWorkflow(config, requiredEnvironment("GITHUB_WORKSPACE"), {
       client,

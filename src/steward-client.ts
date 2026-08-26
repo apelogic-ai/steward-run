@@ -49,7 +49,6 @@ export interface Task {
 
 export interface TaskSubmissionRequest {
   workflow: string;
-  codingAgentRuntime: string;
   agentRuntimeUid?: string;
 }
 
