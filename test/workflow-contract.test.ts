@@ -257,7 +257,7 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   assert.equal(workflow.on.workflow_call.inputs["identity-exchange-audience"]?.required, true);
   assert.match(
     source,
-    /uses:\s*apelogic-ai\/steward-run@5a360ce51cf2307b36c3b8ca973b6dd51c7a59a9/u,
+    /uses:\s*apelogic-ai\/steward-run@0707623836cd4cdf063938e1e049c694397bc31c/u,
   );
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /actions\/upload-artifact@/);
