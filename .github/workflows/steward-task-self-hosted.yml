@@ -27,7 +27,7 @@ on:
         description: GitHub OIDC exchange endpoint
         required: true
         type: string
-      oidc-audience:
+      identity-exchange-audience:
         description: Exact GitHub OIDC audience accepted by the Identity exchange
         required: true
         type: string
@@ -69,14 +69,14 @@ jobs:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: apelogic-ai/steward-run@19230cc59a6b1246224912961e35c7044b0808d3
+        uses: apelogic-ai/steward-run@5a360ce51cf2307b36c3b8ca973b6dd51c7a59a9
         with:
           workflow: ${{ inputs.workflow }}
           inputs: in
           outputs: out
           steward-api-url: ${{ inputs.steward-api-url }}
           identity-exchange-url: ${{ inputs.identity-exchange-url }}
-          oidc-audience: ${{ inputs.oidc-audience }}
+          identity-exchange-audience: ${{ inputs.identity-exchange-audience }}
           steward-ca-certificate-file: ${{ inputs.steward-ca-certificate-file }}
           agent-runtime: ${{ inputs.agent-runtime }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
