@@ -65,22 +65,23 @@ function validateStewardToken(token: string, nowSeconds: number): string {
 export function identityExchangeTokenProvider(
   environment: NodeJS.ProcessEnv,
   exchangeUrl: string,
-  fetchImplementation: FetchLike = fetch,
+  sourceFetchImplementation: FetchLike = fetch,
   now: () => number = () => Math.floor(Date.now() / 1_000),
   audience: string = GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
+  exchangeFetchImplementation: FetchLike = sourceFetchImplementation,
 ): (signal?: AbortSignal) => Promise<string> {
   const url = validateExchangeUrl(exchangeUrl);
   const getSourceToken = oidcTokenProvider(
     environment,
     audience,
-    fetchImplementation,
+    sourceFetchImplementation,
   );
 
   return async (signal) => {
     const sourceToken = await getSourceToken(signal);
     let response: Response;
     try {
-      response = await fetchImplementation(url, {
+      response = await exchangeFetchImplementation(url, {
         method: "POST",
         headers: {
           accept: "application/json",

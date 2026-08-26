@@ -2953,18 +2953,18 @@ function validateStewardToken(token, nowSeconds) {
   }
   return token;
 }
-function identityExchangeTokenProvider(environment, exchangeUrl, fetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3), audience = GITHUB_IDENTITY_EXCHANGE_AUDIENCE) {
+function identityExchangeTokenProvider(environment, exchangeUrl, sourceFetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3), audience = GITHUB_IDENTITY_EXCHANGE_AUDIENCE, exchangeFetchImplementation = sourceFetchImplementation) {
   const url = validateExchangeUrl(exchangeUrl);
   const getSourceToken = oidcTokenProvider(
     environment,
     audience,
-    fetchImplementation
+    sourceFetchImplementation
   );
   return async (signal) => {
     const sourceToken = await getSourceToken(signal);
     let response;
     try {
-      response = await fetchImplementation(url, {
+      response = await exchangeFetchImplementation(url, {
         method: "POST",
         headers: {
           accept: "application/json",
@@ -4119,6 +4119,7 @@ async function main() {
   process.once("SIGTERM", cancel);
   try {
     const config = readActionConfig(process.env);
+    const stewardFetch = await createStewardFetch(config.caCertificateFile);
     const getToken = (() => {
       switch (config.authentication.kind) {
         case "github-oidc-exchange":
@@ -4127,7 +4128,8 @@ async function main() {
             config.authentication.url,
             void 0,
             void 0,
-            config.authentication.audience
+            config.authentication.audience,
+            stewardFetch
           );
         case "github-oidc":
           return oidcTokenProvider(process.env, config.authentication.audience);
@@ -4138,7 +4140,7 @@ async function main() {
     const client = new StewardClient({
       baseUrl: config.apiUrl,
       getToken,
-      fetch: await createStewardFetch(config.caCertificateFile)
+      fetch: stewardFetch
     });
     await runWorkflow(config, requiredEnvironment("GITHUB_WORKSPACE"), {
       client,
