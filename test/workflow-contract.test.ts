@@ -296,6 +296,28 @@ test("CI and release execute the governed job-container runtime contract", async
   assert.match(release, /node \/workspace\/dist\/index\.cjs/u);
 });
 
+test("release gates semantic tags on signed scan evidence for the runnable image", async () => {
+  const release = await readFile(
+    new URL("../.github/workflows/release.yml", import.meta.url),
+    "utf8",
+  );
+  const scanGate = release.indexOf("- name: Require completed ECR scan for runnable image");
+  const signing = release.indexOf("- name: Sign and verify immutable release artifacts");
+  const semanticPromotion = release.indexOf("- name: Promote verified candidate to semantic image tag");
+
+  assert.ok(scanGate >= 0);
+  assert.ok(scanGate < signing);
+  assert.ok(signing < semanticPromotion);
+  assert.match(release, /aws ecr wait image-scan-complete/u);
+  assert.match(release, /scripts\/resolve-runnable-image-digest\.mjs/u);
+  assert.match(release, /scripts\/write-ecr-scan-summary\.mjs/u);
+  assert.match(release, /ecr-image-scan-summary\.sigstore\.json/u);
+  assert.doesNotMatch(
+    release.slice(scanGate, semanticPromotion),
+    /imageTag=\$VERSION|:\$VERSION/u,
+  );
+});
+
 test("mock OIDC routing is isolated from production workflows", async () => {
   const productionSources = await Promise.all(
     ["../action.yml", "../.github/workflows/ci.yml", "../.github/workflows/release.yml", "../.github/workflows/steward-task.yml"].map(

@@ -94,6 +94,32 @@ jobs:
             --sbom=true \
             --metadata-file release-metadata.json \
             --push .
+      - name: Resolve immutable image digest
+        shell: bash
+        run: |
+          image_digest="$(node -e 'const metadata = require("./release-metadata.json"); process.stdout.write(metadata["containerimage.digest"])')"
+          echo "IMAGE_DIGEST=$image_digest" >> "$GITHUB_ENV"
+      - name: Require completed ECR scan for runnable image
+        shell: bash
+        run: |
+          docker buildx imagetools inspect \
+            "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
+            --raw > image-index-manifest.json
+          runnable_digest="$(node scripts/resolve-runnable-image-digest.mjs \
+            image-index-manifest.json linux amd64)"
+          aws ecr wait image-scan-complete \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-id "imageDigest=$runnable_digest"
+          aws ecr describe-image-scan-findings \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-id "imageDigest=$runnable_digest" \
+            --output json > ecr-image-scan-findings.json
+          node scripts/write-ecr-scan-summary.mjs \
+            ecr-image-scan-findings.json \
+            ecr-image-scan-summary.json \
+            "$ECR_REPOSITORY" \
+            "$IMAGE_DIGEST" \
+            "$runnable_digest"
       - name: Bind action and workflow commits to the image digest
         shell: bash
         run: |
@@ -105,8 +131,6 @@ jobs:
             "$GITHUB_SHA" \
             "$IMAGE_REPOSITORY" \
             "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61"
-          image_digest="$(node -e 'const metadata = require("./release-metadata.json"); process.stdout.write(metadata["containerimage.digest"])')"
-          echo "IMAGE_DIGEST=$image_digest" >> "$GITHUB_ENV"
       - name: Sign and verify immutable release artifacts
         shell: bash
         run: |
@@ -143,6 +167,14 @@ jobs:
             --certificate-identity "$certificate_identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             release-manifest.json
+          cosign sign-blob --yes \
+            --bundle ecr-image-scan-summary.sigstore.json \
+            ecr-image-scan-summary.json
+          cosign verify-blob \
+            --bundle ecr-image-scan-summary.sigstore.json \
+            --certificate-identity "$certificate_identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            ecr-image-scan-summary.json
       - name: Promote verified candidate to semantic image tag
         shell: bash
         run: |
@@ -163,10 +195,12 @@ jobs:
           gh release create "v$VERSION" \
             --target "$GITHUB_SHA" \
             --title "steward-run v$VERSION" \
-            --notes "Verified in-cluster Steward integration release with an OCI 1.1 image signature, provenance, SBOM, and immutable GitOps handoff." \
+            --notes "Verified in-cluster Steward integration release with an OCI 1.1 image signature, completed ECR scan evidence, provenance, SBOM, and immutable GitOps handoff." \
             release-manifest.json \
             release-manifest.sigstore.json \
             image-signature.sigstore.json \
+            ecr-image-scan-summary.json \
+            ecr-image-scan-summary.sigstore.json \
             release-metadata.json
           {
             echo "## Immutable release handoff"
@@ -184,4 +218,6 @@ jobs:
             release-manifest.json
             release-manifest.sigstore.json
             image-signature.sigstore.json
+            ecr-image-scan-summary.json
+            ecr-image-scan-summary.sigstore.json
           if-no-files-found: error
