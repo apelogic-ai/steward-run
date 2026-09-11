@@ -8,7 +8,7 @@ const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
 const actionCommit = "19230cc59a6b1246224912961e35c7044b0808d3";
-const directPackageActionCommit = "fd090be213b3f4d777bcfacc367e0cdbd574400b";
+const directPackageActionCommit = "5aa55da69f7859a16faf815bfed790fe9ba95999";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
