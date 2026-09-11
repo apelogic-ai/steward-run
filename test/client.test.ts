@@ -193,7 +193,56 @@ test("direct-package submission accepts Steward's complete v2 Task status", asyn
     invocationPath: ".steward/tasks/release-summary.json",
   });
   assert.deepEqual(created.diagnostics, { executionLog: "full" });
+  assert.equal(created.evidence?.taskUid, created.taskUid);
+  assert.deepEqual(created.evidence?.diagnostics, created.diagnostics);
   assert.equal(created.contractVersion, "steward.task/v2");
+});
+
+test("direct Task evidence fails closed when malformed or inconsistent with status", async () => {
+  for (const payload of [
+    { ...directTaskStatus, evidence: null },
+    {
+      ...directTaskStatus,
+      evidence: { ...directTaskStatus.evidence, schemaVersion: "steward.task/evidence/v2" },
+    },
+    {
+      ...directTaskStatus,
+      evidence: { ...directTaskStatus.evidence, taskUid: "33333333-3333-4333-8333-333333333333" },
+    },
+    {
+      ...directTaskStatus,
+      evidence: { ...directTaskStatus.evidence, diagnostics: { executionLog: "off" } },
+    },
+    {
+      ...directTaskStatus,
+      evidence: { ...directTaskStatus.evidence, invocation: null },
+    },
+    {
+      ...directTaskStatus,
+      evidence: { ...directTaskStatus.evidence, unknown: true },
+    },
+  ]) {
+    const client = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => "token",
+      fetch: async () => jsonResponse(payload, 201),
+      maxAttempts: 1,
+    });
+    await assert.rejects(
+      client.submitTask(
+        {
+          contractVersion: "steward.task/v2",
+          invocationPath: ".steward/tasks/release-summary.json",
+        },
+        "a".repeat(64),
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRequestFailure);
+        assert.equal(error.category, "malformed-response");
+        return true;
+      },
+    );
+  }
 });
 
 test("direct Task status requires an exact authenticated diagnostics projection", async () => {

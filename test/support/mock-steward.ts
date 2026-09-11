@@ -110,6 +110,18 @@ function task(
       ? {
           contractVersion: "steward.task/v2",
           diagnostics: { executionLog: directInvocation.executionLog },
+          evidence: {
+            schemaVersion: "steward.task/source-authority-evidence/v1",
+            taskUid,
+            sourceProvenance: {},
+            invocation: {},
+            package: {},
+            closure: {},
+            closureDigest: `steward:sha256:${"1".repeat(64)}`,
+            envelope: {},
+            effectiveRequirements: {},
+            diagnostics: { executionLog: directInvocation.executionLog },
+          },
         }
       : {}),
     taskUid,

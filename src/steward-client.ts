@@ -63,6 +63,20 @@ export interface Task {
   failureReason?: string;
   deltas: TaskAdmissionDelta[];
   diagnostics?: { executionLog: "off" | "full" };
+  evidence?: DirectTaskEvidence;
+}
+
+export interface DirectTaskEvidence {
+  schemaVersion: "steward.task/source-authority-evidence/v1";
+  taskUid: string;
+  sourceProvenance: Record<string, unknown>;
+  invocation: Record<string, unknown>;
+  package: Record<string, unknown>;
+  closure: Record<string, unknown>;
+  closureDigest: string;
+  envelope: Record<string, unknown>;
+  effectiveRequirements: Record<string, unknown>;
+  diagnostics: { executionLog: "off" | "full" };
 }
 
 export type TaskSubmissionRequest =
@@ -250,6 +264,62 @@ function parseTaskDiagnostics(
     : undefined;
 }
 
+function parseDirectTaskEvidence(value: unknown): DirectTaskEvidence | undefined {
+  const evidence = record(value);
+  if (
+    !evidence ||
+    !hasOnlyKeys(evidence, [
+      "schemaVersion",
+      "taskUid",
+      "sourceProvenance",
+      "invocation",
+      "package",
+      "closure",
+      "closureDigest",
+      "envelope",
+      "effectiveRequirements",
+      "diagnostics",
+    ]) ||
+    evidence.schemaVersion !== "steward.task/source-authority-evidence/v1" ||
+    typeof evidence.taskUid !== "string" ||
+    !evidence.taskUid ||
+    typeof evidence.closureDigest !== "string" ||
+    !evidence.closureDigest
+  ) {
+    return undefined;
+  }
+  const sourceProvenance = record(evidence.sourceProvenance);
+  const invocation = record(evidence.invocation);
+  const packageSource = record(evidence.package);
+  const closure = record(evidence.closure);
+  const envelope = record(evidence.envelope);
+  const effectiveRequirements = record(evidence.effectiveRequirements);
+  const diagnostics = parseTaskDiagnostics(evidence.diagnostics);
+  if (
+    !sourceProvenance ||
+    !invocation ||
+    !packageSource ||
+    !closure ||
+    !envelope ||
+    !effectiveRequirements ||
+    !diagnostics
+  ) {
+    return undefined;
+  }
+  return {
+    schemaVersion: evidence.schemaVersion,
+    taskUid: evidence.taskUid,
+    sourceProvenance,
+    invocation,
+    package: packageSource,
+    closure,
+    closureDigest: evidence.closureDigest,
+    envelope,
+    effectiveRequirements,
+    diagnostics,
+  };
+}
+
 const pendingBindingPhases = new Set<TaskPhase>(["submitted", "parked", "queued"]);
 
 function isPendingBindingTask(task: Task): boolean {
@@ -274,6 +344,9 @@ function parseTask(payload: unknown): Task {
   const diagnostics = value?.diagnostics === undefined
     ? undefined
     : parseTaskDiagnostics(value.diagnostics);
+  const evidence = value?.evidence === undefined
+    ? undefined
+    : parseDirectTaskEvidence(value.evidence);
   if (
     !value ||
     !hasOnlyKeys(value, [
@@ -286,11 +359,13 @@ function parseTask(payload: unknown): Task {
       "failureReason",
       "deltas",
       "diagnostics",
+      "evidence",
     ]) ||
     typeof value.taskUid !== "string" ||
     !value.taskUid ||
     (value.contractVersion !== undefined && value.contractVersion !== "steward.task/v2") ||
     ((value.contractVersion === "steward.task/v2") !== (diagnostics !== undefined)) ||
+    ((value.contractVersion === "steward.task/v2") !== (evidence !== undefined)) ||
     (value.runtimeUid !== null &&
       (typeof value.runtimeUid !== "string" || !value.runtimeUid)) ||
     typeof value.phase !== "string" ||
@@ -299,7 +374,10 @@ function parseTask(payload: unknown): Task {
     typeof value.finalized !== "boolean" ||
     (value.failureReason !== undefined && typeof value.failureReason !== "string") ||
     !deltas ||
-    (value.diagnostics !== undefined && diagnostics === undefined)
+    (value.diagnostics !== undefined && diagnostics === undefined) ||
+    (value.evidence !== undefined && evidence === undefined) ||
+    (evidence !== undefined && evidence.taskUid !== value.taskUid) ||
+    (evidence !== undefined && evidence.diagnostics.executionLog !== diagnostics?.executionLog)
   ) {
     throw new Error("Steward returned an incompatible Task response");
   }
@@ -315,6 +393,7 @@ function parseTask(payload: unknown): Task {
     ...(typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {}),
     deltas,
     ...(diagnostics === undefined ? {} : { diagnostics }),
+    ...(evidence === undefined ? {} : { evidence }),
   };
   if (task.runtimeUid === null && !isPendingBindingTask(task) && !isUnboundFinalizationTask(task)) {
     throw new Error("Steward returned a contradictory unbound Task response");
