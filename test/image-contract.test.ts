@@ -15,7 +15,8 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
   assert.match(dockerfile, /COPY --from=node-runtime \/usr\/local\/bin\/node/);
   assert.match(dockerfile, /USER runner/);
   assert.match(dockerfile, /apt-get upgrade -y/);
-  assert.match(dockerfile, /apt-get purge -y curl libcurl4t64/);
+  assert.match(dockerfile, /apt-get purge -y/);
+  assert.doesNotMatch(dockerfile, /autoremove/);
   assert.match(dockerfile, /rm -f \/usr\/bin\/containerd \/usr\/bin\/containerd-shim-runc-v2 \/usr\/bin\/ctr/);
   assert.match(dockerfile, /\/usr\/bin\/docker \/usr\/bin\/docker-init \/usr\/bin\/docker-proxy/);
   assert.match(dockerfile, /\/usr\/bin\/dockerd \/usr\/bin\/runc/);
@@ -23,6 +24,61 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
   assert.match(dockerfile, /\/home\/runner\/externals\/node20\/lib\/node_modules\/npm/);
   assert.doesNotMatch(dockerfile, /claude|codex|api[_-]?key|credential|secret/iu);
   assert.doesNotMatch(dockerfile, /ENTRYPOINT|CMD/u);
+});
+
+test("the final runner image excludes the build-only GLib package chain", async () => {
+  const dockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
+  const ciWorkflow = await readFile(
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+
+  const buildOnlyPackages = [
+    "software-properties-common",
+    "python3-software-properties",
+    "python3-gi",
+    "gir1.2-girepository-2.0",
+    "gir1.2-packagekitglib-1.0",
+    "gir1.2-glib-2.0",
+    "packagekit",
+    "libappstream5",
+    "libgirepository-1.0-1",
+    "python3-dbus",
+    "libxmlb2",
+    "libglib2.0-0t64",
+    "libglib2.0-bin",
+    "libglib2.0-data",
+    "libgstreamer1.0-0",
+    "libpackagekit-glib2-18",
+    "polkitd",
+    "libpolkit-agent-1-0",
+    "libpolkit-gobject-1-0",
+  ];
+  assert.equal(buildOnlyPackages.length, 19);
+  for (const packageName of buildOnlyPackages) {
+    assert.match(dockerfile, new RegExp(`\\n\\s+${packageName.replaceAll(".", "\\.")} \\\\`));
+  }
+
+  for (const packageName of [
+    "gir1.2-glib-2.0",
+    "libglib2.0-0t64",
+    "libglib2.0-bin",
+    "libglib2.0-data",
+  ]) {
+    assert.match(dockerfile, new RegExp(`! dpkg-query .*${packageName}`));
+    assert.match(ciWorkflow, new RegExp(`! dpkg-query .*${packageName}`));
+  }
+  assert.match(dockerfile, /apt-get check/);
+  assert.match(ciWorkflow, /sudo -n apt-get check/);
+  assert.match(ciWorkflow, /Runner\.Listener --version/);
+  assert.match(ciWorkflow, /ldd \/home\/runner\/bin\/Runner\.Listener/);
+  for (const command of ["git", "jq", "python3", "unzip"]) {
+    assert.match(ciWorkflow, new RegExp(`command -v ${command}`));
+  }
+  assert.match(ciWorkflow, /sudo -n true/);
+  assert.match(ciWorkflow, /docker --version/);
+  assert.match(ciWorkflow, /docker buildx version/);
+  assert.match(ciWorkflow, /! command -v docker/);
 });
 
 test("the package metadata identifies the in-cluster integration release", async () => {
