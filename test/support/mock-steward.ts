@@ -40,6 +40,12 @@ export interface MockStewardOptions {
   finalizationMarker?: string;
   acceptExternalGithubOidcToken?: boolean;
   terminalFailureReason?: string;
+  directInvocation?: {
+    invocationPath: string;
+    executionLog: "off" | "full";
+    stdout?: string;
+    stderr?: string;
+  };
 }
 
 async function requestBody(request: IncomingMessage): Promise<Buffer> {
@@ -97,8 +103,15 @@ function task(
   finalized: boolean,
   phase: "submitted" | "running" | "succeeded" | "failed",
   failureReason?: string,
+  directInvocation?: MockStewardOptions["directInvocation"],
 ) {
   return {
+    ...(directInvocation
+      ? {
+          contractVersion: "steward.task/v2",
+          diagnostics: { executionLog: directInvocation.executionLog },
+        }
+      : {}),
     taskUid,
     runtimeUid,
     phase,
@@ -109,11 +122,26 @@ function task(
   };
 }
 
-async function outputArchive(payload: Buffer): Promise<Buffer> {
+async function outputArchive(
+  payload: Buffer,
+  directInvocation?: MockStewardOptions["directInvocation"],
+): Promise<Buffer> {
   const pack = tar.pack();
   pack.entry({ name: "./", type: "directory" });
   pack.entry({ name: "./out/", type: "directory" });
   pack.entry({ name: "./out/payload.bin" }, payload);
+  if (directInvocation?.executionLog === "full") {
+    pack.entry({ name: "./.steward/", type: "directory" });
+    pack.entry({ name: "./.steward/diagnostics/", type: "directory" });
+    pack.entry(
+      { name: "./.steward/diagnostics/stdout.log" },
+      directInvocation.stdout ?? "mock agent stdout\n",
+    );
+    pack.entry(
+      { name: "./.steward/diagnostics/stderr.log" },
+      directInvocation.stderr ?? "mock agent stderr\n",
+    );
+  }
   pack.finalize();
   const chunks: Buffer[] = [];
   for await (const chunk of pack) chunks.push(Buffer.from(chunk));
@@ -197,15 +225,19 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
       if (request.method === "POST" && url.pathname === "/v1/tasks") {
         const createRequest: unknown = JSON.parse((await requestBody(request)).toString("utf8"));
         observations.taskSubmission = createRequest;
-        if (
-          JSON.stringify(createRequest) !== JSON.stringify({ workflow: "repository-review@1" })
-        ) {
+        const expectedSubmission = options.directInvocation
+          ? {
+              contractVersion: "steward.task/v2",
+              invocationPath: options.directInvocation.invocationPath,
+            }
+          : { workflow: "repository-review@1" };
+        if (JSON.stringify(createRequest) !== JSON.stringify(expectedSubmission)) {
           json(response, 400, { message: "mock requires the versioned Workflow request" });
           return;
         }
         observations.created = true;
         observations.operations.push("submit");
-        json(response, 201, task(false, "submitted"));
+        json(response, 201, task(false, "submitted", undefined, options.directInvocation));
       } else if (request.method === "PUT" && url.pathname === `/v1/tasks/${taskUid}/inputs`) {
         payload = await uploadedPayload(await requestBody(request));
         observations.uploaded = true;
@@ -214,7 +246,7 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
       } else if (request.method === "POST" && url.pathname === `/v1/tasks/${taskUid}/execute`) {
         observations.executed = true;
         observations.operations.push("execute");
-        json(response, 202, task(false, "running"));
+        json(response, 202, task(false, "running", undefined, options.directInvocation));
       } else if (request.method === "GET" && url.pathname === `/v1/tasks/${taskUid}`) {
         observations.polled = true;
         observations.operations.push("poll");
@@ -222,15 +254,20 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
           response,
           200,
           options.terminalFailureReason === undefined
-            ? task(observations.finalized, "succeeded")
-            : task(observations.finalized, "failed", options.terminalFailureReason),
+            ? task(observations.finalized, "succeeded", undefined, options.directInvocation)
+            : task(
+                observations.finalized,
+                "failed",
+                options.terminalFailureReason,
+                options.directInvocation,
+              ),
         );
       } else if (request.method === "GET" && url.pathname === `/v1/tasks/${taskUid}/outputs`) {
         if (!payload) throw new Error("mock output requested before input upload");
         observations.downloaded = true;
         observations.operations.push("download-outputs");
         response.writeHead(200, { "content-type": "application/x-tar" });
-        response.end(await outputArchive(payload));
+        response.end(await outputArchive(payload, options.directInvocation));
       } else if (request.method === "DELETE" && url.pathname === `/v1/tasks/${taskUid}`) {
         if (options.finalizationMarker) {
           await writeFile(options.finalizationMarker, `${taskUid}\n`, "utf8");
@@ -241,8 +278,8 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
           response,
           202,
           options.terminalFailureReason === undefined
-            ? task(true, "succeeded")
-            : task(true, "failed", options.terminalFailureReason),
+            ? task(true, "succeeded", undefined, options.directInvocation)
+            : task(true, "failed", options.terminalFailureReason, options.directInvocation),
         );
       } else {
         json(response, 404, { message: "not found" });

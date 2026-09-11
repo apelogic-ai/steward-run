@@ -170,6 +170,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
       "agent-runtime",
       "identity-exchange-url",
       "input-artifact",
+      "invocation-path",
       "output-artifact",
       "runner-label",
       "steward-api-url",
@@ -183,7 +184,6 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
     "output-artifact",
     "runner-label",
     "steward-api-url",
-    "workflow",
   ]) {
     assert.equal(workflow.on.workflow_call.inputs[name]?.type, "string", name);
   }
@@ -191,7 +191,8 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.equal(workflow.on.workflow_call.inputs["action-commit"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["identity-exchange-url"]?.required, true);
   assert.equal(workflow.on.workflow_call.inputs["runner-label"]?.required, true);
-  assert.equal(workflow.on.workflow_call.inputs.workflow?.required, true);
+  assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
+  assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.deepEqual(
     Object.keys(workflow.on.workflow_call.outputs).sort(),
     ["runtime-uid", "status", "task-uid"],
@@ -213,7 +214,11 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.doesNotMatch(containerImage.split("@", 1)[0] ?? "", /:[^/]+$/u);
   assert.equal(workflow.on.workflow_call.inputs["container-image"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["job-container-image"], undefined);
-  assert.doesNotMatch(source, /actions\/checkout@|inputs\.action-commit|\.steward-run-action/u);
+  assert.match(source, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/u);
+  assert.match(source, /if:\s*inputs\.invocation-path != ''/u);
+  assert.match(source, /ref:\s*\$\{\{ github\.sha \}\}/u);
+  assert.match(source, /persist-credentials:\s*false/u);
+  assert.doesNotMatch(source, /inputs\.action-commit|\.steward-run-action/u);
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /name:\s*\$\{\{ inputs\.input-artifact \}\}/);
   assert.match(source, /path:\s*in/);
@@ -225,16 +230,19 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.match(source, /identity-exchange-url:\s*\$\{\{ inputs\.identity-exchange-url \}\}/);
   assert.match(source, /inputs:\s*in/);
   assert.match(source, /outputs:\s*out/);
+  assert.match(source, /invocation-path:\s*\$\{\{ inputs\.invocation-path \}\}/u);
+  assert.match(source, /workflow:\s*\$\{\{ inputs\.workflow \}\}/u);
   assert.doesNotMatch(source, /coding-agent-runtime|codingAgentRuntime/u);
   assert.match(source, /actions\/upload-artifact@/);
   assert.match(source, /name:\s*\$\{\{ inputs\.output-artifact \}\}/);
   assert.match(source, /path:\s*out/);
   assert.doesNotMatch(source, /oidc-audience|bearer-token|identity\.dev|cluster|secret/iu);
 
+  const checkout = source.indexOf("actions/checkout@");
   const download = source.indexOf("actions/download-artifact@");
   const action = source.indexOf(`uses: apelogic-ai/steward-run@${actionCommit}`);
   const upload = source.indexOf("actions/upload-artifact@");
-  assert.ok(download >= 0 && download < action && action < upload);
+  assert.ok(checkout >= 0 && checkout < download && download < action && action < upload);
 });
 
 test("the self-hosted reusable workflow preserves GitHub OIDC provenance without an ECR job container", async () => {
@@ -260,16 +268,22 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   assert.equal(workflow.jobs.governed?.permissions?.["id-token"], "write");
   assert.equal(workflow.jobs.governed?.container, undefined);
   assert.equal(workflow.on.workflow_call.inputs["identity-exchange-audience"]?.required, true);
+  assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
+  assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.match(
     source,
     /uses:\s*apelogic-ai\/steward-run@0707623836cd4cdf063938e1e049c694397bc31c/u,
   );
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /actions\/upload-artifact@/);
+  assert.match(source, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/u);
+  assert.match(source, /if:\s*inputs\.invocation-path != ''/u);
+  assert.match(source, /persist-credentials:\s*false/u);
   assert.match(
     source,
     /identity-exchange-audience:\s*\$\{\{ inputs\.identity-exchange-audience \}\}/u,
   );
+  assert.match(source, /invocation-path:\s*\$\{\{ inputs\.invocation-path \}\}/u);
   assert.doesNotMatch(source, /amazonaws\.com|container:|bearer-token|identity\.dev|cluster|secret/iu);
 });
 

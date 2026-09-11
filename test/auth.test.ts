@@ -110,6 +110,38 @@ test("the Workflow reference is preserved byte-for-byte and runtime selection is
   assert.equal("codingAgentRuntime" in config, false);
 });
 
+test("direct-package configuration selects one canonical invocation path without package bytes", () => {
+  const direct = readActionConfig({
+    ...baseEnvironment,
+    STEWARD_RUN_WORKFLOW: undefined,
+    STEWARD_RUN_INVOCATION_PATH: ".steward/tasks/release-summary.json",
+    STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://identity.example/v1/exchange",
+  });
+  assert.equal(direct.invocationPath, ".steward/tasks/release-summary.json");
+  assert.equal("workflow" in direct, false);
+
+  assert.throws(
+    () =>
+      readActionConfig({
+        ...baseEnvironment,
+        STEWARD_RUN_INVOCATION_PATH: ".steward/tasks/release-summary.json",
+        STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://identity.example/v1/exchange",
+      }),
+    /configure exactly one Task source/,
+  );
+  assert.throws(
+    () =>
+      readActionConfig({
+        ...baseEnvironment,
+        STEWARD_RUN_WORKFLOW: undefined,
+        STEWARD_RUN_INVOCATION_PATH: ".steward/tasks/release-summary.json",
+        STEWARD_RUN_AGENT_RUNTIME: "caller-selected-runtime",
+        STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://identity.example/v1/exchange",
+      }),
+    /agent-runtime cannot be selected for a direct package invocation/,
+  );
+});
+
 test("short-lived bearer token files are reread so projected credentials can rotate", async () => {
   const root = await mkdtemp(join(tmpdir(), "steward-run-token-"));
   const path = join(root, "token");

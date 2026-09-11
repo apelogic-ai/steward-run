@@ -33,11 +33,28 @@ interface ToolGrant {
 
 export type TaskAdmissionDelta =
   | { dimension: "budget"; requested: string; ceiling: string; currency: string }
+  | {
+    dimension: "singleRunBudget";
+    requested: string | null;
+    ceiling: string;
+    currency: string;
+  }
   | { dimension: "ttl"; requested: string; ceiling: string }
   | { dimension: "models"; requested: ModelRef[]; ceiling: ModelRef[] }
-  | { dimension: "tools"; requested: ToolGrant[]; ceiling: ToolGrant[] };
+  | { dimension: "tools"; requested: ToolGrant[]; ceiling: ToolGrant[] }
+  | {
+    dimension: "runnerPlatforms";
+    requested: Array<"linux" | "mac" | "windows">;
+    ceiling: Array<"linux" | "mac" | "windows">;
+  }
+  | {
+    dimension: "runnerMemory" | "runnerCompute" | "runnerStorage";
+    requested: string;
+    ceiling: string | null;
+  };
 
 export interface Task {
+  contractVersion?: "steward.task/v2";
   taskUid: string;
   runtimeUid: string | null;
   phase: TaskPhase;
@@ -45,12 +62,12 @@ export interface Task {
   finalized: boolean;
   failureReason?: string;
   deltas: TaskAdmissionDelta[];
+  diagnostics?: { executionLog: "off" | "full" };
 }
 
-export interface TaskSubmissionRequest {
-  workflow: string;
-  agentRuntimeUid?: string;
-}
+export type TaskSubmissionRequest =
+  | { workflow: string; agentRuntimeUid?: string }
+  | { contractVersion: "steward.task/v2"; invocationPath: string };
 
 interface ClientOptions {
   baseUrl: string;
@@ -164,6 +181,20 @@ function parseTaskDelta(value: unknown): TaskAdmissionDelta | undefined {
     };
   }
   if (
+    delta.dimension === "singleRunBudget" &&
+    hasOnlyKeys(delta, ["dimension", "requested", "ceiling", "currency"]) &&
+    (delta.requested === null || typeof delta.requested === "string") &&
+    typeof delta.ceiling === "string" &&
+    typeof delta.currency === "string"
+  ) {
+    return {
+      dimension: "singleRunBudget",
+      requested: delta.requested,
+      ceiling: delta.ceiling,
+      currency: delta.currency,
+    };
+  }
+  if (
     delta.dimension === "ttl" &&
     hasOnlyKeys(delta, ["dimension", "requested", "ceiling"]) &&
     typeof delta.requested === "string" &&
@@ -181,7 +212,42 @@ function parseTaskDelta(value: unknown): TaskAdmissionDelta | undefined {
     const ceiling = parseItems(delta.ceiling, parseToolGrant);
     if (requested && ceiling) return { dimension: "tools", requested, ceiling };
   }
+  if (
+    delta.dimension === "runnerPlatforms" &&
+    hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])
+  ) {
+    const parsePlatform = (item: unknown): "linux" | "mac" | "windows" | undefined =>
+      item === "linux" || item === "mac" || item === "windows" ? item : undefined;
+    const requested = parseItems(delta.requested, parsePlatform);
+    const ceiling = parseItems(delta.ceiling, parsePlatform);
+    if (requested && ceiling) return { dimension: "runnerPlatforms", requested, ceiling };
+  }
+  if (
+    (delta.dimension === "runnerMemory" ||
+      delta.dimension === "runnerCompute" ||
+      delta.dimension === "runnerStorage") &&
+    hasOnlyKeys(delta, ["dimension", "requested", "ceiling"]) &&
+    typeof delta.requested === "string" &&
+    (delta.ceiling === null || typeof delta.ceiling === "string")
+  ) {
+    return {
+      dimension: delta.dimension,
+      requested: delta.requested,
+      ceiling: delta.ceiling,
+    };
+  }
   return undefined;
+}
+
+function parseTaskDiagnostics(
+  value: unknown,
+): { executionLog: "off" | "full" } | undefined {
+  const diagnostics = record(value);
+  return diagnostics &&
+      hasOnlyKeys(diagnostics, ["executionLog"]) &&
+      (diagnostics.executionLog === "off" || diagnostics.executionLog === "full")
+    ? { executionLog: diagnostics.executionLog }
+    : undefined;
 }
 
 const pendingBindingPhases = new Set<TaskPhase>(["submitted", "parked", "queued"]);
@@ -205,19 +271,26 @@ function parseTask(payload: unknown): Task {
   const value = record(payload);
   const rawDeltas = value?.deltas ?? [];
   const deltas = parseItems(rawDeltas, parseTaskDelta);
+  const diagnostics = value?.diagnostics === undefined
+    ? undefined
+    : parseTaskDiagnostics(value.diagnostics);
   if (
     !value ||
     !hasOnlyKeys(value, [
       "taskUid",
+      "contractVersion",
       "runtimeUid",
       "phase",
       "runtimeOwnership",
       "finalized",
       "failureReason",
       "deltas",
+      "diagnostics",
     ]) ||
     typeof value.taskUid !== "string" ||
     !value.taskUid ||
+    (value.contractVersion !== undefined && value.contractVersion !== "steward.task/v2") ||
+    ((value.contractVersion === "steward.task/v2") !== (diagnostics !== undefined)) ||
     (value.runtimeUid !== null &&
       (typeof value.runtimeUid !== "string" || !value.runtimeUid)) ||
     typeof value.phase !== "string" ||
@@ -225,11 +298,15 @@ function parseTask(payload: unknown): Task {
     (value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted") ||
     typeof value.finalized !== "boolean" ||
     (value.failureReason !== undefined && typeof value.failureReason !== "string") ||
-    !deltas
+    !deltas ||
+    (value.diagnostics !== undefined && diagnostics === undefined)
   ) {
     throw new Error("Steward returned an incompatible Task response");
   }
   const task: Task = {
+    ...(value.contractVersion === "steward.task/v2"
+      ? { contractVersion: value.contractVersion }
+      : {}),
     taskUid: value.taskUid,
     runtimeUid: value.runtimeUid,
     phase: value.phase as TaskPhase,
@@ -237,6 +314,7 @@ function parseTask(payload: unknown): Task {
     finalized: value.finalized,
     ...(typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {}),
     deltas,
+    ...(diagnostics === undefined ? {} : { diagnostics }),
   };
   if (task.runtimeUid === null && !isPendingBindingTask(task) && !isUnboundFinalizationTask(task)) {
     throw new Error("Steward returned a contradictory unbound Task response");

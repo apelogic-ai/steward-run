@@ -14,6 +14,18 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import tar from "tar-stream";
 
+export type ExecutionLogMode = "off" | "full";
+
+export interface ExecutionTranscript {
+  stdout: Buffer;
+  stderr: Buffer;
+}
+
+const diagnosticsRoot = ".steward/diagnostics";
+const stdoutTranscriptPath = `${diagnosticsRoot}/stdout.log`;
+const stderrTranscriptPath = `${diagnosticsRoot}/stderr.log`;
+const transcriptLimit = 4 * 1024 * 1024;
+
 interface ArchiveEntry {
   name: string;
   source: string;
@@ -43,6 +55,49 @@ function normalizeWorkspacePath(value: string): string {
     throw invalidWorkspacePath(value);
   }
   return normalized;
+}
+
+function canonicalInvocationPath(value: string): string {
+  if (
+    !value ||
+    value.length > 512 ||
+    value !== value.trim() ||
+    value.includes("\\") ||
+    /[\u0000-\u001f\u007f]/u.test(value) ||
+    posix.isAbsolute(value) ||
+    win32.isAbsolute(value) ||
+    posix.normalize(value) !== value ||
+    value.split("/").some((component) =>
+      !component ||
+      component === "." ||
+      component === ".." ||
+      !/^[A-Za-z0-9._-]+$/u.test(component)
+    )
+  ) {
+    throw new Error("invocation-path must be a canonical repository-relative path");
+  }
+  return value;
+}
+
+export async function validateInvocationFile(workspace: string, value: string): Promise<string> {
+  const relative = canonicalInvocationPath(value);
+  let current = workspace;
+  const components = relative.split("/");
+  for (const [index, component] of components.entries()) {
+    current = join(current, component);
+    const metadata = await lstat(current).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") throw new Error("invocation-path does not exist");
+      throw error;
+    });
+    if (metadata.isSymbolicLink()) {
+      throw new Error("invocation-path must not contain symbolic links");
+    }
+    const final = index === components.length - 1;
+    if ((!final && !metadata.isDirectory()) || (final && !metadata.isFile())) {
+      throw new Error("invocation-path must identify a regular file");
+    }
+  }
+  return relative;
 }
 
 export function parseWorkspacePaths(source: string): string[] {
@@ -214,14 +269,47 @@ async function writeOutputFile(
   }
 }
 
+async function readTranscriptFile(stream: Readable, path: string): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of stream) {
+    const value = Buffer.from(chunk);
+    size += value.length;
+    if (size > transcriptLimit) {
+      throw new Error(`execution transcript exceeds ${transcriptLimit} bytes: ${path}`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, size);
+}
+
+function isDiagnosticsPath(path: string): boolean {
+  return path === diagnosticsRoot || path.startsWith(`${diagnosticsRoot}/`);
+}
+
+function hasCanonicalReservedSpelling(
+  archivePath: string,
+  normalized: string,
+  type: string | null | undefined,
+): boolean {
+  const withoutRoot = archivePath.startsWith("./") ? archivePath.slice(2) : archivePath;
+  const candidate = type === "directory" && withoutRoot.endsWith("/")
+    ? withoutRoot.slice(0, -1)
+    : withoutRoot;
+  return candidate === normalized;
+}
+
 export async function extractOutputArchive(
   archive: Readable,
   workspace: string,
   declaredPaths: readonly string[],
-): Promise<void> {
+  diagnostics: { executionLog: ExecutionLogMode } = { executionLog: "off" },
+): Promise<ExecutionTranscript | undefined> {
   const outputs = declaredPaths.map(normalizeWorkspacePath);
   const seen = new Set<string>();
   let sawRootDirectory = false;
+  let stdout: Buffer | undefined;
+  let stderr: Buffer | undefined;
   const extract = tar.extract();
   extract.on("entry", (header, stream, next) => {
     // The extractor destroys the active entry stream when `next(error)` fails the
@@ -241,6 +329,41 @@ export async function extractOutputArchive(
           return;
         }
         const relative = normalizeArchivePath(header.name);
+        if (
+          isDiagnosticsPath(relative) ||
+          (diagnostics.executionLog === "full" && relative === ".steward")
+        ) {
+          if (diagnostics.executionLog !== "full") {
+            stream.resume();
+            throw new Error("reserved diagnostics require full execution logging");
+          }
+          if (!hasCanonicalReservedSpelling(header.name, relative, header.type)) {
+            stream.resume();
+            throw new Error("reserved diagnostics archive path is not canonical");
+          }
+          if (seen.has(relative)) throw new Error(`duplicate archive entry: ${relative}`);
+          seen.add(relative);
+          if (relative === ".steward" || relative === diagnosticsRoot) {
+            if (header.type !== "directory") {
+              stream.resume();
+              throw new Error(`reserved diagnostics ancestor must be a directory: ${relative}`);
+            }
+            stream.resume();
+          } else if (relative === stdoutTranscriptPath || relative === stderrTranscriptPath) {
+            if (header.type !== "file") {
+              stream.resume();
+              throw new Error(`reserved execution transcript must be a file: ${relative}`);
+            }
+            const body = await readTranscriptFile(stream, relative);
+            if (relative === stdoutTranscriptPath) stdout = body;
+            else stderr = body;
+          } else {
+            stream.resume();
+            throw new Error(`unknown reserved diagnostics path: ${relative}`);
+          }
+          next();
+          return;
+        }
         const isDeclared = isDeclaredOutput(relative, outputs);
         const isAncestor = isStrictAncestorOfDeclaredOutput(relative, outputs);
         if (!isDeclared && !isAncestor) {
@@ -269,4 +392,11 @@ export async function extractOutputArchive(
     })();
   });
   await pipeline(archive, extract);
+  if (diagnostics.executionLog === "full") {
+    if (stdout === undefined || stderr === undefined) {
+      throw new Error("missing reserved execution transcript");
+    }
+    return { stdout, stderr };
+  }
+  return undefined;
 }
