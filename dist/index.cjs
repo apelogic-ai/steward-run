@@ -30,16 +30,16 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// ../../node_modules/events-universal/default.js
+// node_modules/events-universal/default.js
 var require_default = __commonJS({
-  "../../node_modules/events-universal/default.js"(exports2, module2) {
+  "node_modules/events-universal/default.js"(exports2, module2) {
     module2.exports = require("events");
   }
 });
 
-// ../../node_modules/fast-fifo/fixed-size.js
+// node_modules/fast-fifo/fixed-size.js
 var require_fixed_size = __commonJS({
-  "../../node_modules/fast-fifo/fixed-size.js"(exports2, module2) {
+  "node_modules/fast-fifo/fixed-size.js"(exports2, module2) {
     module2.exports = class FixedFIFO {
       constructor(hwm) {
         if (!(hwm > 0) || (hwm - 1 & hwm) !== 0) throw new Error("Max size for a FixedFIFO should be a power of two");
@@ -77,9 +77,9 @@ var require_fixed_size = __commonJS({
   }
 });
 
-// ../../node_modules/fast-fifo/index.js
+// node_modules/fast-fifo/index.js
 var require_fast_fifo = __commonJS({
-  "../../node_modules/fast-fifo/index.js"(exports2, module2) {
+  "node_modules/fast-fifo/index.js"(exports2, module2) {
     var FixedFIFO = require_fixed_size();
     module2.exports = class FastFIFO {
       constructor(hwm) {
@@ -124,9 +124,9 @@ var require_fast_fifo = __commonJS({
   }
 });
 
-// ../../node_modules/b4a/index.js
+// node_modules/b4a/index.js
 var require_b4a = __commonJS({
-  "../../node_modules/b4a/index.js"(exports2, module2) {
+  "node_modules/b4a/index.js"(exports2, module2) {
     function isBuffer(value) {
       return Buffer.isBuffer(value) || value instanceof Uint8Array;
     }
@@ -281,9 +281,9 @@ var require_b4a = __commonJS({
   }
 });
 
-// ../../node_modules/text-decoder/lib/pass-through-decoder.js
+// node_modules/text-decoder/lib/pass-through-decoder.js
 var require_pass_through_decoder = __commonJS({
-  "../../node_modules/text-decoder/lib/pass-through-decoder.js"(exports2, module2) {
+  "node_modules/text-decoder/lib/pass-through-decoder.js"(exports2, module2) {
     var b4a = require_b4a();
     module2.exports = class PassThroughDecoder {
       constructor(encoding) {
@@ -302,9 +302,9 @@ var require_pass_through_decoder = __commonJS({
   }
 });
 
-// ../../node_modules/text-decoder/lib/utf8-decoder.js
+// node_modules/text-decoder/lib/utf8-decoder.js
 var require_utf8_decoder = __commonJS({
-  "../../node_modules/text-decoder/lib/utf8-decoder.js"(exports2, module2) {
+  "node_modules/text-decoder/lib/utf8-decoder.js"(exports2, module2) {
     var b4a = require_b4a();
     module2.exports = class UTF8Decoder {
       constructor() {
@@ -449,9 +449,9 @@ var require_utf8_decoder = __commonJS({
   }
 });
 
-// ../../node_modules/text-decoder/index.js
+// node_modules/text-decoder/index.js
 var require_text_decoder = __commonJS({
-  "../../node_modules/text-decoder/index.js"(exports2, module2) {
+  "node_modules/text-decoder/index.js"(exports2, module2) {
     var PassThroughDecoder = require_pass_through_decoder();
     var UTF8Decoder = require_utf8_decoder();
     module2.exports = class TextDecoder {
@@ -511,9 +511,9 @@ var require_text_decoder = __commonJS({
   }
 });
 
-// ../../node_modules/streamx/lib/errors.js
+// node_modules/streamx/lib/errors.js
 var require_errors = __commonJS({
-  "../../node_modules/streamx/lib/errors.js"(exports2, module2) {
+  "node_modules/streamx/lib/errors.js"(exports2, module2) {
     module2.exports = class StreamError extends Error {
       constructor(msg, code, fn = StreamError) {
         super(msg);
@@ -553,9 +553,9 @@ var require_errors = __commonJS({
   }
 });
 
-// ../../node_modules/streamx/index.js
+// node_modules/streamx/index.js
 var require_streamx = __commonJS({
-  "../../node_modules/streamx/index.js"(exports2, module2) {
+  "node_modules/streamx/index.js"(exports2, module2) {
     var { EventEmitter } = require_default();
     var FIFO = require_fast_fifo();
     var TextDecoder = require_text_decoder();
@@ -1584,9 +1584,9 @@ var require_streamx = __commonJS({
   }
 });
 
-// ../../node_modules/tar-stream/headers.js
+// node_modules/tar-stream/headers.js
 var require_headers = __commonJS({
-  "../../node_modules/tar-stream/headers.js"(exports2) {
+  "node_modules/tar-stream/headers.js"(exports2) {
     var b4a = require_b4a();
     var ZEROS = "0000000000000000000";
     var SEVENS = "7777777777777777777";
@@ -1845,9 +1845,9 @@ var require_headers = __commonJS({
   }
 });
 
-// ../../node_modules/tar-stream/extract.js
+// node_modules/tar-stream/extract.js
 var require_extract = __commonJS({
-  "../../node_modules/tar-stream/extract.js"(exports2, module2) {
+  "node_modules/tar-stream/extract.js"(exports2, module2) {
     var { Writable, Readable: Readable3, getStreamError } = require_streamx();
     var FIFO = require_fast_fifo();
     var b4a = require_b4a();
@@ -2179,9 +2179,9 @@ var require_extract = __commonJS({
   }
 });
 
-// ../../node_modules/tar-stream/constants.js
+// node_modules/tar-stream/constants.js
 var require_constants = __commonJS({
-  "../../node_modules/tar-stream/constants.js"(exports2, module2) {
+  "node_modules/tar-stream/constants.js"(exports2, module2) {
     var constants = {
       // just for envs without fs
       S_IFMT: 61440,
@@ -2199,9 +2199,9 @@ var require_constants = __commonJS({
   }
 });
 
-// ../../node_modules/tar-stream/pack.js
+// node_modules/tar-stream/pack.js
 var require_pack = __commonJS({
-  "../../node_modules/tar-stream/pack.js"(exports2, module2) {
+  "node_modules/tar-stream/pack.js"(exports2, module2) {
     var { Readable: Readable3, Writable, getStreamError } = require_streamx();
     var b4a = require_b4a();
     var constants = require_constants();
@@ -2433,9 +2433,9 @@ var require_pack = __commonJS({
   }
 });
 
-// ../../node_modules/tar-stream/index.js
+// node_modules/tar-stream/index.js
 var require_tar_stream = __commonJS({
-  "../../node_modules/tar-stream/index.js"(exports2) {
+  "node_modules/tar-stream/index.js"(exports2) {
     exports2.extract = require_extract();
     exports2.pack = require_pack();
   }
