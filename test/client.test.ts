@@ -24,6 +24,94 @@ const task: Task = {
   deltas: [],
 };
 
+const directTaskStatus = {
+  ...task,
+  contractVersion: "steward.task/v2" as const,
+  diagnostics: { executionLog: "full" as const },
+  evidence: {
+    schemaVersion: "steward.task/source-authority-evidence/v1",
+    taskUid: task.taskUid,
+    sourceProvenance: {
+      contractVersion: "steward.source-provenance/v1",
+      provider: "github",
+      repository: { id: "123456", ownerId: "7890", name: "example-org/caller" },
+      triggeredSha: `git:sha1:${"c".repeat(40)}`,
+      run: { id: "900001", attempt: 1 },
+      event: "workflow_dispatch",
+      ref: "refs/heads/main",
+      actorId: "24680",
+      actor: "alice",
+      callerWorkflow: {
+        ref: "example-org/caller/.github/workflows/review.yml@refs/heads/main",
+        sha: `git:sha1:${"d".repeat(40)}`,
+      },
+      reusableWorkflow: {
+        ref: "example-org/steward-run/.github/workflows/steward-task.yml@refs/tags/v1.0.0",
+        sha: `git:sha1:${"e".repeat(40)}`,
+      },
+    },
+    invocation: {
+      repository: "https://github.com/example-org/caller.git",
+      repositoryId: "123456",
+      repositoryOwnerId: "7890",
+      commit: `git:sha1:${"c".repeat(40)}`,
+      path: ".steward/tasks/release-summary.json",
+      contentDigest: `steward:sha256:${"3".repeat(64)}`,
+    },
+    package: {
+      repository: "https://github.com/example-org/agentic-ops.git",
+      repositoryId: "654321",
+      repositoryOwnerId: "7890",
+      commit: `git:sha1:${"a".repeat(40)}`,
+      path: "catalog/release-summary/v1/task-definition.json",
+      contentDigest: `steward:sha256:${"1".repeat(64)}`,
+    },
+    closure: {
+      contractVersion: "steward.package-closure/v1",
+      entryPoint: "catalog/release-summary/v1/task-definition.json",
+      entries: [
+        {
+          kind: "prompt",
+          path: "catalog/release-summary/v1/prompt.md",
+          digest: `steward:sha256:${"2".repeat(64)}`,
+          sizeBytes: 1200,
+        },
+        {
+          kind: "task_definition",
+          path: "catalog/release-summary/v1/task-definition.json",
+          digest: `steward:sha256:${"1".repeat(64)}`,
+          sizeBytes: 301,
+        },
+      ],
+    },
+    closureDigest: "steward:sha256:82bac7f1c28cc851e94be8bc10e9dfe563f5c940eb5e979edb91fc84fd0d0ef4",
+    envelope: {
+      uid: "22222222-2222-4222-8222-222222222222",
+      revision: 3,
+      digest: `steward:sha256:${"b".repeat(64)}`,
+    },
+    effectiveRequirements: {
+      authority: {
+        llms: [{ provider: "litellm", model: "review-model" }],
+        tools: [{ provider: "github", resource: "actions", action: "read" }],
+        budget: {
+          monthlyLimit: "50.00",
+          singleRunLimit: null,
+          currency: "USD",
+        },
+        ttl: "1h",
+        runner: {
+          platforms: ["linux"],
+          memory: null,
+          compute: null,
+          storage: null,
+        },
+      },
+    },
+    diagnostics: { executionLog: "full" as const },
+  },
+};
+
 test("GitHub OIDC requests preserve query parameters and bind the configured audience", async () => {
   let requested: Request | undefined;
   const token = await getGitHubOidcToken(
@@ -81,18 +169,14 @@ test("the Steward client submits Tasks with fresh OIDC tokens and an idempotency
   assert.equal(requests[1]?.headers.get("authorization"), "Bearer token-2");
 });
 
-test("direct-package submission sends only the contract version and invocation path", async () => {
+test("direct-package submission accepts Steward's complete v2 Task status", async () => {
   let request: Request | undefined;
   const client = new StewardClient({
     baseUrl: "https://steward.example.test",
     getToken: async () => "token",
     fetch: async (input, init) => {
       request = new Request(input, init);
-      return jsonResponse({
-        ...task,
-        contractVersion: "steward.task/v2",
-        diagnostics: { executionLog: "full" },
-      }, 201);
+      return jsonResponse(directTaskStatus, 201);
     },
   });
 
