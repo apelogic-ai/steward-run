@@ -30,17 +30,19 @@ jobs:
           ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
           detect --source . --no-banner
       - name: Build thin ARC image
-        run: >-
-          docker build --platform linux/amd64
-          --build-arg VERSION=0.3.1-ci
-          --build-arg REVISION="$GITHUB_SHA"
-          --tag steward-run:ci .
+        run: |
+          docker --version
+          docker buildx version
+          docker build --platform linux/amd64 \
+            --build-arg VERSION=0.3.1-ci \
+            --build-arg REVISION="$GITHUB_SHA" \
+            --tag steward-run:ci .
       - name: Smoke-test ARC and governed job-container contracts
         run: >-
           docker run --rm --platform linux/amd64 --entrypoint /bin/bash
           -v "${{ github.workspace }}:/workspace:ro"
           steward-run:ci
-          -c 'test "$(id -un)" = runner && test -x /home/runner/run.sh && test -d /home/runner/k8s && ! command -v curl && ! command -v docker && ! command -v dockerd && ! command -v runc && command -v node && command -v git && command -v tar && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
+          -c 'test "$(id -un)" = runner && test -x /home/runner/run.sh && test -d /home/runner/k8s && sudo -n true && sudo -n apt-get check && ! dpkg-query -W gir1.2-glib-2.0 && ! dpkg-query -W libglib2.0-0t64 && ! dpkg-query -W libglib2.0-bin && ! dpkg-query -W libglib2.0-data && ! command -v curl && ! command -v docker && ! command -v dockerd && ! command -v runc && command -v node && command -v git && command -v jq && command -v python3 && command -v tar && command -v unzip && /home/runner/bin/Runner.Listener --version && ldd /home/runner/bin/Runner.Listener >/dev/null && ! ldd /home/runner/bin/Runner.Listener | grep -F "not found" && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
       - name: Export image vulnerability report
         run: >-
           docker run --rm

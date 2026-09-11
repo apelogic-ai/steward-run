@@ -14,7 +14,33 @@ USER root
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
-    && apt-get purge -y curl libcurl4t64 \
+    && apt-get purge -y \
+       curl \
+       gir1.2-girepository-2.0 \
+       gir1.2-glib-2.0 \
+       gir1.2-packagekitglib-1.0 \
+       libappstream5 \
+       libgirepository-1.0-1 \
+       libglib2.0-0t64 \
+       libglib2.0-bin \
+       libglib2.0-data \
+       libgstreamer1.0-0 \
+       libcurl4t64 \
+       libpackagekit-glib2-18 \
+       libpolkit-agent-1-0 \
+       libpolkit-gobject-1-0 \
+       libxmlb2 \
+       packagekit \
+       polkitd \
+       python3-dbus \
+       python3-gi \
+       python3-software-properties \
+       software-properties-common \
+    && apt-get check \
+    && ! dpkg-query -W gir1.2-glib-2.0 \
+    && ! dpkg-query -W libglib2.0-0t64 \
+    && ! dpkg-query -W libglib2.0-bin \
+    && ! dpkg-query -W libglib2.0-data \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && node --version \
