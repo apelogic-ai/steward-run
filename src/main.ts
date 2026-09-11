@@ -102,7 +102,10 @@ export async function main(): Promise<void> {
   }
 }
 
-if (process.env.STEWARD_RUN_WORKFLOW !== undefined) {
+if (
+  process.env.STEWARD_RUN_WORKFLOW !== undefined ||
+  process.env.STEWARD_RUN_INVOCATION_PATH !== undefined
+) {
   main().catch((error: unknown) => {
     process.stderr.write(`steward-run: ${safeFailure(error).message}\n`);
     process.exitCode = 1;

@@ -81,6 +81,75 @@ test("the Steward client submits Tasks with fresh OIDC tokens and an idempotency
   assert.equal(requests[1]?.headers.get("authorization"), "Bearer token-2");
 });
 
+test("direct-package submission sends only the contract version and invocation path", async () => {
+  let request: Request | undefined;
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async (input, init) => {
+      request = new Request(input, init);
+      return jsonResponse({
+        ...task,
+        contractVersion: "steward.task/v2",
+        diagnostics: { executionLog: "full" },
+      }, 201);
+    },
+  });
+
+  const created = await client.submitTask(
+    {
+      contractVersion: "steward.task/v2",
+      invocationPath: ".steward/tasks/release-summary.json",
+    },
+    "a".repeat(64),
+  );
+
+  assert.deepEqual(await request?.json(), {
+    contractVersion: "steward.task/v2",
+    invocationPath: ".steward/tasks/release-summary.json",
+  });
+  assert.deepEqual(created.diagnostics, { executionLog: "full" });
+  assert.equal(created.contractVersion, "steward.task/v2");
+});
+
+test("direct Task status requires an exact authenticated diagnostics projection", async () => {
+  for (const payload of [
+    { ...task, contractVersion: "steward.task/v2" },
+    { ...task, diagnostics: { executionLog: "full" } },
+    {
+      ...task,
+      contractVersion: "steward.task/v2",
+      diagnostics: { executionLog: "verbose" },
+    },
+    {
+      ...task,
+      contractVersion: "steward.task/v2",
+      diagnostics: { executionLog: "full", unknown: true },
+    },
+  ]) {
+    const client = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => "token",
+      fetch: async () => jsonResponse(payload, 201),
+      maxAttempts: 1,
+    });
+    await assert.rejects(
+      client.submitTask(
+        {
+          contractVersion: "steward.task/v2",
+          invocationPath: ".steward/tasks/release-summary.json",
+        },
+        "a".repeat(64),
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRequestFailure);
+        assert.equal(error.category, "malformed-response");
+        return true;
+      },
+    );
+  }
+});
+
 test("Task submission accepts admitted and parked responses with structured deltas", async () => {
   const responses = [
     jsonResponse(task, 201),

@@ -61,8 +61,11 @@ The action runs inside the ARC runner job and does exactly two categories of thi
    `ACTIONS_ID_TOKEN_REQUEST_TOKEN`; the workflow must grant `id-token: write`).
 2. **Call Steward's REST API** as the translator: exchange the GitHub OIDC token server-side for a
    short-lived `steward-task-api` token, then submit a Steward `Task`. The exchange validates the
-   calling workflow and resolves the actor. Steward selects the versioned workflow envelope and
-   returns the durable Task identity. For controller-owned creation, that first accepted response
+   calling workflow and resolves the actor. For direct packages, the action submits only the v2
+   contract selector and a locally validated invocation path; Steward fetches that path from the
+   Identity-ratified repository and exact trigger commit. The action never submits manifest or
+   package bytes. Steward resolves the approved Envelope and returns the durable Task identity.
+   For controller-owned creation, that first accepted response
    has `runtimeUid: null`; the action polls that exact Task until the controller binds the immutable
    runtime UID, and only then exposes `runtime-uid`, uploads inputs, or requests execution. The action
    polls Task status through any approval hold, collects
@@ -75,7 +78,8 @@ The controller-binding wait is bounded by both 60 attempts and a ten-minute wall
 Cancellation and that deadline propagate through binding sleeps, token acquisition, and the
 in-flight Task-status request; a stalled credential provider or HTTP fetch cannot extend the wait.
 
-Flow: `download-artifact` (regular step) → `steward-run` (materialise in → API provision → run
+Direct-package flow: exact trigger checkout for local validation without persisted credentials →
+`download-artifact` (regular step) → `steward-run` (materialise in → API provision → run
 → collect out) → `upload-artifact` (regular step). The agentic step is invisible to the
 surrounding YAML; the workspace is the contract.
 
@@ -104,7 +108,8 @@ the resumed invocation (a new job, new token).
 
 | Input | Meaning |
 |---|---|
-| `workflow` | Immutable Steward Workflow reference forwarded unchanged (e.g. `repository-review@1`) |
+| `invocation-path` | Canonical repository-relative v2 invocation-manifest path; its bytes are never submitted |
+| `workflow` | Existing immutable Steward Workflow reference forwarded unchanged (e.g. `repository-review@1`) |
 | `inputs` | Workspace path(s) materialised into the sandbox as its input directory |
 | `outputs` | Sandbox output path(s) written back to the workspace |
 | `steward-api-url` | The control-plane API base (env-supplied; not hardcoded) |
@@ -112,7 +117,13 @@ the resumed invocation (a new job, new token).
 | `identity-exchange-url` *(authentication choice)* | HTTPS endpoint that exchanges GitHub OIDC for a short-lived Steward token |
 | `oidc-audience` *(test authentication choice)* | Direct GitHub OIDC audience; allowed only with a loopback Steward API |
 | `bearer-token-file` *(authentication choice)* | Filesystem path to a rotating JWT with a maximum one-hour lifetime |
-| `agent-runtime` *(optional)* | Adopt an existing `AgentRuntime` id instead of provisioning (D2) |
+| `agent-runtime` *(optional)* | Adopt an existing `AgentRuntime` id for the existing Workflow path only (D2) |
+
+Exactly one of `invocation-path` and `workflow` is required. The v2 reusable-workflow path uses
+`invocation-path`; the legacy input remains additive compatibility for direct action and existing
+callers. The runner verifies that a direct invocation path is canonical, exists at the clean exact
+trigger checkout, contains no symlink component, and names a regular file. This is an early local
+failure only: Steward's authenticated exact-commit source retrieval is authoritative.
 
 Exactly one authentication choice is required. Tokens are never action inputs. A CA is supplied as
 a file path rather than inline PEM, and custom trust is scoped to Steward requests. Remote API URLs
@@ -165,10 +176,19 @@ optional integer HTTP status, and an optional correlation identifier accepted on
 timeout, transport, and malformed-response remain distinct. Response bodies and arbitrary headers
 are never parsed into diagnostics.
 
-Only those literals are rendered. Arbitrary failure reasons and command output, HTTP bodies or
-headers, JWTs, assertions, provider tokens, API keys, cookies, credentials, and Kubernetes Secret
-values are neither rendered nor persisted. A finalization failure never replaces the primary
-failure category. Successful runs retain their existing outputs and publish no failure metadata.
+Only those literals are rendered on failure. Arbitrary failure reasons, command output, HTTP bodies
+or headers, JWTs, assertions, provider tokens, API keys, cookies, credentials, and Kubernetes Secret
+values are neither rendered nor persisted by failure reporting. A finalization failure never
+replaces the primary failure category. Successful runs retain their existing outputs and publish no
+failure metadata.
+
+If and only if the authenticated v2 Task status reports snapshotted
+`diagnostics.executionLog: full`, the successful output archive must carry exact server-owned
+stdout and stderr entries beneath `.steward/diagnostics`. Each is limited to 4 MiB. After archive
+validation, the action emits a sensitive-output warning, disables GitHub workflow-command
+interpretation with an unpredictable per-run command token, replays the original streams in
+separate groups, restores command processing, and then finalizes. Missing, extra, malformed, or
+over-limit diagnostic entries fail the action and still finalize the Task.
 
 `action.yml` is `runs: composite`. No `<form>`-style ambient config; everything is an input or
 env. Verify current GitHub Actions OIDC + artifact APIs when implementing.

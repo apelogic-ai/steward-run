@@ -2506,6 +2506,8 @@ function requiredVerbatim(environment, name) {
   return value;
 }
 function readActionConfig(environment) {
+  const workflow = environment.STEWARD_RUN_WORKFLOW;
+  const invocationPath = environment.STEWARD_RUN_INVOCATION_PATH;
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
   const identityExchangeUrl = environment.STEWARD_RUN_IDENTITY_EXCHANGE_URL?.trim();
   const identityExchangeAudience = environment.STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE?.trim();
@@ -2513,6 +2515,13 @@ function readActionConfig(environment) {
   const bearerTokenFile = environment.STEWARD_RUN_BEARER_TOKEN_FILE?.trim();
   const caCertificateFile = environment.STEWARD_RUN_CA_CERTIFICATE_FILE?.trim();
   const apiUrl = required(environment, "STEWARD_RUN_API_URL");
+  const taskSourceCount = [workflow?.trim(), invocationPath].filter(Boolean).length;
+  if (taskSourceCount !== 1) {
+    throw new Error("configure exactly one Task source: workflow or invocation-path");
+  }
+  if (invocationPath && agentRuntime) {
+    throw new Error("agent-runtime cannot be selected for a direct package invocation");
+  }
   if (identityExchangeAudience && !identityExchangeUrl) {
     throw new Error("identity-exchange-audience requires identity-exchange-url");
   }
@@ -2536,18 +2545,22 @@ function readActionConfig(environment) {
       );
     }
   }
-  return {
-    workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
+  const authentication = identityExchangeUrl ? {
+    kind: "github-oidc-exchange",
+    url: identityExchangeUrl,
+    ...identityExchangeAudience ? { audience: identityExchangeAudience } : {}
+  } : oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile };
+  const common = {
     inputPaths: required(environment, "STEWARD_RUN_INPUTS"),
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
     apiUrl,
-    ...agentRuntime ? { agentRuntime } : {},
-    authentication: identityExchangeUrl ? {
-      kind: "github-oidc-exchange",
-      url: identityExchangeUrl,
-      ...identityExchangeAudience ? { audience: identityExchangeAudience } : {}
-    } : oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile },
+    authentication,
     ...caCertificateFile ? { caCertificateFile } : {}
+  };
+  return invocationPath ? { ...common, invocationPath } : {
+    ...common,
+    workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
+    ...agentRuntime ? { agentRuntime } : {}
   };
 }
 
@@ -2996,7 +3009,7 @@ function identityExchangeTokenProvider(environment, exchangeUrl, sourceFetchImpl
 }
 
 // src/lifecycle.ts
-var import_node_crypto2 = require("node:crypto");
+var import_node_crypto3 = require("node:crypto");
 var import_promises5 = require("node:timers/promises");
 
 // src/archive.ts
@@ -3006,6 +3019,10 @@ var import_node_crypto = require("node:crypto");
 var import_node_path = require("node:path");
 var import_promises3 = require("node:stream/promises");
 var import_tar_stream = __toESM(require_tar_stream(), 1);
+var diagnosticsRoot = ".steward/diagnostics";
+var stdoutTranscriptPath = `${diagnosticsRoot}/stdout.log`;
+var stderrTranscriptPath = `${diagnosticsRoot}/stderr.log`;
+var transcriptLimit = 4 * 1024 * 1024;
 function invalidWorkspacePath(value) {
   return new Error(`workspace-relative path is invalid: ${JSON.stringify(value)}`);
 }
@@ -3020,6 +3037,34 @@ function normalizeWorkspacePath(value) {
     throw invalidWorkspacePath(value);
   }
   return normalized;
+}
+function canonicalInvocationPath(value) {
+  if (!value || value.length > 512 || value !== value.trim() || value.includes("\\") || /[\u0000-\u001f\u007f]/u.test(value) || import_node_path.posix.isAbsolute(value) || import_node_path.win32.isAbsolute(value) || import_node_path.posix.normalize(value) !== value || value.split("/").some(
+    (component) => !component || component === "." || component === ".." || !/^[A-Za-z0-9._-]+$/u.test(component)
+  )) {
+    throw new Error("invocation-path must be a canonical repository-relative path");
+  }
+  return value;
+}
+async function validateInvocationFile(workspace, value) {
+  const relative = canonicalInvocationPath(value);
+  let current = workspace;
+  const components = relative.split("/");
+  for (const [index, component] of components.entries()) {
+    current = (0, import_node_path.join)(current, component);
+    const metadata = await (0, import_promises2.lstat)(current).catch((error) => {
+      if (error.code === "ENOENT") throw new Error("invocation-path does not exist");
+      throw error;
+    });
+    if (metadata.isSymbolicLink()) {
+      throw new Error("invocation-path must not contain symbolic links");
+    }
+    const final = index === components.length - 1;
+    if (!final && !metadata.isDirectory() || final && !metadata.isFile()) {
+      throw new Error("invocation-path must identify a regular file");
+    }
+  }
+  return relative;
 }
 function parseWorkspacePaths(source) {
   const paths = [];
@@ -3164,10 +3209,33 @@ async function writeOutputFile(stream, workspace, relative, mode) {
     throw error;
   }
 }
-async function extractOutputArchive(archive, workspace, declaredPaths) {
+async function readTranscriptFile(stream, path) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of stream) {
+    const value = Buffer.from(chunk);
+    size += value.length;
+    if (size > transcriptLimit) {
+      throw new Error(`execution transcript exceeds ${transcriptLimit} bytes: ${path}`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, size);
+}
+function isDiagnosticsPath(path) {
+  return path === diagnosticsRoot || path.startsWith(`${diagnosticsRoot}/`);
+}
+function hasCanonicalReservedSpelling(archivePath, normalized, type) {
+  const withoutRoot = archivePath.startsWith("./") ? archivePath.slice(2) : archivePath;
+  const candidate = type === "directory" && withoutRoot.endsWith("/") ? withoutRoot.slice(0, -1) : withoutRoot;
+  return candidate === normalized;
+}
+async function extractOutputArchive(archive, workspace, declaredPaths, diagnostics = { executionLog: "off" }) {
   const outputs = declaredPaths.map(normalizeWorkspacePath);
   const seen = /* @__PURE__ */ new Set();
   let sawRootDirectory = false;
+  let stdout;
+  let stderr;
   const extract = import_tar_stream.default.extract();
   extract.on("entry", (header, stream, next) => {
     stream.on("error", () => void 0);
@@ -3181,6 +3249,38 @@ async function extractOutputArchive(archive, workspace, declaredPaths) {
           return;
         }
         const relative = normalizeArchivePath(header.name);
+        if (isDiagnosticsPath(relative) || diagnostics.executionLog === "full" && relative === ".steward") {
+          if (diagnostics.executionLog !== "full") {
+            stream.resume();
+            throw new Error("reserved diagnostics require full execution logging");
+          }
+          if (!hasCanonicalReservedSpelling(header.name, relative, header.type)) {
+            stream.resume();
+            throw new Error("reserved diagnostics archive path is not canonical");
+          }
+          if (seen.has(relative)) throw new Error(`duplicate archive entry: ${relative}`);
+          seen.add(relative);
+          if (relative === ".steward" || relative === diagnosticsRoot) {
+            if (header.type !== "directory") {
+              stream.resume();
+              throw new Error(`reserved diagnostics ancestor must be a directory: ${relative}`);
+            }
+            stream.resume();
+          } else if (relative === stdoutTranscriptPath || relative === stderrTranscriptPath) {
+            if (header.type !== "file") {
+              stream.resume();
+              throw new Error(`reserved execution transcript must be a file: ${relative}`);
+            }
+            const body = await readTranscriptFile(stream, relative);
+            if (relative === stdoutTranscriptPath) stdout = body;
+            else stderr = body;
+          } else {
+            stream.resume();
+            throw new Error(`unknown reserved diagnostics path: ${relative}`);
+          }
+          next();
+          return;
+        }
         const isDeclared = isDeclaredOutput(relative, outputs);
         const isAncestor = isStrictAncestorOfDeclaredOutput(relative, outputs);
         if (!isDeclared && !isAncestor) {
@@ -3209,6 +3309,60 @@ async function extractOutputArchive(archive, workspace, declaredPaths) {
     })();
   });
   await (0, import_promises3.pipeline)(archive, extract);
+  if (diagnostics.executionLog === "full") {
+    if (stdout === void 0 || stderr === void 0) {
+      throw new Error("missing reserved execution transcript");
+    }
+    return { stdout, stderr };
+  }
+  return void 0;
+}
+
+// src/execution-log.ts
+var import_node_crypto2 = require("node:crypto");
+var sensitiveOutputWarning = "::warning title=Sensitive Steward execution log::Full Task stdout and stderr may contain prompts, repository data, model output, and tool results.\n";
+function defaultWrite(channel, value) {
+  (channel === "stdout" ? process.stdout : process.stderr).write(value);
+}
+function safeCommandToken(value) {
+  if (!/^[A-Za-z0-9_-]{1,128}$/u.test(value)) {
+    throw new Error("execution log command token is invalid");
+  }
+  return value;
+}
+async function replayStream(label, body, write, commandToken) {
+  const channel = label;
+  const token = safeCommandToken(commandToken());
+  let failure;
+  try {
+    await write(channel, `::group::Steward Task ${label}
+`);
+    await write(channel, `::stop-commands::${token}
+`);
+    await write(channel, body);
+    if (body.length === 0 || body.at(-1) !== 10) await write(channel, "\n");
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    await write(channel, `::${token}::
+`);
+  } catch (error) {
+    failure ??= error;
+  }
+  try {
+    await write(channel, "::endgroup::\n");
+  } catch (error) {
+    failure ??= error;
+  }
+  if (failure !== void 0) throw failure;
+}
+async function replayExecutionTranscript(transcript, dependencies = {}) {
+  const write = dependencies.write ?? defaultWrite;
+  const commandToken = dependencies.commandToken ?? (() => `steward-${(0, import_node_crypto2.randomUUID)()}`);
+  await write("stdout", sensitiveOutputWarning);
+  await replayStream("stdout", transcript.stdout, write, commandToken);
+  await replayStream("stderr", transcript.stderr, write, commandToken);
 }
 
 // src/steward-client.ts
@@ -3270,6 +3424,14 @@ function parseTaskDelta(value) {
       currency: delta.currency
     };
   }
+  if (delta.dimension === "singleRunBudget" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling", "currency"]) && (delta.requested === null || typeof delta.requested === "string") && typeof delta.ceiling === "string" && typeof delta.currency === "string") {
+    return {
+      dimension: "singleRunBudget",
+      requested: delta.requested,
+      ceiling: delta.ceiling,
+      currency: delta.currency
+    };
+  }
   if (delta.dimension === "ttl" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"]) && typeof delta.requested === "string" && typeof delta.ceiling === "string") {
     return { dimension: "ttl", requested: delta.requested, ceiling: delta.ceiling };
   }
@@ -3283,7 +3445,24 @@ function parseTaskDelta(value) {
     const ceiling = parseItems(delta.ceiling, parseToolGrant);
     if (requested && ceiling) return { dimension: "tools", requested, ceiling };
   }
+  if (delta.dimension === "runnerPlatforms" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])) {
+    const parsePlatform = (item) => item === "linux" || item === "mac" || item === "windows" ? item : void 0;
+    const requested = parseItems(delta.requested, parsePlatform);
+    const ceiling = parseItems(delta.ceiling, parsePlatform);
+    if (requested && ceiling) return { dimension: "runnerPlatforms", requested, ceiling };
+  }
+  if ((delta.dimension === "runnerMemory" || delta.dimension === "runnerCompute" || delta.dimension === "runnerStorage") && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"]) && typeof delta.requested === "string" && (delta.ceiling === null || typeof delta.ceiling === "string")) {
+    return {
+      dimension: delta.dimension,
+      requested: delta.requested,
+      ceiling: delta.ceiling
+    };
+  }
   return void 0;
+}
+function parseTaskDiagnostics(value) {
+  const diagnostics = record(value);
+  return diagnostics && hasOnlyKeys(diagnostics, ["executionLog"]) && (diagnostics.executionLog === "off" || diagnostics.executionLog === "full") ? { executionLog: diagnostics.executionLog } : void 0;
 }
 var pendingBindingPhases = /* @__PURE__ */ new Set(["submitted", "parked", "queued"]);
 function isPendingBindingTask(task) {
@@ -3296,25 +3475,30 @@ function parseTask(payload) {
   const value = record(payload);
   const rawDeltas = value?.deltas ?? [];
   const deltas = parseItems(rawDeltas, parseTaskDelta);
+  const diagnostics = value?.diagnostics === void 0 ? void 0 : parseTaskDiagnostics(value.diagnostics);
   if (!value || !hasOnlyKeys(value, [
     "taskUid",
+    "contractVersion",
     "runtimeUid",
     "phase",
     "runtimeOwnership",
     "finalized",
     "failureReason",
-    "deltas"
-  ]) || typeof value.taskUid !== "string" || !value.taskUid || value.runtimeUid !== null && (typeof value.runtimeUid !== "string" || !value.runtimeUid) || typeof value.phase !== "string" || !taskPhases.includes(value.phase) || value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted" || typeof value.finalized !== "boolean" || value.failureReason !== void 0 && typeof value.failureReason !== "string" || !deltas) {
+    "deltas",
+    "diagnostics"
+  ]) || typeof value.taskUid !== "string" || !value.taskUid || value.contractVersion !== void 0 && value.contractVersion !== "steward.task/v2" || value.contractVersion === "steward.task/v2" !== (diagnostics !== void 0) || value.runtimeUid !== null && (typeof value.runtimeUid !== "string" || !value.runtimeUid) || typeof value.phase !== "string" || !taskPhases.includes(value.phase) || value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted" || typeof value.finalized !== "boolean" || value.failureReason !== void 0 && typeof value.failureReason !== "string" || !deltas || value.diagnostics !== void 0 && diagnostics === void 0) {
     throw new Error("Steward returned an incompatible Task response");
   }
   const task = {
+    ...value.contractVersion === "steward.task/v2" ? { contractVersion: value.contractVersion } : {},
     taskUid: value.taskUid,
     runtimeUid: value.runtimeUid,
     phase: value.phase,
     runtimeOwnership: value.runtimeOwnership,
     finalized: value.finalized,
     ...typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {},
-    deltas
+    deltas,
+    ...diagnostics === void 0 ? {} : { diagnostics }
   };
   if (task.runtimeUid === null && !isPendingBindingTask(task) && !isUnboundFinalizationTask(task)) {
     throw new Error("Steward returned a contradictory unbound Task response");
@@ -3648,7 +3832,7 @@ function createIdempotencyKey(environment) {
     identityField(environment, "GITHUB_RUN_ATTEMPT"),
     identityField(environment, "GITHUB_JOB")
   ].join("\0");
-  return (0, import_node_crypto2.createHash)("sha256").update(identity).digest("hex");
+  return (0, import_node_crypto3.createHash)("sha256").update(identity).digest("hex");
 }
 function abortError() {
   const error = new Error("Steward Task was cancelled");
@@ -3660,6 +3844,9 @@ function timeoutError() {
 }
 function boundTask(task) {
   return task.runtimeUid === null ? void 0 : task;
+}
+function taskContractMatches(initial, current) {
+  return initial.contractVersion === current.contractVersion && initial.diagnostics?.executionLog === current.diagnostics?.executionLog;
 }
 async function abortable(operation, signal) {
   if (signal.aborted) throw abortError();
@@ -3710,7 +3897,7 @@ async function pollUntilRuntimeBound(initial, client, sleep, signal, timeoutMill
         }),
         controller.signal
       );
-      if (current.taskUid !== initial.taskUid || current.runtimeOwnership !== initial.runtimeOwnership) {
+      if (current.taskUid !== initial.taskUid || current.runtimeOwnership !== initial.runtimeOwnership || !taskContractMatches(initial, current)) {
         throw new Error("Steward changed Task identity while waiting for runtime binding");
       }
       if (current.runtimeUid === null && current.phase === "cancelled") throw abortError();
@@ -3738,7 +3925,7 @@ async function pollUntilTerminal(initial, client, sleep, signal) {
     await sleep(interval, signal);
     if (signal?.aborted) throw abortError();
     current = await client.getTask(current.taskUid);
-    if (current.taskUid !== initial.taskUid || current.runtimeUid !== initial.runtimeUid || current.runtimeOwnership !== initial.runtimeOwnership) {
+    if (current.taskUid !== initial.taskUid || current.runtimeUid !== initial.runtimeUid || current.runtimeOwnership !== initial.runtimeOwnership || !taskContractMatches(initial, current)) {
       throw new Error("Steward changed Task identity while polling");
     }
     interval = Math.min(interval * 2, 1e4);
@@ -3757,14 +3944,14 @@ async function finalizeAndConfirm(task, client, sleep) {
   try {
     let finalizationRuntimeUid = task.runtimeUid;
     let current = await client.finalizeTask(task.taskUid);
-    if (current.taskUid !== task.taskUid || current.runtimeOwnership !== task.runtimeOwnership || finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid) {
+    if (current.taskUid !== task.taskUid || current.runtimeOwnership !== task.runtimeOwnership || !taskContractMatches(task, current) || finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid) {
       throw new FinalizationFailure("identity-mismatch");
     }
     finalizationRuntimeUid ??= current.runtimeUid;
     for (let attempt = 0; !current.finalized && attempt < 120; attempt += 1) {
       await sleep(Math.min(250 * 2 ** attempt, 2e3));
       current = await client.getTask(task.taskUid);
-      if (current.taskUid !== task.taskUid || current.runtimeOwnership !== task.runtimeOwnership || finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid) {
+      if (current.taskUid !== task.taskUid || current.runtimeOwnership !== task.runtimeOwnership || !taskContractMatches(task, current) || finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid) {
         throw new FinalizationFailure("identity-mismatch");
       }
       finalizationRuntimeUid ??= current.runtimeUid;
@@ -3827,16 +4014,28 @@ async function runWorkflow(config, workspace, dependencies) {
   try {
     inputPaths = parseWorkspacePaths(config.inputPaths);
     outputPaths = parseWorkspacePaths(config.outputPaths);
+    if ("invocationPath" in config) {
+      await validateInvocationFile(workspace, config.invocationPath);
+    }
     initialArchive = await createInputArchive(workspace, inputPaths);
     stage = "submit";
     created = await dependencies.client.submitTask(
-      {
+      "invocationPath" in config ? {
+        contractVersion: "steward.task/v2",
+        invocationPath: config.invocationPath
+      } : {
         workflow: config.workflow,
         ...config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}
       },
       createIdempotencyKey(dependencies.environment)
     );
-    const expectedOwnership = config.agentRuntime ? "adopted" : "provisioned";
+    if ("invocationPath" in config && (created.contractVersion !== "steward.task/v2" || created.diagnostics === void 0)) {
+      throw new Error("Steward omitted the direct Task contract projection");
+    }
+    if (!("invocationPath" in config) && (created.contractVersion !== void 0 || created.diagnostics !== void 0)) {
+      throw new Error("Steward returned a direct Task projection for a legacy request");
+    }
+    const expectedOwnership = "agentRuntime" in config && config.agentRuntime ? "adopted" : "provisioned";
     if (created.runtimeOwnership !== expectedOwnership) {
       throw new Error("Steward returned Task ownership inconsistent with the submission");
     }
@@ -3856,7 +4055,7 @@ async function runWorkflow(config, workspace, dependencies) {
     stage = "execute";
     const executing = await dependencies.client.executeTask(bound.taskUid);
     const executingBound = boundTask(executing);
-    if (!executingBound || executingBound.taskUid !== bound.taskUid || executingBound.runtimeUid !== bound.runtimeUid || executingBound.runtimeOwnership !== bound.runtimeOwnership) {
+    if (!executingBound || executingBound.taskUid !== bound.taskUid || executingBound.runtimeUid !== bound.runtimeUid || executingBound.runtimeOwnership !== bound.runtimeOwnership || !taskContractMatches(bound, executingBound)) {
       throw new Error("Steward changed Task identity while requesting execution");
     }
     stage = "poll";
@@ -3878,11 +4077,18 @@ async function runWorkflow(config, workspace, dependencies) {
     await dependencies.setOutput("status", terminal.phase);
     if (!failed) {
       stage = "output";
-      await extractOutputArchive(
+      const transcript = await extractOutputArchive(
         await dependencies.client.downloadTaskOutputs(terminal.taskUid),
         workspace,
-        outputPaths
+        outputPaths,
+        terminal.diagnostics ?? { executionLog: "off" }
       );
+      if (transcript) {
+        await replayExecutionTranscript(transcript, {
+          ...dependencies.writeLog === void 0 ? {} : { write: dependencies.writeLog },
+          ...dependencies.commandToken === void 0 ? {} : { commandToken: dependencies.commandToken }
+        });
+      }
       result = terminal;
     }
   } catch (error) {
@@ -3933,7 +4139,7 @@ async function runWorkflow(config, workspace, dependencies) {
 }
 
 // src/transport.ts
-var import_node_crypto3 = require("node:crypto");
+var import_node_crypto4 = require("node:crypto");
 var import_promises6 = require("node:fs/promises");
 var import_node_http = require("node:http");
 var import_node_https = require("node:https");
@@ -3951,7 +4157,7 @@ async function trustedCaBundle(path) {
   try {
     if (!certificates.length || remainder) throw new Error("invalid bundle");
     for (const pem of certificates) {
-      if (!new import_node_crypto3.X509Certificate(pem).ca) throw new Error("certificate is not a CA");
+      if (!new import_node_crypto4.X509Certificate(pem).ca) throw new Error("certificate is not a CA");
     }
   } catch {
     throw new Error("Steward CA certificate file does not contain a valid CA certificate");
@@ -4157,7 +4363,7 @@ async function main() {
     process.off("SIGTERM", cancel);
   }
 }
-if (process.env.STEWARD_RUN_WORKFLOW !== void 0) {
+if (process.env.STEWARD_RUN_WORKFLOW !== void 0 || process.env.STEWARD_RUN_INVOCATION_PATH !== void 0) {
   main().catch((error) => {
     process.stderr.write(`steward-run: ${safeFailure(error).message}
 `);

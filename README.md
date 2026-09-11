@@ -77,7 +77,7 @@ jobs:
     uses: apelogic-ai/steward-run/.github/workflows/steward-task.yml@<WORKFLOW_COMMIT>
     with:
       runner-label: ${{ vars.STEWARD_RUNNER_LABEL }}
-      workflow: repository-review@1
+      invocation-path: .steward/tasks/release-summary.json
       input-artifact: request
       output-artifact: result
       steward-api-url: ${{ vars.STEWARD_API_URL }}
@@ -85,10 +85,23 @@ jobs:
       steward-ca-certificate-file: ${{ vars.STEWARD_CA_CERTIFICATE_FILE }}
 ```
 
-The caller first uploads `request`; the reusable job downloads it under `in/`, runs the action,
-and uploads `out/` as `result`. Direct action use remains available when another workflow owns the
-artifact steps. All action paths are relative to `GITHUB_WORKSPACE`. The `workflow` value is an
-immutable Steward Workflow reference and is forwarded unchanged; Steward parses and resolves it.
+The caller checks the invocation manifest into its repository, then uploads `request`; the reusable
+job checks out the exact triggered commit for local validation without persisting Git credentials,
+downloads the input under `in/`, runs the action, and uploads `out/` as `result`. The action validates that
+`invocation-path` is a canonical, non-symlinked regular file but never reads or uploads its bytes.
+Its Task create body contains only `contractVersion: steward.task/v2` and that path. Steward fetches
+the manifest from the Identity-ratified repository and exact commit.
+
+Direct action use remains available when another workflow owns the artifact steps. All action paths
+are relative to `GITHUB_WORKSPACE`. Exactly one Task source is selected: `invocation-path` for the
+direct-package v2 flow or `workflow` for the existing versioned Workflow flow. `agent-runtime`
+applies only to the latter.
+
+When the server-snapshotted diagnostics mode is `full`, successful outputs may include the two
+reserved `.steward/diagnostics/*.log` streams. The action validates the reserved paths and 4 MiB
+per-stream bounds, emits a sensitive-output warning, disables GitHub workflow-command processing,
+and replays stdout and stderr verbatim in separate log groups before finalization. Diagnostics are
+never enabled merely because reserved files are present.
 
 The governed job always runs inside the signed v0.3.0 `steward-run` image pinned by its full ECR
 digest in `steward-task.yml`. The image is not a workflow input and the workflow supplies no

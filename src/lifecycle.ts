@@ -1,8 +1,14 @@
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Readable } from "node:stream";
-import { createInputArchive, extractOutputArchive, parseWorkspacePaths } from "./archive.js";
+import {
+  createInputArchive,
+  extractOutputArchive,
+  parseWorkspacePaths,
+  validateInvocationFile,
+} from "./archive.js";
 import type { WorkflowConfig } from "./config.js";
+import { replayExecutionTranscript, type LogChannel } from "./execution-log.js";
 import {
   FAILURE_METADATA_VERSION,
   StewardRunFailure,
@@ -43,6 +49,8 @@ interface LifecycleDependencies {
   sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
   runtimeBindingTimeoutMilliseconds?: number;
+  writeLog?: (channel: LogChannel, value: string | Buffer) => void | Promise<void>;
+  commandToken?: () => string;
 }
 
 const terminalPhases = new Set<Task["phase"]>(["succeeded", "failed", "cancelled"]);
@@ -79,6 +87,11 @@ function timeoutError(): Error {
 
 function boundTask(task: Task): BoundTask | undefined {
   return task.runtimeUid === null ? undefined : (task as BoundTask);
+}
+
+function taskContractMatches(initial: Task, current: Task): boolean {
+  return initial.contractVersion === current.contractVersion &&
+    initial.diagnostics?.executionLog === current.diagnostics?.executionLog;
 }
 
 async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -141,7 +154,8 @@ async function pollUntilRuntimeBound(
       );
       if (
         current.taskUid !== initial.taskUid ||
-        current.runtimeOwnership !== initial.runtimeOwnership
+        current.runtimeOwnership !== initial.runtimeOwnership ||
+        !taskContractMatches(initial, current)
       ) {
         throw new Error("Steward changed Task identity while waiting for runtime binding");
       }
@@ -179,7 +193,8 @@ async function pollUntilTerminal(
     if (
       current.taskUid !== initial.taskUid ||
       current.runtimeUid !== initial.runtimeUid ||
-      current.runtimeOwnership !== initial.runtimeOwnership
+      current.runtimeOwnership !== initial.runtimeOwnership ||
+      !taskContractMatches(initial, current)
     ) {
       throw new Error("Steward changed Task identity while polling");
     }
@@ -209,6 +224,7 @@ async function finalizeAndConfirm(
     if (
       current.taskUid !== task.taskUid ||
       current.runtimeOwnership !== task.runtimeOwnership ||
+      !taskContractMatches(task, current) ||
       (finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid)
     ) {
       throw new FinalizationFailure("identity-mismatch");
@@ -220,6 +236,7 @@ async function finalizeAndConfirm(
       if (
         current.taskUid !== task.taskUid ||
         current.runtimeOwnership !== task.runtimeOwnership ||
+        !taskContractMatches(task, current) ||
         (finalizationRuntimeUid !== null && current.runtimeUid !== finalizationRuntimeUid)
       ) {
         throw new FinalizationFailure("identity-mismatch");
@@ -299,16 +316,38 @@ export async function runWorkflow(
   try {
     inputPaths = parseWorkspacePaths(config.inputPaths);
     outputPaths = parseWorkspacePaths(config.outputPaths);
+    if ("invocationPath" in config) {
+      await validateInvocationFile(workspace, config.invocationPath);
+    }
     initialArchive = await createInputArchive(workspace, inputPaths);
     stage = "submit";
     created = await dependencies.client.submitTask(
-      {
-        workflow: config.workflow,
-        ...(config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}),
-      },
+      "invocationPath" in config
+        ? {
+            contractVersion: "steward.task/v2",
+            invocationPath: config.invocationPath,
+          }
+        : {
+            workflow: config.workflow,
+            ...(config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}),
+          },
       createIdempotencyKey(dependencies.environment),
     );
-    const expectedOwnership = config.agentRuntime ? "adopted" : "provisioned";
+    if (
+      "invocationPath" in config &&
+      (created.contractVersion !== "steward.task/v2" || created.diagnostics === undefined)
+    ) {
+      throw new Error("Steward omitted the direct Task contract projection");
+    }
+    if (
+      !("invocationPath" in config) &&
+      (created.contractVersion !== undefined || created.diagnostics !== undefined)
+    ) {
+      throw new Error("Steward returned a direct Task projection for a legacy request");
+    }
+    const expectedOwnership = "agentRuntime" in config && config.agentRuntime
+      ? "adopted"
+      : "provisioned";
     if (created.runtimeOwnership !== expectedOwnership) {
       throw new Error("Steward returned Task ownership inconsistent with the submission");
     }
@@ -332,7 +371,8 @@ export async function runWorkflow(
       !executingBound ||
       executingBound.taskUid !== bound.taskUid ||
       executingBound.runtimeUid !== bound.runtimeUid ||
-      executingBound.runtimeOwnership !== bound.runtimeOwnership
+      executingBound.runtimeOwnership !== bound.runtimeOwnership ||
+      !taskContractMatches(bound, executingBound)
     ) {
       throw new Error("Steward changed Task identity while requesting execution");
     }
@@ -365,11 +405,20 @@ export async function runWorkflow(
     await dependencies.setOutput("status", terminal.phase);
     if (!failed) {
       stage = "output";
-      await extractOutputArchive(
+      const transcript = await extractOutputArchive(
         await dependencies.client.downloadTaskOutputs(terminal.taskUid),
         workspace,
         outputPaths,
+        terminal.diagnostics ?? { executionLog: "off" },
       );
+      if (transcript) {
+        await replayExecutionTranscript(transcript, {
+          ...(dependencies.writeLog === undefined ? {} : { write: dependencies.writeLog }),
+          ...(dependencies.commandToken === undefined
+            ? {}
+            : { commandToken: dependencies.commandToken }),
+        });
+      }
       result = terminal;
     }
   } catch (error) {

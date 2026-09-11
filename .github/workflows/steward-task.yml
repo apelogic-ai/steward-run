@@ -8,9 +8,15 @@ on:
         required: true
         type: string
       workflow:
-        description: Governed Steward workflow
-        required: true
+        description: Existing governed Workflow reference; mutually exclusive with invocation-path
+        required: false
         type: string
+        default: ""
+      invocation-path:
+        description: Repository-relative direct-package invocation manifest path; mutually exclusive with workflow
+        required: false
+        type: string
+        default: ""
       input-artifact:
         description: Artifact whose contents are materialized under in/
         required: true
@@ -33,7 +39,7 @@ on:
         type: string
         default: ""
       agent-runtime:
-        description: Existing AgentRuntime UID to adopt
+        description: Existing AgentRuntime UID to adopt for the existing Workflow path only
         required: false
         type: string
         default: ""
@@ -62,6 +68,11 @@ jobs:
       task-uid: ${{ steps.task.outputs.task-uid }}
       runtime-uid: ${{ steps.task.outputs.runtime-uid }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: inputs.invocation-path != ''
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.input-artifact }}
@@ -70,6 +81,7 @@ jobs:
         uses: apelogic-ai/steward-run@19230cc59a6b1246224912961e35c7044b0808d3
         with:
           workflow: ${{ inputs.workflow }}
+          invocation-path: ${{ inputs.invocation-path }}
           inputs: in
           outputs: out
           steward-api-url: ${{ inputs.steward-api-url }}

@@ -546,7 +546,12 @@ test("adoption is explicit and a parked Task waits for approval before collectin
       dependencies(client, outputs),
     );
     assert.equal(result.phase, "succeeded");
-    assert.equal(client.requests[0]?.agentRuntimeUid, "standing-runtime");
+    assert.equal(
+      client.requests[0] && "agentRuntimeUid" in client.requests[0]
+        ? client.requests[0].agentRuntimeUid
+        : undefined,
+      "standing-runtime",
+    );
     assert.ok(client.calls.includes("download"));
     assert.equal(client.calls.at(-1), "finalize");
   } finally {

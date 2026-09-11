@@ -18,7 +18,8 @@ test("the composite action exposes the versioned steward-run contract", async ()
       "agent-runtime",
       "bearer-token-file",
     "identity-exchange-url",
-    "identity-exchange-audience",
+      "identity-exchange-audience",
+      "invocation-path",
       "inputs",
       "oidc-audience",
       "outputs",
@@ -27,14 +28,11 @@ test("the composite action exposes the versioned steward-run contract", async ()
       "workflow",
     ].sort(),
   );
-  for (const name of [
-    "workflow",
-    "inputs",
-    "outputs",
-    "steward-api-url",
-  ]) {
+  for (const name of ["inputs", "outputs", "steward-api-url"]) {
     assert.equal(action.inputs[name]?.required, true, `${name} must be required`);
   }
+  assert.notEqual(action.inputs.workflow?.required, true);
+  assert.notEqual(action.inputs["invocation-path"]?.required, true);
   assert.notEqual(action.inputs["oidc-audience"]?.required, true);
   assert.notEqual(action.inputs["identity-exchange-url"]?.required, true);
   assert.notEqual(action.inputs["bearer-token-file"]?.required, true);

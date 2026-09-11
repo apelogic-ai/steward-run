@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -188,5 +188,110 @@ test("output extraction rejects traversal, undeclared paths, links, and symlink 
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("full diagnostics extracts bounded reserved transcripts without writing them to the workspace", async () => {
+  const root = await mkdtemp(join(tmpdir(), "steward-run-diagnostics-"));
+  try {
+    const extract = extractOutputArchive as unknown as (
+      input: Readable,
+      workspace: string,
+      outputs: readonly string[],
+      diagnostics: { executionLog: "full" },
+    ) => Promise<{ stdout: Buffer; stderr: Buffer }>;
+    const transcript = await extract(
+      await archive([
+        { name: "results/report.txt", body: "governed" },
+        { name: ".steward", type: "directory" },
+        { name: ".steward/diagnostics", type: "directory" },
+        { name: ".steward/diagnostics/stdout.log", body: "agent stdout\n" },
+        { name: ".steward/diagnostics/stderr.log", body: "agent stderr\n" },
+      ]),
+      root,
+      ["results"],
+      { executionLog: "full" },
+    );
+
+    assert.deepEqual(transcript, {
+      stdout: Buffer.from("agent stdout\n"),
+      stderr: Buffer.from("agent stderr\n"),
+    });
+    assert.equal(await readFile(join(root, "results", "report.txt"), "utf8"), "governed");
+    await assert.rejects(lstat(join(root, ".steward")), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("reserved transcripts require full diagnostics and both exact bounded files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "steward-run-diagnostics-reject-"));
+  const extract = extractOutputArchive as unknown as (
+    input: Readable,
+    workspace: string,
+    outputs: readonly string[],
+    diagnostics: { executionLog: "off" | "full" },
+  ) => Promise<unknown>;
+  try {
+    await assert.rejects(
+      extract(
+        await archive([{ name: ".steward/diagnostics/stdout.log", body: "unexpected" }]),
+        root,
+        ["results"],
+        { executionLog: "off" },
+      ),
+      /reserved diagnostics require full execution logging/,
+    );
+    await assert.rejects(
+      extract(
+        await archive([{ name: ".steward/diagnostics/stdout.log", body: "incomplete" }]),
+        root,
+        ["results"],
+        { executionLog: "full" },
+      ),
+      /missing reserved execution transcript/,
+    );
+    await assert.rejects(
+      extract(
+        await archive([
+          {
+            name: ".steward/diagnostics/stdout.log",
+            body: "x".repeat(4 * 1024 * 1024 + 1),
+          },
+          { name: ".steward/diagnostics/stderr.log", body: "" },
+        ]),
+        root,
+        ["results"],
+        { executionLog: "full" },
+      ),
+      /execution transcript exceeds 4194304 bytes/,
+    );
+    await assert.rejects(
+      extract(
+        await archive([
+          { name: ".steward/diagnostics/stdout.log/", body: "aliased" },
+          { name: ".steward/diagnostics/stderr.log", body: "" },
+        ]),
+        root,
+        ["results"],
+        { executionLog: "full" },
+      ),
+      /reserved diagnostics archive path is not canonical/,
+    );
+    await assert.rejects(
+      extract(
+        await archive([
+          { name: ".steward/diagnostics/stdout.log", body: "" },
+          { name: ".steward/diagnostics/stderr.log", body: "" },
+          { name: ".steward/diagnostics/extra.log", body: "unexpected" },
+        ]),
+        root,
+        ["results"],
+        { executionLog: "full" },
+      ),
+      /unknown reserved diagnostics path/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

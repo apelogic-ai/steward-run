@@ -16,11 +16,22 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
   const outputFile = join(workspace, "github-output");
   const summaryFile = join(workspace, "github-summary");
   const finalizationMarker = join(workspace, "mock-finalized");
-  const mock = await startMockSteward({ finalizationMarker });
+  const invocationPath = ".steward/tasks/release-summary.json";
+  const mock = await startMockSteward({
+    finalizationMarker,
+    directInvocation: {
+      invocationPath,
+      executionLog: "full",
+      stdout: "agent stdout\n::error::must stay inert\n",
+      stderr: "agent stderr\n",
+    },
+  });
   const payload = Buffer.from([0x00, 0x01, 0x02, 0x0a, 0x0d, 0x7f, 0x80, 0xfe, 0xff]);
   try {
     await mkdir(join(workspace, "in"));
+    await mkdir(join(workspace, ".steward", "tasks"), { recursive: true });
     await writeFile(join(workspace, "in", "payload.bin"), payload);
+    await writeFile(join(workspace, invocationPath), "manifest bytes stay local\n");
     await writeFile(outputFile, "");
     await writeFile(summaryFile, "");
     const child = spawn(process.execPath, ["dist/index.cjs"], {
@@ -40,11 +51,13 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
         STEWARD_RUN_IDENTITY_EXCHANGE_URL: `${mock.url}/v1/exchange`,
         STEWARD_RUN_INPUTS: "in",
         STEWARD_RUN_OUTPUTS: "out/payload.bin",
-        STEWARD_RUN_WORKFLOW: "repository-review@1",
+        STEWARD_RUN_INVOCATION_PATH: invocationPath,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
+    let stdout = "";
     let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += String(chunk)));
     child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
     const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
     assert.equal(code, 0, stderr);
@@ -59,7 +72,18 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
     assert.equal(mock.observations.sourceTokenAtSteward, 0);
     assert.equal(mock.observations.stewardTokenAtExchange, 0);
     assert.ok(mock.observations.stewardTokenAtSteward >= 5);
-    assert.deepEqual(mock.observations.taskSubmission, { workflow: "repository-review@1" });
+    assert.deepEqual(mock.observations.taskSubmission, {
+      contractVersion: "steward.task/v2",
+      invocationPath,
+    });
+    assert.match(stdout, /::warning title=Sensitive Steward execution log::/u);
+    assert.match(stdout, /::group::Steward Task stdout/u);
+    assert.match(stderr, /::group::Steward Task stderr/u);
+    assert.match(stderr, /agent stderr/u);
+    const stop = stdout.match(/::stop-commands::(steward-[A-Za-z0-9-]+)\n/u);
+    assert.ok(stop);
+    assert.ok(stdout.indexOf(stop[0]) < stdout.indexOf("::error::must stay inert"));
+    assert.ok(stdout.indexOf("::error::must stay inert") < stdout.indexOf(`::${stop[1]}::`));
     assert.deepEqual(mock.observations.operations, [
       "submit",
       "upload-inputs",

@@ -3,8 +3,11 @@ description: Run a governed coding-agent workflow in a Steward sandbox
 
 inputs:
   workflow:
-    description: Governed workflow to execute
-    required: true
+    description: Existing governed Workflow reference; mutually exclusive with invocation-path
+    required: false
+  invocation-path:
+    description: Repository-relative direct-package invocation manifest path; mutually exclusive with workflow
+    required: false
   inputs:
     description: Newline-delimited workspace-relative input paths
     required: true
@@ -30,7 +33,7 @@ inputs:
     description: Filesystem path containing a rotating short-lived JWT; mutually exclusive with OIDC inputs
     required: false
   agent-runtime:
-    description: Existing AgentRuntime UID to adopt instead of provisioning one
+    description: Existing AgentRuntime UID to adopt for the existing Workflow path only
     required: false
 outputs:
   status:
@@ -50,6 +53,7 @@ runs:
       shell: bash
       env:
         STEWARD_RUN_WORKFLOW: ${{ inputs.workflow }}
+        STEWARD_RUN_INVOCATION_PATH: ${{ inputs.invocation-path }}
         STEWARD_RUN_INPUTS: ${{ inputs.inputs }}
         STEWARD_RUN_OUTPUTS: ${{ inputs.outputs }}
         STEWARD_RUN_API_URL: ${{ inputs.steward-api-url }}
