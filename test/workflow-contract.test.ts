@@ -8,6 +8,7 @@ const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
 const actionCommit = "19230cc59a6b1246224912961e35c7044b0808d3";
+const directPackageActionCommit = "fd090be213b3f4d777bcfacc367e0cdbd574400b";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -272,7 +273,7 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.match(
     source,
-    /uses:\s*apelogic-ai\/steward-run@0707623836cd4cdf063938e1e049c694397bc31c/u,
+    new RegExp(`uses:\\s*apelogic-ai/steward-run@${directPackageActionCommit}`, "u"),
   );
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /actions\/upload-artifact@/);
