@@ -8,9 +8,10 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && esbuild src/main.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/index.cjs",
-    "check": "npm run typecheck && npm run test && npm run build && npm run check:thin-shell && npm run check:dist",
+    "check": "npm run typecheck && npm run test && npm run build && npm run check:thin-shell && npm run check:helm && npm run check:dist",
     "check:dist": "git diff --exit-code -- dist/index.cjs",
     "check:thin-shell": "node scripts/check-thin-shell.mjs",
+    "check:helm": "node scripts/check-helm-chart.mjs",
     "test": "node --import tsx --test 'test/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },

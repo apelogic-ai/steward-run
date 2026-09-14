@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["image", "imagePullSecrets", "runner", "podSecurityContext", "containerSecurityContext", "resources"],
+  "properties": {
+    "image": {
+      "type": "object", "additionalProperties": false, "required": ["repository", "digest", "pullPolicy"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1, "pattern": "^\\S+$"},
+        "digest": {"type": "string", "pattern": "^$|^sha256:[0-9a-f]{64}$"},
+        "pullPolicy": {"enum": ["IfNotPresent", "Always", "Never"]}
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"type": "string", "minLength": 1}}}
+    },
+    "runner": {
+      "type": "object", "additionalProperties": false, "required": ["name", "command"],
+      "properties": {
+        "name": {"const": "runner"},
+        "command": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"const": "/home/runner/run.sh"}}
+      }
+    },
+    "podSecurityContext": {
+      "type": "object", "additionalProperties": false, "required": ["runAsNonRoot", "runAsUser", "runAsGroup", "fsGroup", "fsGroupChangePolicy", "seccompProfile"],
+      "properties": {
+        "runAsNonRoot": {"const": true}, "runAsUser": {"const": 1001}, "runAsGroup": {"const": 1001}, "fsGroup": {"const": 1001}, "fsGroupChangePolicy": {"const": "OnRootMismatch"},
+        "seccompProfile": {"type": "object", "additionalProperties": false, "required": ["type"], "properties": {"type": {"const": "RuntimeDefault"}}}
+      }
+    },
+    "containerSecurityContext": {
+      "type": "object", "additionalProperties": false, "required": ["allowPrivilegeEscalation", "capabilities", "privileged", "readOnlyRootFilesystem"],
+      "properties": {
+        "allowPrivilegeEscalation": {"const": false},
+        "capabilities": {"type": "object", "additionalProperties": false, "required": ["drop"], "properties": {"drop": {"const": ["ALL"]}}},
+        "privileged": {"const": false}, "readOnlyRootFilesystem": {"const": false}
+      }
+    },
+    "resources": {"type": "object"},
+    "global": {"type": "object"}
+  }
+}
