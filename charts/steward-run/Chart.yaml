@@ -1,0 +1,7 @@
+apiVersion: v2
+name: steward-run
+description: Importable Pod contract for the steward-run GitHub Actions runner image
+type: library
+version: 0.1.0
+appVersion: 0.4.0
+kubeVersion: ">=1.30.0-0"

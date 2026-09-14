@@ -1,0 +1,14 @@
+steward-run:
+  image:
+    repository: registry.example.com/apelogic/steward-run
+    digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    pullPolicy: IfNotPresent
+  imagePullSecrets:
+    - name: existing-registry-pull-secret
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi

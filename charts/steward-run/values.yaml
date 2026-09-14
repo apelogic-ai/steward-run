@@ -1,0 +1,31 @@
+# This is a Helm library chart. It deliberately creates no runner, Service,
+# Deployment, Job, or CronJob. An environment-owned ARC scale set imports its
+# runner Pod spec and owns GitHub registration, scale, RBAC, and network policy.
+image:
+  repository: ghcr.io/apelogic-ai/steward-run
+  # A release consumer must supply an exact OCI digest. Tags are deliberately
+  # not accepted for the runner execution boundary.
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+runner:
+  # ARC requires the primary runner container to retain this name.
+  name: runner
+  command:
+    - /home/runner/run.sh
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  privileged: false
+  readOnlyRootFilesystem: false
+resources: {}
