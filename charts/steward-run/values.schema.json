@@ -7,7 +7,7 @@
     "image": {
       "type": "object", "additionalProperties": false, "required": ["repository", "digest", "pullPolicy"],
       "properties": {
-        "repository": {"type": "string", "minLength": 1, "pattern": "^\\S+$"},
+        "repository": {"type": "string", "pattern": "^(?:$|\\S+)$"},
         "digest": {"type": "string", "pattern": "^$|^sha256:[0-9a-f]{64}$"},
         "pullPolicy": {"enum": ["IfNotPresent", "Always", "Never"]}
       }

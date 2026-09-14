@@ -73,6 +73,11 @@ try {
     /steward-run\.image\.digest must be an exact lowercase sha256 OCI digest/,
     "a consumer must not render a mutable or empty runner image reference",
   );
+  assert.throws(
+    () => helm("template", "steward-run-render-test", fixture, "--values", values, "--set", "steward-run.image.repository="),
+    /steward-run\.image\.repository must name an accessible OCI repository/,
+    "a consumer must provide a real registry coordinate instead of relying on an unpublished default",
+  );
 
   const chartReadme = readFileSync(join(chart, "README.md"), "utf8");
   assert.match(chartReadme, /no `Deployment`, `Service`, `Job`, `CronJob`, or listener/);

@@ -18,14 +18,20 @@ Those concerns are environment authority: ARC installation, GitHub
 registration, runner scale, workload identity, certificate projection, egress,
 and image-pull credentials belong in the operator's environment layer. The
 runner image remains an immutable, private/licensed product release owned by
-this repository. The chart has no AWS, ECR, GitHub App, or internal GitOps
+this repository. No public runner image or OCI chart is currently published;
+the default repository is empty and must be set to an accessible coordinate.
+The chart has no AWS, ECR, GitHub App, or internal GitOps
 dependency; a customer-owned ARC scale set supplies those deployment choices.
 
 ## Required release input
 
-Set `image.digest` to the exact lowercase OCI digest recorded in a signed
-steward-run release handoff. A tag is never used at this boundary. The default
-empty digest deliberately fails when a consumer renders the Pod fragment.
+Set `image.repository` to a repository the cluster can pull and `image.digest`
+to the exact lowercase OCI digest recorded in the corresponding release
+evidence. A tag is never used at this boundary. The default empty repository
+and digest deliberately fail when a consumer renders the Pod fragment. The
+current signed ApeLogic release handoff refers to private ECR; an independent
+customer build has its **own** digest and evidence, not that ECR digest. See
+the [customer rebuild path](../../docs/customer-rebuild.md).
 
 `imagePullSecrets` contains only existing Secret names. The chart never creates
 or accepts registry credential values.
@@ -39,8 +45,9 @@ container-hook volume mounts.
 
 ## Import into an ARC values wrapper
 
-After obtaining the versioned chart package from the approved private product
-distribution, a customer/operator wrapper chart may declare this library as a
+After obtaining the exact source under a separate grant and packaging the
+versioned chart locally (or publishing that package to a customer-owned OCI
+registry), a customer/operator wrapper chart may declare this library as a
 dependency and pass only its runner-image contract under `stewardRun`:
 
 ```yaml
@@ -48,18 +55,17 @@ dependency and pass only its runner-image contract under `stewardRun`:
 dependencies:
   - name: steward-run
     version: 0.1.0
-    repository: oci://<your-immutable-chart-registry>
+    repository: oci://registry.customer.example/charts
 ```
 
 ```yaml
 # values.yaml
 stewardRun:
   image:
-    repository: registry.example.com/steward-run
+    repository: registry.customer.example/steward-run
     digest: sha256:<64 lowercase hex characters>
     pullPolicy: IfNotPresent
-  imagePullSecrets:
-    - name: existing-registry-pull-secret
+  imagePullSecrets: [] # or existing Secret names if the customer registry requires auth
   resources:
     requests:
       cpu: 250m

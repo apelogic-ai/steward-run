@@ -119,6 +119,13 @@ or GitHub registration. See the [chart documentation](charts/steward-run/README.
 for the trust boundary, exact-digest requirement, ARC wrapper example, and
 safe upgrade expectations.
 
+There is currently no public steward-run runner image or OCI chart. Operators
+with separately granted access to this private source repository can use the
+[customer rebuild path](docs/customer-rebuild.md) and pin the resulting
+customer-owned digest. That path does not make the default ECR-pinned
+governed job-container or this repository's reusable workflow anonymously
+available.
+
 For a dedicated self-hosted runner that must not pull the ARC job container, use the separately
 pinned `steward-task-self-hosted.yml` reusable workflow. It has the same artifact, immutable
 Action, output, and `id-token: write` contract, so GitHub emits an exact `job_workflow_ref`; it
