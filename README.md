@@ -51,7 +51,8 @@ Steward control plane, or real Agent Sandbox.
 
 ## Development
 
-Requires Node.js 24 and Docker.
+Requires Node.js 24, Docker, and Helm 3.17 or later for the Kubernetes chart
+render check.
 
 ```console
 npm ci
@@ -107,6 +108,16 @@ The governed job always runs inside the signed v0.3.0 `steward-run` image pinned
 digest in `steward-task.yml`. The image is not a workflow input and the workflow supplies no
 registry credential; Kubernetes-mode ARC nodes use their scoped ECR pull access. The container
 provides Bash, Node, Git, and tar for artifact and composite-action steps.
+
+## Kubernetes packaging
+
+The reusable runner image is packaged as an importable Helm library chart under
+[`charts/steward-run`](charts/steward-run/). It supplies only an immutable,
+security-hardened runner Pod-spec fragment for an environment-owned ARC scale
+set. It does not create a long-lived service, runner listener, Kubernetes Job,
+or GitHub registration. See the [chart documentation](charts/steward-run/README.md)
+for the trust boundary, exact-digest requirement, ARC wrapper example, and
+safe upgrade expectations.
 
 For a dedicated self-hosted runner that must not pull the ARC job container, use the separately
 pinned `steward-task-self-hosted.yml` reusable workflow. It has the same artifact, immutable
