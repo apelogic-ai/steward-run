@@ -6,3 +6,13 @@ node_modules
 test
 *.log
 
+# Do not send local credentials or environment overlays to the Docker builder.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+kubeconfig
+kubeconfig.*

@@ -4,3 +4,13 @@ dist/types/
 coverage/
 *.log
 
+# Local credentials and environment overlays must never enter source control.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+kubeconfig
+kubeconfig.*
