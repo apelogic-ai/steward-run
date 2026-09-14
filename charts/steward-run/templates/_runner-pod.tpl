@@ -4,6 +4,9 @@ an environment-owned ARC scale set. The caller supplies this chart's values as
 the template context, for example (dict "Values" .Values.stewardRun).
 */}}
 {{- define "steward-run.validate" -}}
+{{- if not .Values.image.repository -}}
+{{- fail "steward-run.image.repository must name an accessible OCI repository" -}}
+{{- end -}}
 {{- if not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.image.digest) -}}
 {{- fail "steward-run.image.digest must be an exact lowercase sha256 OCI digest" -}}
 {{- end -}}
