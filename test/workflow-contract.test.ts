@@ -7,7 +7,7 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "19230cc59a6b1246224912961e35c7044b0808d3";
+const actionCommit = "5aa55da69f7859a16faf815bfed790fe9ba95999";
 const directPackageActionCommit = "5aa55da69f7859a16faf815bfed790fe9ba95999";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
@@ -169,6 +169,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
     Object.keys(workflow.on.workflow_call.inputs).sort(),
     [
       "agent-runtime",
+      "identity-exchange-audience",
       "identity-exchange-url",
       "input-artifact",
       "invocation-path",
@@ -181,6 +182,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   );
   for (const name of [
     "identity-exchange-url",
+    "identity-exchange-audience",
     "input-artifact",
     "output-artifact",
     "runner-label",
@@ -191,6 +193,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.equal(workflow.on.workflow_call.inputs["coding-agent-runtime"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["action-commit"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["identity-exchange-url"]?.required, true);
+  assert.equal(workflow.on.workflow_call.inputs["identity-exchange-audience"]?.required, true);
   assert.equal(workflow.on.workflow_call.inputs["runner-label"]?.required, true);
   assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
@@ -229,6 +232,10 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   );
   assert.doesNotMatch(source, /uses:\s*apelogic-ai\/steward-run@\$\{\{/u);
   assert.match(source, /identity-exchange-url:\s*\$\{\{ inputs\.identity-exchange-url \}\}/);
+  assert.match(
+    source,
+    /identity-exchange-audience:\s*\$\{\{ inputs\.identity-exchange-audience \}\}/u,
+  );
   assert.match(source, /inputs:\s*in/);
   assert.match(source, /outputs:\s*out/);
   assert.match(source, /invocation-path:\s*\$\{\{ inputs\.invocation-path \}\}/u);
