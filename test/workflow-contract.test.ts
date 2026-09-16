@@ -7,8 +7,8 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "5aa55da69f7859a16faf815bfed790fe9ba95999";
-const directPackageActionCommit = "5aa55da69f7859a16faf815bfed790fe9ba95999";
+const actionCommit = "b114d38dd6d4c300a7bf80ec16567027dd5d4be1";
+const directPackageActionCommit = "b114d38dd6d4c300a7bf80ec16567027dd5d4be1";
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
