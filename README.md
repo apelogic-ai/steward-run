@@ -83,6 +83,7 @@ jobs:
       output-artifact: result
       steward-api-url: ${{ vars.STEWARD_API_URL }}
       identity-exchange-url: ${{ vars.IDENTITY_EXCHANGE_URL }}
+      identity-exchange-audience: ${{ vars.IDENTITY_EXCHANGE_AUDIENCE }}
       steward-ca-certificate-file: ${{ vars.STEWARD_CA_CERTIFICATE_FILE }}
 ```
 

@@ -33,6 +33,10 @@ on:
         description: GitHub OIDC exchange endpoint
         required: true
         type: string
+      identity-exchange-audience:
+        description: Exact GitHub OIDC audience accepted by the Identity exchange
+        required: true
+        type: string
       steward-ca-certificate-file:
         description: Filesystem path to the Steward CA bundle
         required: false
@@ -78,7 +82,7 @@ jobs:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: apelogic-ai/steward-run@19230cc59a6b1246224912961e35c7044b0808d3
+        uses: apelogic-ai/steward-run@5aa55da69f7859a16faf815bfed790fe9ba95999
         with:
           workflow: ${{ inputs.workflow }}
           invocation-path: ${{ inputs.invocation-path }}
@@ -86,6 +90,7 @@ jobs:
           outputs: out
           steward-api-url: ${{ inputs.steward-api-url }}
           identity-exchange-url: ${{ inputs.identity-exchange-url }}
+          identity-exchange-audience: ${{ inputs.identity-exchange-audience }}
           steward-ca-certificate-file: ${{ inputs.steward-ca-certificate-file }}
           agent-runtime: ${{ inputs.agent-runtime }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
