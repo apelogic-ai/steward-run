@@ -206,6 +206,43 @@ test("a trusted private CA succeeds while a wrong CA and hostname mismatch fail 
   }
 });
 
+test("adding a private CA preserves the process default trust store", async () => {
+  const root = await mkdtemp(join(tmpdir(), "steward-run-additive-ca-"));
+  const defaultAuthority = await createCertificateAuthority(root, "default");
+  const configuredAuthority = await createCertificateAuthority(root, "configured");
+  const matching = await issueServerCertificate(
+    root,
+    defaultAuthority,
+    "default-trusted",
+    "IP:127.0.0.1",
+  );
+  const tlsServer = await startTlsServer(
+    matching.certificate,
+    matching.key,
+    (_request, response) => response.writeHead(200).end("ok"),
+  );
+  try {
+    const child = await execFileAsync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        fileURLToPath(new URL("support/additive-ca-child.ts", import.meta.url)),
+        tlsServer.url,
+        configuredAuthority.certificate,
+      ],
+      {
+        cwd: fileURLToPath(new URL("..", import.meta.url)),
+        env: { ...process.env, NODE_EXTRA_CA_CERTS: defaultAuthority.certificate },
+      },
+    );
+    assert.equal(child.stdout, "ok");
+  } finally {
+    await close(tlsServer.server);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("private-CA uploads stream real input archives and recreate them for retries", async () => {
   const root = await mkdtemp(join(tmpdir(), "steward-run-tls-upload-"));
   const workspace = join(root, "workspace");

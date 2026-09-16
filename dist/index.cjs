@@ -4186,6 +4186,7 @@ var import_promises6 = require("node:fs/promises");
 var import_node_http = require("node:http");
 var import_node_https = require("node:https");
 var import_node_stream2 = require("node:stream");
+var import_node_tls = require("node:tls");
 var certificatePattern = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/gu;
 async function trustedCaBundle(path) {
   let source;
@@ -4304,7 +4305,15 @@ function privateCaFetch(ca) {
         method,
         headers: outgoingHeaders
       };
-      const request = url.protocol === "https:" ? (0, import_node_https.request)(url, { ...options, ca, rejectUnauthorized: true }, handleResponse) : url.protocol === "http:" ? (0, import_node_http.request)(url, options, handleResponse) : void 0;
+      const request = url.protocol === "https:" ? (0, import_node_https.request)(
+        url,
+        {
+          ...options,
+          ca: [...(0, import_node_tls.getCACertificates)("default"), ca],
+          rejectUnauthorized: true
+        },
+        handleResponse
+      ) : url.protocol === "http:" ? (0, import_node_http.request)(url, options, handleResponse) : void 0;
       if (!request) {
         reject(new Error("unsupported Steward URL protocol"));
         return;

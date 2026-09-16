@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { Readable } from "node:stream";
+import { getCACertificates } from "node:tls";
 import type { FetchLike } from "./oidc.js";
 
 const certificatePattern = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/gu;
@@ -140,7 +141,15 @@ function privateCaFetch(ca: string): FetchLike {
       };
       const request =
         url.protocol === "https:"
-          ? httpsRequest(url, { ...options, ca, rejectUnauthorized: true }, handleResponse)
+          ? httpsRequest(
+              url,
+              {
+                ...options,
+                ca: [...getCACertificates("default"), ca],
+                rejectUnauthorized: true,
+              },
+              handleResponse,
+            )
           : url.protocol === "http:"
             ? httpRequest(url, options, handleResponse)
             : undefined;
