@@ -1,0 +1,28 @@
+gha-runner-scale-set:
+  githubConfigUrl: https://github.com/customer/example
+  githubConfigSecret: steward-run-github-app
+  controllerServiceAccount:
+    namespace: arc-system
+    name: arc-gha-rs-controller
+  template:
+    spec:
+      imagePullSecrets:
+        - name: customer-registry
+      containers:
+        - name: runner
+          image: registry.example/steward-run@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          imagePullPolicy: IfNotPresent
+          command: ["/home/runner/run.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            privileged: false
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
