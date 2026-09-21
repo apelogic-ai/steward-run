@@ -99,10 +99,18 @@ test("the package metadata identifies the in-cluster integration release", async
     await readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   ) as { version: string; packages: Record<string, { version?: string }> };
 
-  assert.equal(packageJson.version, "0.4.0");
+  assert.equal(packageJson.version, "0.4.1");
   assert.equal(packageJson.license, "MIT");
-  assert.equal(packageLock.version, "0.4.0");
-  assert.equal(packageLock.packages[""]?.version, "0.4.0");
+  assert.equal(packageLock.version, "0.4.1");
+  assert.equal(packageLock.packages[""]?.version, "0.4.1");
+  for (const chart of ["steward-run", "steward-run-arc"]) {
+    const metadata = await readFile(
+      new URL(`../charts/${chart}/Chart.yaml`, import.meta.url),
+      "utf8",
+    );
+    assert.match(metadata, /^appVersion: 0\.4\.1$/mu);
+    assert.match(metadata, /^version: 0\.1\.0$/mu);
+  }
 });
 
 test("the thin-shell security check is a required build gate", async () => {

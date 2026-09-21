@@ -4,7 +4,7 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-Start with the [versioned installation guide](docs/installation-v0.4.0.md).
+Start with the [versioned installation guide](docs/installation-v0.4.1.md).
 The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
@@ -114,7 +114,7 @@ URL plus existing App Secret reference. It defaults to zero idle runners and
 non-root, no-privilege runner Pods without a Kubernetes API token. The old
 [`steward-run` library chart](charts/steward-run/) remains an internal helper,
 not the customer installation path. No image or chart OCI coordinate is
-published by this repository yet; the [guide](docs/installation-v0.4.0.md)
+published by this repository yet; the [guide](docs/installation-v0.4.1.md)
 shows how a fork publishes its own artifacts.
 The supported runner artifact is one multi-platform OCI index containing
 `linux/amd64` and `linux/arm64`; the chart remains architecture-neutral and

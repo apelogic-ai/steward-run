@@ -73,7 +73,7 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     for (const key of ["github_app_id", "github_app_installation_id", "github_app_private_key", "githubConfigSecret", "imagePullSecrets"]) {
       assert.ok(upstreamValues.includes(key) || (key === "imagePullSecrets" && upstreamValues.includes("template:")), `upstream ARC contract: ${key}`);
     }
-    const guide = readFileSync(join(root, "docs", "installation-v0.4.0.md"), "utf8");
+    const guide = readFileSync(join(root, "docs", "installation-v0.4.1.md"), "utf8");
     const action = readFileSync(join(root, "action.yml"), "utf8");
     for (const key of ["github_app_id", "github_app_installation_id", "github_app_private_key", "imagePullSecrets", "ca.crt"]) {
       assert.ok(guide.includes(key), `inventory: ${key}`);

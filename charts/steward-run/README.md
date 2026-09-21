@@ -14,7 +14,7 @@ Installing this legacy library chart directly is intentionally unsupported. A
 Helm library chart is imported by a consumer chart; rendering it alone
 produces no workload. The supported customer scale-set installation path is
 the [installable application chart](../steward-run-arc/) and its
-[versioned guide](../../docs/installation-v0.4.0.md).
+[versioned guide](../../docs/installation-v0.4.1.md).
 
 Those concerns are environment authority: ARC installation, GitHub
 registration, runner scale, workload identity, certificate projection, egress,
@@ -32,7 +32,7 @@ to the exact lowercase OCI digest recorded in the corresponding release
 evidence. A tag is never used at this boundary. The default empty repository
 and digest deliberately fail when a consumer renders the Pod fragment. The
 old ApeLogic handoff is not a customer artifact: an independent build has
-its **own** digest and evidence. See the [installation guide](../../docs/installation-v0.4.0.md).
+its **own** digest and evidence. See the [installation guide](../../docs/installation-v0.4.1.md).
 
 `imagePullSecrets` contains only existing Secret names. The chart never creates
 or accepts registry credential values.

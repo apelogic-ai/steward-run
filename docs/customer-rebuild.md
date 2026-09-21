@@ -1,6 +1,6 @@
 # Customer rebuild path (superseded)
 
-Use the [versioned installation guide](installation-v0.4.0.md) for the current
+Use the [versioned installation guide](installation-v0.4.1.md) for the current
 fork-owned runner image, installable application chart, GitHub App, and
 acceptance procedure. This document is retained as historical context for
 the earlier library-chart rebuild only. The source is now MIT licensed; no
@@ -84,5 +84,7 @@ in the multi-platform ARC runner image.
 - Run a real ARC registration and governed-job acceptance against customer
   Steward and identity endpoints, including denial cases and cleanup.
 
-The current ECR release workflow and DEV handoff remain unchanged until those
-steps are separately reviewed.
+The native per-platform release workflow builds, scans, and attests both Linux
+architectures before assembling one immutable OCI index. A fork may reuse that
+mechanism with its own registry and signing identity; the customer installation
+still requires the governed-job acceptance evidence described above.

@@ -22,6 +22,15 @@ type FixtureDefect =
   | "empty-subject"
   | "mismatched-subject"
   | "missing-provenance"
+  | "provenance-invalid-build-type"
+  | "provenance-invalid-external-parameters"
+  | "provenance-missing-builder-id"
+  | "spdx-invalid-created"
+  | "spdx-invalid-namespace"
+  | "spdx-missing-creator"
+  | "spdx-missing-data-license"
+  | "spdx-missing-name"
+  | "spdx-wrong-version"
   | "wrong-predicate";
 
 function bytes(value: unknown): Buffer {
@@ -67,16 +76,73 @@ async function createFixture(
     await writeBlob(layout, runnableContent);
     rootManifests.push({ ...runnable, platform: { os: "linux", architecture } });
 
-    const makeStatement = (predicateType: string) => bytes({
+    const makeStatement = (predicateType: string) => {
+      const predicate: {
+        buildDefinition?: { buildType: string; externalParameters: unknown };
+        runDetails?: { builder: { id?: string } };
+        spdxVersion?: string;
+        dataLicense?: string;
+        SPDXID?: string;
+        name?: string;
+        documentNamespace?: string;
+        creationInfo?: { creators: string[]; created: string };
+      } = predicateType === spdxPredicate
+        ? {
+            spdxVersion: "SPDX-2.3",
+            dataLicense: "CC0-1.0",
+            SPDXID: "SPDXRef-DOCUMENT",
+            name: "steward-run fixture",
+            documentNamespace: "https://example.invalid/spdx/steward-run-fixture",
+            creationInfo: {
+              creators: ["Tool: buildkit-syft-scanner-test"],
+              created: "2026-09-21T00:00:00Z",
+            },
+          }
+        : {
+            buildDefinition: {
+              buildType: "https://mobyproject.org/buildkit@v1",
+              externalParameters: {},
+            },
+            runDetails: { builder: { id: "https://mobyproject.org/buildkit@v1" } },
+          };
+      if (architecture === "amd64") {
+        if (defect === "provenance-invalid-build-type" && predicateType === provenancePredicate) {
+          predicate.buildDefinition!.buildType = "";
+        }
+        if (defect === "provenance-invalid-external-parameters" && predicateType === provenancePredicate) {
+          predicate.buildDefinition!.externalParameters = [];
+        }
+        if (defect === "provenance-missing-builder-id" && predicateType === provenancePredicate) {
+          predicate.runDetails!.builder = {};
+        }
+        if (defect === "spdx-wrong-version" && predicateType === spdxPredicate) {
+          predicate.spdxVersion = "SPDX-2.2";
+        }
+        if (defect === "spdx-missing-data-license" && predicateType === spdxPredicate) {
+          delete predicate.dataLicense;
+        }
+        if (defect === "spdx-missing-name" && predicateType === spdxPredicate) {
+          predicate.name = "";
+        }
+        if (defect === "spdx-invalid-namespace" && predicateType === spdxPredicate) {
+          predicate.documentNamespace = "not-an-absolute-uri";
+        }
+        if (defect === "spdx-missing-creator" && predicateType === spdxPredicate) {
+          predicate.creationInfo!.creators = [];
+        }
+        if (defect === "spdx-invalid-created" && predicateType === spdxPredicate) {
+          predicate.creationInfo!.created = "yesterday";
+        }
+      }
+      return bytes({
       _type: "https://in-toto.io/Statement/v1",
       subject: architecture === "amd64" && defect === "empty-subject"
         ? []
         : [{ name: "fixture", digest: { sha256: runnable.digest.slice("sha256:".length) } }],
       predicateType,
-      predicate: predicateType === spdxPredicate
-        ? { spdxVersion: "SPDX-2.3", SPDXID: "SPDXRef-DOCUMENT" }
-        : { buildDefinition: {}, runDetails: {} },
-    });
+        predicate,
+      });
+    };
     const predicateTypes = [provenancePredicate, spdxPredicate];
     if (architecture === "amd64" && defect === "missing-provenance") predicateTypes.shift();
     if (architecture === "amd64" && defect === "wrong-predicate") predicateTypes[0] = "https://example.invalid/predicate";
@@ -218,6 +284,15 @@ for (const [defect, message] of [
   ["duplicate-predicate", "exactly one provenance and one SPDX"],
   ["duplicate-attestation", "exactly one attestation manifest"],
   ["empty-subject", "must identify the runnable image"],
+  ["provenance-invalid-build-type", "provenance buildDefinition is malformed"],
+  ["provenance-invalid-external-parameters", "provenance buildDefinition is malformed"],
+  ["provenance-missing-builder-id", "provenance builder is malformed"],
+  ["spdx-wrong-version", "SPDX document metadata is malformed"],
+  ["spdx-missing-data-license", "SPDX document metadata is malformed"],
+  ["spdx-missing-name", "SPDX document metadata is malformed"],
+  ["spdx-invalid-namespace", "SPDX document namespace is malformed"],
+  ["spdx-missing-creator", "SPDX creationInfo is malformed"],
+  ["spdx-invalid-created", "SPDX creationInfo is malformed"],
 ] as const) {
   test(`release attestation verification rejects ${defect}`, async () => {
     const { execution, root } = await verify(defect);

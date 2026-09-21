@@ -20,7 +20,7 @@ existing pull Secret in `template.spec.imagePullSecrets`. For a customer CA,
 mount an operator-owned public ConfigMap in the runner Pod; the default does
 not invent trust material.
 
-Follow the [v0.4.0 installation guide](../../docs/installation-v0.4.0.md)
+Follow the [v0.4.1 installation guide](../../docs/installation-v0.4.1.md)
 for prerequisites, GitHub App creation, image and chart build/publish,
 values, installation, rotation, upgrade/rollback, and delivery tests. Helm
 replaces lists when overlaying values, so preserve the complete runner
