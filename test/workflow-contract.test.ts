@@ -80,9 +80,26 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(roundtrip, /\bcmp\b/);
   assert.match(roundtrip, /sha256sum/);
 
-  const release = parse(releaseSource) as { permissions: Record<string, string> };
-  assert.equal(release.permissions["id-token"], "write");
-  assert.equal(release.permissions.contents, "write");
+  const release = parse(releaseSource) as {
+    permissions?: Record<string, string>;
+    jobs: Record<string, { permissions?: Record<string, string> }>;
+  };
+  assert.deepEqual(release.permissions ?? {}, {});
+  assert.deepEqual(release.jobs.prepare!.permissions, {
+    contents: "read",
+    "id-token": "write",
+  });
+  assert.deepEqual(release.jobs["build-children"]!.permissions, {
+    contents: "read",
+    "id-token": "write",
+  });
+  assert.deepEqual(release.jobs.publish!.permissions, {
+    contents: "write",
+    "id-token": "write",
+  });
+  const releaseCheckouts = releaseSource.match(/uses: actions\/checkout@[a-f0-9]{40}/gu) ?? [];
+  const nonPersistingCheckouts = releaseSource.match(/persist-credentials:\s*false/gu) ?? [];
+  assert.equal(nonPersistingCheckouts.length, releaseCheckouts.length);
   assert.match(releaseSource, /AWS_ROLE_ARN/);
   assert.match(
     releaseSource,
@@ -94,7 +111,10 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(releaseSource, /group:\s*release-\$\{\{ inputs\.version \}\}/);
   assert.match(releaseSource, /cancel-in-progress:\s*false/);
   assert.match(releaseSource, /cosign-release:\s*v3\.1\.2/);
-  assert.match(releaseSource, /--provenance=mode=max/);
+  assert.match(
+    releaseSource,
+    /--attest "type=provenance,mode=max,builder-id=\$GITHUB_SERVER_URL\/\$GITHUB_REPOSITORY\/actions\/runs\/\$GITHUB_RUN_ID"/u,
+  );
   assert.ok(releaseSource.includes(`--attest "type=sbom,generator=${sbomGeneratorImage}"`));
   assert.doesNotMatch(releaseSource, /--sbom=true|buildkit-syft-scanner:stable-1/u);
   assert.match(releaseSource, /--platform linux\/\$\{\{ matrix\.architecture \}\}/u);
@@ -125,7 +145,10 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.doesNotMatch(releaseSource, /--upload=false/);
   assert.doesNotMatch(releaseSource, /--new-bundle-format=false/);
   assert.doesNotMatch(releaseSource, /--use-signing-config=false/);
-  assert.match(releaseSource, /cosign verify-blob --bundle image-signature\.sigstore\.json[\s\S]+?"\$IMAGE_DIGEST"/u);
+  assert.doesNotMatch(
+    releaseSource,
+    /cosign verify-blob --bundle image-signature\.sigstore\.json/u,
+  );
   assert.match(releaseSource, /for attempt in \{1\.\.6\}/);
   assert.match(releaseSource, /sleep 10/);
   assert.match(releaseSource, /cosign sign-blob --yes/);
@@ -137,7 +160,7 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(releaseSource, /aws ecr batch-get-image/);
   assert.doesNotMatch(releaseSource, /aws ecr list-images/);
   assert.doesNotMatch(releaseSource, /aws ecr describe-images/);
-  assert.match(releaseSource, /gh release create "v\$VERSION"/);
+  assert.doesNotMatch(releaseSource, /gh release create "v\$VERSION"/);
   assert.match(releaseSource, /\[\[ "\$GITHUB_REF" == refs\/heads\/main \]\]/);
   assert.match(releaseSource, /git\/matching-refs\/tags\/v\$REQUESTED_VERSION/);
   assert.match(releaseSource, /require\("\.\/package\.json"\)\.version/);
@@ -149,18 +172,16 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   const indexAssembly = releaseSource.indexOf("assemble-release-index.mjs");
   const attestationValidation = releaseSource.lastIndexOf("verify-release-attestations.mjs");
   const bundleSign = releaseSource.indexOf("--bundle image-signature.sigstore.json");
-  const bundleVerification = releaseSource.indexOf("cosign verify-blob", bundleSign + 1);
   const registryVerification = releaseSource.indexOf("--experimental-oci11=true");
   const signatureVerification = releaseSource.indexOf('[[ "$verified" == true ]]');
   const finalImageTag = releaseSource.indexOf("- name: Promote verified candidate to semantic image tag");
-  const finalReleaseTag = releaseSource.indexOf('gh release create "v$VERSION"');
+  const finalReleaseTag = releaseSource.indexOf("- name: Publish the exact staged release");
   assert.ok(candidateBuild >= 0);
   assert.ok(candidateBuild < indexAssembly);
   assert.ok(indexAssembly < attestationValidation);
   assert.ok(attestationValidation < bundleSign);
   assert.ok(candidateBuild < bundleSign);
-  assert.ok(bundleSign < bundleVerification);
-  assert.ok(bundleVerification < registryVerification);
+  assert.ok(bundleSign < registryVerification);
   assert.ok(registryVerification < signatureVerification);
   assert.ok(signatureVerification < finalImageTag);
   assert.ok(finalImageTag < finalReleaseTag);
@@ -169,6 +190,39 @@ test("CI, round-trip, and release workflows enforce the product contract", async
     /uses: actions\/upload-artifact@[a-f0-9]{40}[\s\S]+?if:\s*\$\{\{ always\(\) && hashFiles\('release-metadata\.json'\) != '' \}\}/,
   );
   assert.doesNotMatch(releaseSource, /--tag[^\n]*latest/);
+  assert.doesNotMatch(
+    releaseSource,
+    /steward-run-release-child-[^\n]+github\.run_attempt/u,
+  );
+  assert.match(
+    releaseSource,
+    /name: steward-run-release-child-\$\{\{ matrix\.architecture \}\}-\$\{\{ github\.run_id \}\}[\s\S]+?overwrite:\s*true/u,
+  );
+  assert.match(
+    releaseSource,
+    /name: steward-run-release-child-amd64-\$\{\{ github\.run_id \}\}/u,
+  );
+  assert.match(
+    releaseSource,
+    /name: steward-run-release-child-arm64-\$\{\{ github\.run_id \}\}/u,
+  );
+
+  const stageDraft = releaseSource.indexOf("Stage exact draft release assets");
+  const promoteSemantic = releaseSource.indexOf("Promote verified candidate to semantic image tag");
+  const publishDraft = releaseSource.indexOf("Publish the exact staged release");
+  assert.ok(stageDraft > signatureVerification);
+  assert.ok(stageDraft < promoteSemantic);
+  assert.ok(promoteSemantic < publishDraft);
+  assert.match(releaseSource, /GITHUB_RUN_ATTEMPT.*==.*1/u);
+  assert.match(
+    releaseSource,
+    /releases\/tags\/v\$REQUESTED_VERSION[\s\S]+?release v\$REQUESTED_VERSION already exists/u,
+  );
+  assert.match(releaseSource, /existing.*==.*\$IMAGE_DIGEST/u);
+  assert.match(releaseSource, /draft=true/u);
+  assert.match(releaseSource, /draft=false/u);
+  assert.match(releaseSource, /target_commitish[\s\S]+?GITHUB_SHA/u);
+  assert.match(releaseSource, /digest[\s\S]+?sha256/u);
 });
 
 test("the reusable ARC workflow transfers artifacts around an immutable remote action", async () => {
