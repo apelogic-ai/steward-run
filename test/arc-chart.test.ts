@@ -64,6 +64,7 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     const metadata = readFileSync(join(chart, "Chart.yaml"), "utf8");
     assert.match(metadata, /type: application/u);
     assert.match(metadata, /version: 0\.14\.2/u);
+    assert.doesNotMatch(metadata, /apelogic-ai\/steward-run/u);
 
     const upstreamValues = execFileSync("tar", ["-xOf", join(chart, "charts", "gha-runner-scale-set-0.14.2.tgz"), "gha-runner-scale-set/values.yaml"], { encoding: "utf8" });
     for (const key of ["github_app_id", "github_app_installation_id", "github_app_private_key", "githubConfigSecret", "imagePullSecrets"]) {
