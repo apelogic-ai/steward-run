@@ -29,20 +29,39 @@ jobs:
           -w /repo
           ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
           detect --source . --no-banner
+
+  image:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build thin ARC image
         run: |
           docker --version
           docker buildx version
-          docker build --platform linux/amd64 \
-            --build-arg VERSION=0.3.1-ci \
+          docker buildx build --platform linux/${{ matrix.architecture }} --load \
+            --build-arg VERSION=0.4.0-ci \
             --build-arg REVISION="$GITHUB_SHA" \
             --build-arg SOURCE_REPOSITORY="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --tag steward-run:ci .
+            --tag steward-run:ci-${{ matrix.architecture }} .
       - name: Smoke-test ARC and governed job-container contracts
         run: >-
-          docker run --rm --platform linux/amd64 --entrypoint /bin/bash
+          docker run --rm --platform linux/${{ matrix.architecture }} --entrypoint /bin/bash
           -v "${{ github.workspace }}:/workspace:ro"
-          steward-run:ci
+          steward-run:ci-${{ matrix.architecture }}
           -c 'test "$(id -un)" = runner && test -x /home/runner/run.sh && test -d /home/runner/k8s && sudo -n true && sudo -n apt-get check && ! dpkg-query -W gir1.2-glib-2.0 && ! dpkg-query -W libglib2.0-0t64 && ! dpkg-query -W libglib2.0-bin && ! dpkg-query -W libglib2.0-data && ! command -v curl && ! command -v docker && ! command -v dockerd && ! command -v runc && command -v node && command -v git && command -v jq && command -v python3 && command -v tar && command -v unzip && /home/runner/bin/Runner.Listener --version && ldd /home/runner/bin/Runner.Listener >/dev/null && ! ldd /home/runner/bin/Runner.Listener | grep -F "not found" && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
       - name: Export image vulnerability report
         run: >-
@@ -50,19 +69,21 @@ jobs:
           -v /var/run/docker.sock:/var/run/docker.sock
           -v "${{ github.workspace }}:/report"
           aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
-          image --scanners vuln --format json --output /report/trivy-report.json steward-run:ci
+          image --scanners vuln --format json
+          --output /report/trivy-report-${{ matrix.architecture }}.json
+          steward-run:ci-${{ matrix.architecture }}
       - name: Enforce critical vulnerability policy
         run: >-
           node scripts/check-vulnerability-report.mjs
-          trivy-report.json
+          trivy-report-${{ matrix.architecture }}.json
           security/vulnerability-policy.json
-          vulnerability-summary.json
+          vulnerability-summary-${{ matrix.architecture }}.json
       - name: Publish vulnerability report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: steward-run-vulnerability-report-${{ github.sha }}
+          name: steward-run-vulnerability-report-${{ matrix.architecture }}-${{ github.sha }}
           path: |
-            trivy-report.json
-            vulnerability-summary.json
+            trivy-report-${{ matrix.architecture }}.json
+            vulnerability-summary-${{ matrix.architecture }}.json
           if-no-files-found: error

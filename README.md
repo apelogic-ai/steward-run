@@ -116,6 +116,12 @@ non-root, no-privilege runner Pods without a Kubernetes API token. The old
 not the customer installation path. No image or chart OCI coordinate is
 published by this repository yet; the [guide](docs/installation-v0.4.0.md)
 shows how a fork publishes its own artifacts.
+The supported runner artifact is one multi-platform OCI index containing
+`linux/amd64` and `linux/arm64`; the chart remains architecture-neutral and
+pins the index digest so Kubernetes selects the matching image.
+This support applies to the fork-owned customer workflow. The legacy internal
+`steward-task.yml` remains amd64-only because it pins a separate amd64 governed
+job-container image.
 
 For a dedicated self-hosted runner that must not pull the ARC job container, use the separately
 pinned `steward-task-self-hosted.yml` reusable workflow. It has the same artifact, immutable

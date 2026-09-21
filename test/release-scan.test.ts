@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 const repositoryRoot = new URL("..", import.meta.url);
 const indexDigest = `sha256:${"a".repeat(64)}`;
 const runnableDigest = `sha256:${"b".repeat(64)}`;
+const arm64Digest = `sha256:${"d".repeat(64)}`;
 const attestationDigest = `sha256:${"c".repeat(64)}`;
 
 async function temporaryDirectory(): Promise<string> {
@@ -74,6 +75,54 @@ test("release scan rejects missing or ambiguous runnable manifests", async () =>
   }
 });
 
+test("release verifies the exact supported runnable platform set", async () => {
+  const root = await temporaryDirectory();
+  const manifest = join(root, "index.json");
+  try {
+    await writeFile(
+      manifest,
+      JSON.stringify({
+        manifests: [
+          { digest: runnableDigest, platform: { os: "linux", architecture: "amd64" } },
+          { digest: arm64Digest, platform: { os: "linux", architecture: "arm64" } },
+          {
+            digest: attestationDigest,
+            platform: { os: "unknown", architecture: "unknown" },
+            annotations: { "vnd.docker.reference.type": "attestation-manifest" },
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await execFileAsync(
+      process.execPath,
+      ["scripts/verify-runnable-image-platforms.mjs", manifest, "linux/amd64", "linux/arm64"],
+      { cwd: repositoryRoot },
+    );
+
+    for (const invalid of [
+      [{ digest: runnableDigest, platform: { os: "linux", architecture: "amd64" } }],
+      [
+        { digest: runnableDigest, platform: { os: "linux", architecture: "amd64" } },
+        { digest: arm64Digest, platform: { os: "linux", architecture: "arm64" } },
+        { digest: `sha256:${"e".repeat(64)}`, platform: { os: "linux", architecture: "s390x" } },
+      ],
+    ]) {
+      await writeFile(manifest, JSON.stringify({ manifests: invalid }), "utf8");
+      await assert.rejects(
+        execFileAsync(
+          process.execPath,
+          ["scripts/verify-runnable-image-platforms.mjs", manifest, "linux/amd64", "linux/arm64"],
+          { cwd: repositoryRoot },
+        ),
+        /exactly: linux\/amd64, linux\/arm64/u,
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("release scan summary binds completed findings to both immutable digests", async () => {
   const root = await temporaryDirectory();
   const findings = join(root, "findings.json");
@@ -102,6 +151,7 @@ test("release scan summary binds completed findings to both immutable digests", 
         "steward-run",
         indexDigest,
         runnableDigest,
+        "arm64",
       ],
       { cwd: repositoryRoot },
     );
@@ -112,7 +162,7 @@ test("release scan summary binds completed findings to both immutable digests", 
       indexDigest,
       runnableImage: {
         operatingSystem: "linux",
-        architecture: "amd64",
+        architecture: "arm64",
         digest: runnableDigest,
       },
       status: "COMPLETE",
