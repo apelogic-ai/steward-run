@@ -22,9 +22,10 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       HELM_CONFIG_HOME: join(work, "config"),
     };
     const helm = (...args: string[]) => execFileSync("helm", args, { encoding: "utf8", env });
+    const template = (...args: string[]) => helm("template", ...args, "--kube-version", "1.34.0");
     helm("dependency", "build", chart);
     helm("lint", chart, "--strict", "--values", fixture);
-    const rendered = helm("template", "steward-run", chart, "--namespace", "arc-runners", "--values", fixture);
+    const rendered = template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture);
     for (const version of ["1.30.0", "1.34.0"]) {
       assert.match(helm("template", "steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--kube-version", version), /kind: AutoscalingRunnerSet/u);
     }
@@ -43,7 +44,7 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     assert.match(pod.containers[0].image, /^registry\.example\/steward-run@sha256:[a-f0-9]{64}$/u);
     assert.equal(pod.containers[0].securityContext.allowPrivilegeEscalation, false);
     assert.deepEqual(pod.imagePullSecrets, [{ name: "customer-registry" }]);
-    const caRendered = helm("template", "steward-run", chart, "--namespace", "arc-runners", "--values", caFixture);
+    const caRendered = template("steward-run", chart, "--namespace", "arc-runners", "--values", caFixture);
     const caObjects = parseAllDocuments(caRendered).map((doc) => doc.toJSON()).filter(Boolean) as Record<string, any>[];
     const caPod = caObjects.find((object) => object.kind === "AutoscalingRunnerSet")?.spec.template.spec;
     assert.deepEqual(caPod.volumes.find((volume: any) => volume.name === "steward-run-ca")?.configMap, { name: "steward-run-ca" });
@@ -52,13 +53,13 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     assert.ok(objects.some((object) => object.kind === "Role"));
     assert.ok(!objects.some((object) => object.kind === "Deployment" || object.kind === "CustomResourceDefinition"));
     assert.ok(!objects.some((object) => object.kind === "Secret" && object.data?.github_app_private_key));
-    assert.throws(() => helm("template", "steward-run", chart, "--namespace", "arc-runners"), /githubConfigUrl|image|githubConfigSecret/u);
+    assert.throws(() => template("steward-run", chart, "--namespace", "arc-runners"), /githubConfigUrl|image|githubConfigSecret/u);
     assert.throws(
-      () => helm("template", "steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].image=registry.example/steward-run:latest"),
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].image=registry.example/steward-run:latest"),
       /sha256|digest/u,
     );
     assert.throws(
-      () => helm("template", "steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.githubConfigUrl=https://git.example.com/customer/example"),
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.githubConfigUrl=https://git.example.com/customer/example"),
       /githubConfigUrl/u,
     );
     const metadata = readFileSync(join(chart, "Chart.yaml"), "utf8");
