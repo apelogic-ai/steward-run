@@ -46,6 +46,12 @@ that evidence, tested Kubernetes patch versions, controller and scale-set
 chart versions, image digest, action/workflow commits, Steward and identity
 revisions before declaring a release compatible.
 
+The multi-platform claim applies to the fork-owned
+`steward-task-customer.yml` path, which runs directly in this runner image.
+The legacy ApeLogic `steward-task.yml` remains `linux/amd64`-only because it
+separately pins an amd64 governed job-container image; it is not the customer
+handoff workflow.
+
 Use an explicit, task-owned kubeconfig and context for every command below:
 
 ```sh

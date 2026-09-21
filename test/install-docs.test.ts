@@ -23,6 +23,7 @@ test("README leads to the versioned, honest customer installation guide", async 
   assert.match(guide, /uninstall steward-run/u);
   assert.match(guide, /does not\s+remove[\s\S]*?controller/u);
   assert.doesNotMatch(guide, /`linux\/amd64` schedulable nodes/u);
+  assert.match(guide, /legacy ApeLogic `steward-task\.yml` remains `linux\/amd64`-only/u);
 });
 
 test("the installation guide prepares customer values before the first values-dependent command", async () => {

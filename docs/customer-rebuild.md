@@ -71,6 +71,9 @@ ApeLogic-pinned workflows and are not the customer invocation path. Use
 at an exact fork commit as described in the installation guide. Live
 governed-job evidence is still open in issue #41. Do not describe the
 image/chart build alone as a verified governed-task installation.
+The legacy `steward-task.yml` also pins a separate amd64-only job container;
+that limitation does not apply to the customer workflow, which runs directly
+in the multi-platform ARC runner image.
 
 ## Work still required for a customer release
 
