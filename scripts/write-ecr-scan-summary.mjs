@@ -1,11 +1,15 @@
 import { readFile, writeFile } from "node:fs/promises";
 
-const [scanPath, outputPath, repository, indexDigest, runnableDigest] = process.argv.slice(2);
+const [scanPath, outputPath, repository, indexDigest, runnableDigest, architecture = "amd64"] =
+  process.argv.slice(2);
 
 if (!scanPath || !outputPath || !repository || !indexDigest || !runnableDigest) {
   throw new Error(
     "usage: write-ecr-scan-summary <scan-findings> <output> <repository> <index-digest> <runnable-digest>",
   );
+}
+if (!/^(?:amd64|arm64)$/u.test(architecture)) {
+  throw new Error("runnable image architecture is invalid");
 }
 if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(repository)) {
   throw new Error("ECR repository name is invalid");
@@ -52,7 +56,7 @@ const summary = {
   indexDigest,
   runnableImage: {
     operatingSystem: "linux",
-    architecture: "amd64",
+    architecture,
     digest: runnableDigest,
   },
   status: "COMPLETE",

@@ -14,8 +14,9 @@ source revision, SBOM, provenance, and resulting OCI digest.
 ## Build and verify in the customer environment
 
 Use a clean checkout at a reviewed 40-character commit, Node.js 24, Helm
-3.17+, and a Docker Buildx builder. Verify the exact commit and run the source
-checks before publishing anything:
+3.17+, and a Docker Buildx builder capable of `linux/amd64` and `linux/arm64`
+through native workers, QEMU, or a remote builder. Verify the exact commit and
+run the source checks before publishing anything:
 
 ```sh
 test -z "$(git status --porcelain)"
@@ -39,7 +40,7 @@ Buildx's digest and provenance/SBOM attestations:
 source_commit="$(git rev-parse HEAD)"
 source_version="$(node -p 'require("./package.json").version')"
 docker buildx build \
-  --platform linux/amd64 \
+  --platform linux/amd64,linux/arm64 \
   --build-arg "VERSION=$source_version" \
   --build-arg "REVISION=$source_commit" \
   --build-arg "SOURCE_REPOSITORY=https://github.com/$FORK_REPOSITORY" \
@@ -49,6 +50,12 @@ docker buildx build \
   --push .
 node -p 'require("./customer-build-metadata.json")["containerimage.digest"]'
 ```
+
+The recorded digest must identify a multi-platform OCI index with exactly one
+`linux/amd64` and one `linux/arm64` runnable manifest. The chart consumes that
+index digest without an architecture selector; Kubernetes pulls the matching
+Linux image for each runner node. Scan and enforce policy against both runnable
+child manifests, not just the index or the builder's native architecture.
 
 Keep the source commit, package lock, chart archive SHA-256, image digest,
 Buildx attestations, vulnerability scan result, and customer signing evidence

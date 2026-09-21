@@ -15,9 +15,11 @@ acceptance until the last section is run against real customer endpoints.
 - GitHub.com organization or repository with Actions enabled. GitHub
   Enterprise Server is not covered: the fork-self-pinned reusable
   workflow uses GitHub.com `job.workflow_repository` and `job.workflow_sha`.
-- Kubernetes `1.30`–`1.34`, `linux/amd64` schedulable nodes, Helm `3.17+`,
-  `kubectl`, Node.js 24, Docker Buildx, and an OCI registry controlled by the
-  customer. The chart declares this Kubernetes range; live compatibility
+- Kubernetes `1.30`–`1.34` with `linux/amd64` or `linux/arm64` schedulable
+  nodes, Helm `3.17+`,
+  `kubectl`, Node.js 24, Docker Buildx with a builder capable of both platforms
+  (native workers, QEMU, or a remote builder), and an OCI registry controlled
+  by the customer. The chart declares this Kubernetes range; live compatibility
   across all versions has not been established.
 - Upstream ARC controller chart `gha-runner-scale-set-controller` `0.14.2`
   installed in a separate controller namespace, with its CRDs ready. This
@@ -35,8 +37,9 @@ acceptance until the last section is run against real customer endpoints.
   repository is required for the fork build/install procedure.
 
 Compatibility evidence for this source revision: Helm schema/render test of
-the installable chart with ARC scale-set `0.14.2`; local `linux/amd64` image
-build/smoke of GitHub runner `2.336.0` with Node `24.18.1`; mock GitHub Actions
+the installable chart with ARC scale-set `0.14.2`; CI image build/smoke for
+`linux/amd64` and `linux/arm64` using GitHub runner `2.336.0` with Node
+`24.18.1`; mock GitHub Actions
 OIDC and `/v1/tasks` contract tests. No real GitHub App registration or
 Steward/identity integration result has been recorded for this guide. Publish
 that evidence, tested Kubernetes patch versions, controller and scale-set
@@ -93,7 +96,7 @@ npm run check
 FORK_REPOSITORY=customer/steward-run
 IMAGE_REPOSITORY=registry.customer.example/steward-run
 SOURCE_VERSION="$(node -p 'require("./package.json").version')"
-docker buildx build --platform linux/amd64 \
+docker buildx build --platform linux/amd64,linux/arm64 \
   --build-arg "VERSION=$SOURCE_VERSION" \
   --build-arg "REVISION=$SOURCE_COMMIT" \
   --build-arg "SOURCE_REPOSITORY=https://github.com/$FORK_REPOSITORY" \
@@ -104,7 +107,21 @@ IMAGE_DIGEST="$(node -p 'require("./customer-build-metadata.json")["containerima
 ```
 
 Verify `IMAGE_DIGEST` has the form `sha256:` plus 64 lowercase hex characters;
-retain a vulnerability scan and customer signing evidence for
+verify the referenced multi-platform OCI index contains exactly one
+`linux/amd64` and one `linux/arm64` runnable manifest. The chart is
+architecture-neutral: it pins this index digest and Kubernetes selects the
+matching Linux image for each runner node. Do not replace the index digest
+with a per-platform child-manifest digest in shared values:
+
+```sh
+docker buildx imagetools inspect "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
+  --raw > customer-image-index.json
+node scripts/verify-runnable-image-platforms.mjs \
+  customer-image-index.json linux/amd64 linux/arm64
+```
+
+Retain vulnerability-policy results for each runnable child manifest and
+customer signing evidence for
 `$IMAGE_REPOSITORY@$IMAGE_DIGEST`. The image is a thin ARC runner with Bash,
 Node, Git, and tar; action code is not baked into it. Package and publish the
 exact chart independently; the external `customer-values.yaml` is prepared

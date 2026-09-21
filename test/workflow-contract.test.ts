@@ -28,8 +28,13 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(ci, /gitleaks\/gitleaks:v8\.30\.1@sha256:/);
   assert.match(ci, /aquasec\/trivy:0\.72\.0@sha256:/);
   assert.match(ci, /docker build/);
-  assert.match(ci, /trivy-report\.json/);
-  assert.match(ci, /vulnerability-summary\.json/);
+  assert.match(ci, /docker\/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130/);
+  assert.match(ci, /docker\/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f/);
+  assert.match(ci, /architecture:\s*\[amd64, arm64\]/u);
+  assert.match(ci, /--platform linux\/\$\{\{ matrix\.architecture \}\}/u);
+  assert.match(ci, /steward-run-vulnerability-report-\$\{\{ matrix\.architecture \}\}-\$\{\{ github\.sha \}\}/u);
+  assert.match(ci, /trivy-report-\$\{\{ matrix\.architecture \}\}\.json/u);
+  assert.match(ci, /vulnerability-summary-\$\{\{ matrix\.architecture \}\}\.json/u);
   assert.match(ci, /check-vulnerability-report\.mjs/);
   assert.match(ci, /name:\s*steward-run-vulnerability-report/);
   assert.match(ci, /if:\s*always\(\)/);
@@ -79,6 +84,12 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(releaseSource, /cosign-release:\s*v3\.1\.2/);
   assert.match(releaseSource, /--provenance=mode=max/);
   assert.match(releaseSource, /--sbom=true/);
+  assert.match(releaseSource, /docker\/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130/);
+  assert.match(releaseSource, /--platform linux\/amd64,linux\/arm64/u);
+  assert.match(releaseSource, /verify-runnable-image-platforms\.mjs/u);
+  assert.match(releaseSource, /for architecture in amd64 arm64/u);
+  assert.match(releaseSource, /ecr-image-scan-summary-arm64\.json/u);
+  assert.match(releaseSource, /ecr-image-scan-summary-arm64\.sigstore\.json/u);
   assert.match(releaseSource, /containerimage\.digest/);
   assert.match(
     releaseSource,
@@ -318,12 +329,12 @@ test("CI and release execute the governed job-container runtime contract", async
   assert.match(release, /node \/workspace\/dist\/index\.cjs/u);
 });
 
-test("release gates semantic tags on signed scan evidence for the runnable image", async () => {
+test("release gates semantic tags on signed scan evidence for every runnable image", async () => {
   const release = await readFile(
     new URL("../.github/workflows/release.yml", import.meta.url),
     "utf8",
   );
-  const scanGate = release.indexOf("- name: Require completed ECR scan for runnable image");
+  const scanGate = release.indexOf("- name: Require completed ECR scan for every runnable image");
   const signing = release.indexOf("- name: Sign and verify immutable release artifacts");
   const semanticPromotion = release.indexOf("- name: Promote verified candidate to semantic image tag");
 

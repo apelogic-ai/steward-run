@@ -8,6 +8,11 @@ an existing GitHub App Secret reference, a GitHub registration URL, and a
 customer-owned runner image pinned by `sha256` digest. No credential value is
 accepted in Helm values.
 
+The image digest may identify the supported multi-platform OCI index with
+`linux/amd64` and `linux/arm64` manifests. This chart deliberately sets no
+architecture selector; Kubernetes selects the matching image on each runner
+node.
+
 Default behavior is zero idle runners, five maximum, direct execution in the
 digest-pinned runner image, a non-root Pod, no privilege escalation, and no
 mounted Kubernetes API token. If the image registry is private, reference an

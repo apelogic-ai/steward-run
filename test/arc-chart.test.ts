@@ -40,6 +40,8 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     assert.deepEqual(scaleSet.spec.runnerScaleSetLabels, ["steward-run"]);
     const pod = scaleSet.spec.template.spec;
     assert.equal(pod.containers[0].name, "runner");
+    assert.equal(pod.nodeSelector, undefined);
+    assert.equal(pod.affinity, undefined);
     assert.equal(pod.automountServiceAccountToken, false);
     assert.match(pod.containers[0].image, /^registry\.example\/steward-run@sha256:[a-f0-9]{64}$/u);
     assert.equal(pod.containers[0].securityContext.allowPrivilegeEscalation, false);
