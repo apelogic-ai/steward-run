@@ -16,6 +16,14 @@ USER root
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 RUN apt-get update \
     && test -n "$SOURCE_REPOSITORY" \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --only-upgrade \
+       libc6=2.39-0ubuntu8.9 \
+       libc-bin=2.39-0ubuntu8.9 \
+       libcurl3t64-gnutls=8.5.0-2ubuntu10.13 \
+       libperl5.38t64=5.38.2-3.2ubuntu0.6 \
+       perl=5.38.2-3.2ubuntu0.6 \
+       perl-base=5.38.2-3.2ubuntu0.6 \
+       perl-modules-5.38=5.38.2-3.2ubuntu0.6 \
     && apt-get purge -y \
        curl \
        gir1.2-girepository-2.0 \
