@@ -53,6 +53,32 @@ function canonical(value) {
   return value;
 }
 
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isAbsoluteUri(value, allowFragment = true) {
+  if (!isNonEmptyString(value)) return false;
+  try {
+    const uri = new URL(value);
+    return uri.protocol.length > 1 && (allowFragment || uri.hash === "");
+  } catch {
+    return false;
+  }
+}
+
+function isUtcTimestamp(value) {
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(value) &&
+    Number.isFinite(Date.parse(value))
+  );
+}
+
 function validateDescriptor(descriptor, label) {
   if (
     descriptor === null ||
@@ -215,22 +241,49 @@ for (const platform of expected) {
         throw new Error(`${platform} statement subject does not match runnable image`);
       }
     }
-    if (
-      annotatedPredicate === provenancePredicate &&
-      (statement.predicate.buildDefinition === null ||
-        typeof statement.predicate.buildDefinition !== "object" ||
-        statement.predicate.runDetails === null ||
-        typeof statement.predicate.runDetails !== "object")
-    ) {
-      throw new Error(`${platform} provenance predicate is malformed`);
+    if (annotatedPredicate === provenancePredicate) {
+      const { buildDefinition, runDetails } = statement.predicate;
+      if (
+        !isObject(buildDefinition) ||
+        !isAbsoluteUri(buildDefinition.buildType) ||
+        !isObject(buildDefinition.externalParameters)
+      ) {
+        throw new Error(`${platform} provenance buildDefinition is malformed`);
+      }
+      if (
+        !isObject(runDetails) ||
+        !isObject(runDetails.builder) ||
+        !isAbsoluteUri(runDetails.builder.id)
+      ) {
+        throw new Error(`${platform} provenance builder is malformed`);
+      }
     }
-    if (
-      annotatedPredicate === spdxPredicate &&
-      (typeof statement.predicate.spdxVersion !== "string" ||
-        !statement.predicate.spdxVersion.startsWith("SPDX-") ||
-        typeof statement.predicate.SPDXID !== "string")
-    ) {
-      throw new Error(`${platform} SPDX predicate is malformed`);
+    if (annotatedPredicate === spdxPredicate) {
+      const document = statement.predicate;
+      if (
+        document.spdxVersion !== "SPDX-2.3" ||
+        document.dataLicense !== "CC0-1.0" ||
+        document.SPDXID !== "SPDXRef-DOCUMENT" ||
+        !isNonEmptyString(document.name)
+      ) {
+        throw new Error(`${platform} SPDX document metadata is malformed`);
+      }
+      if (!isAbsoluteUri(document.documentNamespace, false)) {
+        throw new Error(`${platform} SPDX document namespace is malformed`);
+      }
+      if (
+        !isObject(document.creationInfo) ||
+        !Array.isArray(document.creationInfo.creators) ||
+        document.creationInfo.creators.length === 0 ||
+        document.creationInfo.creators.some(
+          (creator) =>
+            typeof creator !== "string" ||
+            !/^(?:Person|Organization|Tool):\s*\S/u.test(creator),
+        ) ||
+        !isUtcTimestamp(document.creationInfo.created)
+      ) {
+        throw new Error(`${platform} SPDX creationInfo is malformed`);
+      }
     }
     predicates.push({ predicateType: annotatedPredicate, statementDigest: layer.digest });
   }
