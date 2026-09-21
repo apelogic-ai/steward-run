@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parse } from "yaml";
 
-const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml", "steward-task-self-hosted.yml"];
+const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml", "steward-task-self-hosted.yml", "steward-task-customer.yml"];
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
@@ -364,10 +364,8 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
   const productionHandoffs = `${readme}\n${specification}\n${releaseWorkflow}`;
 
   assert.doesNotMatch(productionHandoffs, /steward-task\.yml@main/u);
-  assert.match(
-    readme,
-    /apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml@<WORKFLOW_COMMIT>/u,
-  );
+  assert.match(readme, /docs\/installation-v0\.4\.0\.md/u);
+  assert.doesNotMatch(readme, /uses:\s*apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml/u);
   assert.doesNotMatch(readme, /action-commit:/u);
   assert.match(releaseWorkflow, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));
   assert.match(

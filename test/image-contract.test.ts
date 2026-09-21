@@ -13,8 +13,18 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
     /FROM ghcr\.io\/actions\/actions-runner:2\.336\.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda/,
   );
   assert.match(dockerfile, /COPY --from=node-runtime \/usr\/local\/bin\/node/);
+  assert.match(dockerfile, /ARG SOURCE_REPOSITORY/u);
+  assert.doesNotMatch(dockerfile, /org\.opencontainers\.image\.source="https:\/\/github\.com\/apelogic-ai/u);
   assert.match(dockerfile, /USER runner/);
-  assert.match(dockerfile, /apt-get upgrade -y/);
+  assert.doesNotMatch(dockerfile, /apt-get (?:dist-)?upgrade/u);
+  for (const pinnedPackage of [
+    "libc6=2.39-0ubuntu8.9", "libc-bin=2.39-0ubuntu8.9",
+    "libcurl3t64-gnutls=8.5.0-2ubuntu10.13",
+    "libperl5.38t64=5.38.2-3.2ubuntu0.6", "perl=5.38.2-3.2ubuntu0.6",
+    "perl-base=5.38.2-3.2ubuntu0.6", "perl-modules-5.38=5.38.2-3.2ubuntu0.6",
+  ]) {
+    assert.ok(dockerfile.includes(pinnedPackage), pinnedPackage);
+  }
   assert.match(dockerfile, /apt-get purge -y/);
   assert.doesNotMatch(dockerfile, /autoremove/);
   assert.match(dockerfile, /rm -f \/usr\/bin\/containerd \/usr\/bin\/containerd-shim-runc-v2 \/usr\/bin\/ctr/);
@@ -84,12 +94,13 @@ test("the final runner image excludes the build-only GLib package chain", async 
 test("the package metadata identifies the in-cluster integration release", async () => {
   const packageJson = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
-  ) as { version: string };
+  ) as { version: string; license: string };
   const packageLock = JSON.parse(
     await readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   ) as { version: string; packages: Record<string, { version?: string }> };
 
   assert.equal(packageJson.version, "0.4.0");
+  assert.equal(packageJson.license, "MIT");
   assert.equal(packageLock.version, "0.4.0");
   assert.equal(packageLock.packages[""]?.version, "0.4.0");
 });

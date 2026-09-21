@@ -1,0 +1,42 @@
+# Supply the customer-owned image digest and GitHub registration inputs in a
+# private values overlay. The upstream ARC controller is an external prerequisite.
+gha-runner-scale-set:
+  githubConfigUrl: ""
+  githubConfigSecret: ""
+  runnerScaleSetName: steward-run
+  scaleSetLabels:
+    - steward-run
+  minRunners: 0
+  maxRunners: 5
+  containerMode:
+    type: ""
+  template:
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets: []
+      containers:
+        - name: runner
+          image: ""
+          imagePullPolicy: IfNotPresent
+          command: ["/home/runner/run.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            privileged: false
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

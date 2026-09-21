@@ -4,6 +4,15 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
+Start with the [versioned installation guide](docs/installation-v0.4.0.md).
+The product is [MIT licensed](LICENSE): this repository owns the runner image,
+composite action, reusable workflow sources, and installable
+[`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
+runner registration API are external prerequisites; this is not a separate
+long-running Steward API service. No public runner image or chart coordinate
+has yet been published by this repository. The guide documents a fork-owned
+build and installation, and explicitly marks the live acceptance still pending.
+
 The client implements Steward's six-operation `/v1/tasks` lifecycle documented in
 `contracts/steward-run-v1.openapi.yaml`. It submits, uploads a workspace-relative tar archive,
 requests execution, polls through approval parking to a terminal phase, downloads declared
@@ -43,11 +52,13 @@ Assertion failures may use exact agent exits 78 through 81. They retain the exis
 summary row remain unchanged; a staged assertion adds a second bounded annotation and summary
 row. Malformed reasons and any other numeric exits cannot select an assertion stage.
 
-Production authentication exchanges a GitHub OIDC token with audience
-`apelogic-github-identity-exchange` for a short-lived token whose sole audience is
-`steward-task-api`. The exchange validates the caller and resolves the actor before Steward sees
-the credential. The mock round trip proves token routing but does not prove a deployed exchange,
-Steward control plane, or real Agent Sandbox.
+For the existing ApeLogic workflow, production authentication exchanges a
+GitHub OIDC token with audience `apelogic-github-identity-exchange` for a
+short-lived token whose sole audience is `steward-task-api`. Customer
+installations must configure their own exact audience and exchange endpoint.
+The exchange validates the caller and resolves the actor before Steward sees
+the credential. The mock round trip proves token routing but does not prove a
+deployed exchange, Steward control plane, or real Agent Sandbox.
 
 ## Development
 
@@ -62,30 +73,17 @@ npm run check
 Every production slice is developed test-first and committed only after its slice checks pass.
 See `docs/steward-run-spec.md` for the product boundary.
 
-## Usage
+## Action and workflow contract
 
-The reusable workflow requires `id-token: write` and transfers caller inputs and returned outputs
-as artifacts. Pin the workflow call to `workflow_commit` from the signed release manifest. The
-workflow itself pins the remote action to the distinct immutable `action_commit`; callers cannot
-override it. GitHub emits the workflow SHA as `job_workflow_ref`.
-
-```yaml
-jobs:
-  governed:
-    permissions:
-      contents: read
-      id-token: write
-    uses: apelogic-ai/steward-run/.github/workflows/steward-task.yml@<WORKFLOW_COMMIT>
-    with:
-      runner-label: ${{ vars.STEWARD_RUNNER_LABEL }}
-      invocation-path: .steward/tasks/release-summary.json
-      input-artifact: request
-      output-artifact: result
-      steward-api-url: ${{ vars.STEWARD_API_URL }}
-      identity-exchange-url: ${{ vars.IDENTITY_EXCHANGE_URL }}
-      identity-exchange-audience: ${{ vars.IDENTITY_EXCHANGE_AUDIENCE }}
-      steward-ca-certificate-file: ${{ vars.STEWARD_CA_CERTIFICATE_FILE }}
-```
+The action accepts an exact Task source (`workflow` or `invocation-path`),
+workspace-relative input/output paths, a Steward HTTPS URL, and a GitHub OIDC
+exchange HTTPS URL with its exact audience. `id-token: write` is the GitHub
+Actions input; a static Steward bearer token is not a customer production
+credential. The [customer ARC reusable workflow](.github/workflows/steward-task-customer.yml)
+checks out its own action from the exact reusable-workflow repository and
+commit reported by GitHub, not from a caller-selected action ref. The existing
+ApeLogic-pinned reusable workflows are not the fork installation path. See
+the installation guide for the exact caller pin and pending live acceptance.
 
 The caller checks the invocation manifest into its repository, then uploads `request`; the reusable
 job checks out the exact triggered commit for local validation without persisting Git credentials,
@@ -105,27 +103,19 @@ per-stream bounds, emits a sensitive-output warning, disables GitHub workflow-co
 and replays stdout and stderr verbatim in separate log groups before finalization. Diagnostics are
 never enabled merely because reserved files are present.
 
-The governed job always runs inside the signed v0.3.0 `steward-run` image pinned by its full ECR
-digest in `steward-task.yml`. The image is not a workflow input and the workflow supplies no
-registry credential; Kubernetes-mode ARC nodes use their scoped ECR pull access. The container
-provides Bash, Node, Git, and tar for artifact and composite-action steps.
-
 ## Kubernetes packaging
 
-The reusable runner image is packaged as an importable Helm library chart under
-[`charts/steward-run`](charts/steward-run/). It supplies only an immutable,
-security-hardened runner Pod-spec fragment for an environment-owned ARC scale
-set. It does not create a long-lived service, runner listener, Kubernetes Job,
-or GitHub registration. See the [chart documentation](charts/steward-run/README.md)
-for the trust boundary, exact-digest requirement, ARC wrapper example, and
-safe upgrade expectations.
-
-There is currently no public steward-run runner image or OCI chart. Operators
-with separately granted access to this private source repository can use the
-[customer rebuild path](docs/customer-rebuild.md) and pin the resulting
-customer-owned digest. That path does not make the default ECR-pinned
-governed job-container or this repository's reusable workflow anonymously
-available.
+The installable [`steward-run-arc` application chart](charts/steward-run-arc/)
+pins upstream ARC scale-set chart 0.14.2 and creates the runner scale set,
+listener, service accounts, and RBAC using its upstream templates. The ARC
+controller remains an external shared prerequisite. The chart requires a
+customer-owned runner image at a full `sha256` digest and a GitHub registration
+URL plus existing App Secret reference. It defaults to zero idle runners and
+non-root, no-privilege runner Pods without a Kubernetes API token. The old
+[`steward-run` library chart](charts/steward-run/) remains an internal helper,
+not the customer installation path. No image or chart OCI coordinate is
+published by this repository yet; the [guide](docs/installation-v0.4.0.md)
+shows how a fork publishes its own artifacts.
 
 For a dedicated self-hosted runner that must not pull the ARC job container, use the separately
 pinned `steward-task-self-hosted.yml` reusable workflow. It has the same artifact, immutable
@@ -170,11 +160,8 @@ The minimal local invocation contract is:
 The token file itself is never a result artifact. Harnesses must mount it outside the declared
 input/output paths and remove it with the disposable cluster.
 
-Dispatching the release workflow with version `X.Y.Z` builds `linux/amd64` under a unique candidate
-tag and attaches provenance and an SBOM. The workflow keylessly signs the OCI index using OCI 1.1,
-verifies both the local bundle and registry referrer, and signs a manifest that distinguishes the
-reusable `workflow_commit`, remote `action_commit`, ARC runner image digest, and governed job-container image
-digest. Only then does it create the final `X.Y.Z` image tag and `vX.Y.Z` GitHub release, with the
-manifest and Sigstore bundles attached for GitOps consumption. `AWS_REGION`,
-`AWS_ROLE_ARN`, `ECR_REGISTRY`, and `ECR_REPOSITORY` are repository variables; release
-authentication uses GitHub OIDC.
+The current `release.yml` is an ApeLogic-internal ECR handoff, not the fork
+publication procedure. The versioned installation guide gives the portable
+image and chart build/publish commands and the evidence to retain. The
+customer workflow and live end-to-end acceptance remain open in issue #41;
+neither this README nor a passing chart render claims otherwise.

@@ -89,6 +89,7 @@ jobs:
             --platform linux/amd64 \
             --build-arg "VERSION=$VERSION" \
             --build-arg "REVISION=$GITHUB_SHA" \
+            --build-arg "SOURCE_REPOSITORY=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --tag "$IMAGE_REPOSITORY:$CANDIDATE_TAG" \
             --provenance=mode=max \
             --sbom=true \

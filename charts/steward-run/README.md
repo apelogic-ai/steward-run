@@ -10,14 +10,16 @@ imports. It intentionally renders **no** Kubernetes resources by itself:
   reference;
 - no ServiceAccount, RBAC, NetworkPolicy, Secret, or credential projection.
 
-Installing this chart directly is intentionally unsupported. A Helm library
-chart is imported by a consumer chart; rendering the library alone produces no
-workload.
+Installing this legacy library chart directly is intentionally unsupported. A
+Helm library chart is imported by a consumer chart; rendering it alone
+produces no workload. The supported customer scale-set installation path is
+the [installable application chart](../steward-run-arc/) and its
+[versioned guide](../../docs/installation-v0.4.0.md).
 
 Those concerns are environment authority: ARC installation, GitHub
 registration, runner scale, workload identity, certificate projection, egress,
 and image-pull credentials belong in the operator's environment layer. The
-runner image remains an immutable, private/licensed product release owned by
+runner image remains an immutable, MIT-licensed product artifact owned by
 this repository. No public runner image or OCI chart is currently published;
 the default repository is empty and must be set to an accessible coordinate.
 The chart has no AWS, ECR, GitHub App, or internal GitOps
@@ -29,9 +31,8 @@ Set `image.repository` to a repository the cluster can pull and `image.digest`
 to the exact lowercase OCI digest recorded in the corresponding release
 evidence. A tag is never used at this boundary. The default empty repository
 and digest deliberately fail when a consumer renders the Pod fragment. The
-current signed ApeLogic release handoff refers to private ECR; an independent
-customer build has its **own** digest and evidence, not that ECR digest. See
-the [customer rebuild path](../../docs/customer-rebuild.md).
+old ApeLogic handoff is not a customer artifact: an independent build has
+its **own** digest and evidence. See the [installation guide](../../docs/installation-v0.4.0.md).
 
 `imagePullSecrets` contains only existing Secret names. The chart never creates
 or accepts registry credential values.
