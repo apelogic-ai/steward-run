@@ -9,14 +9,10 @@ gha-runner-scale-set:
   minRunners: 0
   maxRunners: 5
   containerMode:
-    type: kubernetes
-    kubernetesModeWorkVolumeClaim:
-      accessModes: [ReadWriteOnce]
-      resources:
-        requests:
-          storage: 1Gi
+    type: ""
   template:
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001

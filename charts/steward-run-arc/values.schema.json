@@ -14,8 +14,8 @@
         "minRunners": {"const": 0},
         "maxRunners": {"type": "integer", "minimum": 1},
         "containerMode": {
-          "type": "object", "required": ["type", "kubernetesModeWorkVolumeClaim"],
-          "properties": {"type": {"const": "kubernetes"}}
+          "type": "object", "required": ["type"],
+          "properties": {"type": {"const": ""}}
         },
         "template": {
           "type": "object", "required": ["spec"],
