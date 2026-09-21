@@ -106,12 +106,12 @@ IMAGE_DIGEST="$(node -p 'require("./customer-build-metadata.json")["containerima
 Verify `IMAGE_DIGEST` has the form `sha256:` plus 64 lowercase hex characters;
 retain a vulnerability scan and customer signing evidence for
 `$IMAGE_REPOSITORY@$IMAGE_DIGEST`. The image is a thin ARC runner with Bash,
-Node, Git, and tar; action code is not baked into it. Publish the exact chart
-package after filling the non-secret operator values in step 4:
+Node, Git, and tar; action code is not baked into it. Package and publish the
+exact chart independently; the external `customer-values.yaml` is prepared
+and validated in step 4:
 
 ```sh
 helm dependency build charts/steward-run-arc
-helm lint charts/steward-run-arc --strict --values customer-values.yaml
 helm package charts/steward-run-arc --destination dist
 helm push dist/steward-run-arc-0.1.0.tgz oci://registry.customer.example/charts
 ```
