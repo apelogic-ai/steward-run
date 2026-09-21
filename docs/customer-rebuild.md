@@ -14,8 +14,8 @@ source revision, SBOM, provenance, and resulting OCI digest.
 ## Build and verify in the customer environment
 
 Use a clean checkout at a reviewed 40-character commit, Node.js 24, Helm
-3.17+, and a Docker Buildx builder capable of `linux/amd64` and `linux/arm64`
-through native workers, QEMU, or a remote builder. Verify the exact commit and
+3.17+, and a multi-node Docker Buildx builder backed by native `linux/amd64`
+and `linux/arm64` workers. Verify the exact commit and
 run the source checks before publishing anything:
 
 ```sh
@@ -44,7 +44,8 @@ docker buildx build \
   --build-arg "VERSION=$source_version" \
   --build-arg "REVISION=$source_commit" \
   --build-arg "SOURCE_REPOSITORY=https://github.com/$FORK_REPOSITORY" \
-  --provenance=mode=max --sbom=true \
+  --provenance=mode=max \
+  --attest "type=sbom,generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9" \
   --tag "$CUSTOMER_IMAGE_REPOSITORY:$source_version" \
   --metadata-file customer-build-metadata.json \
   --push .
