@@ -4,16 +4,18 @@ FROM ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc701ce933c6d243c6b0b2da7
 
 ARG VERSION=0.0.0-dev
 ARG REVISION=unknown
+ARG SOURCE_REPOSITORY
 LABEL org.opencontainers.image.title="steward-run" \
       org.opencontainers.image.description="Thin ARC runner for governed Steward jobs" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
-      org.opencontainers.image.source="https://github.com/apelogic-ai/steward-run"
+      org.opencontainers.image.source="${SOURCE_REPOSITORY}" \
+      org.opencontainers.image.licenses="MIT"
 
 USER root
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && test -n "$SOURCE_REPOSITORY" \
     && apt-get purge -y \
        curl \
        gir1.2-girepository-2.0 \

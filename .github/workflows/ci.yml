@@ -36,6 +36,7 @@ jobs:
           docker build --platform linux/amd64 \
             --build-arg VERSION=0.3.1-ci \
             --build-arg REVISION="$GITHUB_SHA" \
+            --build-arg SOURCE_REPOSITORY="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --tag steward-run:ci .
       - name: Smoke-test ARC and governed job-container contracts
         run: >-
