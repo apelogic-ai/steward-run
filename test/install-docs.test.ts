@@ -17,12 +17,15 @@ test("README leads to the versioned, honest customer installation guide", async 
     "--from-file", "id-token: write", "steward-run-github-app", "imagePullSecrets",
     "ca.crt", "0.14.2", "2.336.0", "GitHub.com", "not yet live-tested",
     "linux/amd64,linux/arm64", "multi-platform OCI index", "each runnable child manifest",
+    "docker.io/docker/buildkit-syft-scanner@sha256:",
   ]) {
     assert.ok(guide.includes(marker), marker);
   }
   assert.match(guide, /uninstall steward-run/u);
   assert.match(guide, /does not\s+remove[\s\S]*?controller/u);
   assert.doesNotMatch(guide, /`linux\/amd64` schedulable nodes/u);
+  assert.doesNotMatch(guide, /--sbom=true|buildkit-syft-scanner:stable-1/u);
+  assert.match(guide, /native[\s\S]*`linux\/amd64`[\s\S]*`linux\/arm64`/u);
   assert.match(guide, /legacy ApeLogic `steward-task\.yml` remains `linux\/amd64`-only/u);
 });
 

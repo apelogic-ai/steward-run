@@ -17,8 +17,8 @@ acceptance until the last section is run against real customer endpoints.
   workflow uses GitHub.com `job.workflow_repository` and `job.workflow_sha`.
 - Kubernetes `1.30`–`1.34` with `linux/amd64` or `linux/arm64` schedulable
   nodes, Helm `3.17+`,
-  `kubectl`, Node.js 24, Docker Buildx with a builder capable of both platforms
-  (native workers, QEMU, or a remote builder), and an OCI registry controlled
+  `kubectl`, Node.js 24, a multi-node Docker Buildx builder backed by native
+  `linux/amd64` and `linux/arm64` workers, and an OCI registry controlled
   by the customer. The chart declares this Kubernetes range; live compatibility
   across all versions has not been established.
 - Upstream ARC controller chart `gha-runner-scale-set-controller` `0.14.2`
@@ -107,7 +107,8 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   --build-arg "REVISION=$SOURCE_COMMIT" \
   --build-arg "SOURCE_REPOSITORY=https://github.com/$FORK_REPOSITORY" \
   --tag "$IMAGE_REPOSITORY:$SOURCE_VERSION" \
-  --provenance=mode=max --sbom=true \
+  --provenance=mode=max \
+  --attest "type=sbom,generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9" \
   --metadata-file customer-build-metadata.json --push .
 IMAGE_DIGEST="$(node -p 'require("./customer-build-metadata.json")["containerimage.digest"]')"
 ```

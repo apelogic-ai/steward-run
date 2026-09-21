@@ -16,21 +16,25 @@ concurrency:
   group: release-${{ inputs.version }}
   cancel-in-progress: false
 
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  IMAGE_REPOSITORY: ${{ vars.ECR_REGISTRY }}/${{ vars.ECR_REPOSITORY }}
+  COSIGN_EXPERIMENTAL: "1"
+  ACTION_COMMIT: b114d38dd6d4c300a7bf80ec16567027dd5d4be1
+
 jobs:
-  publish:
+  prepare:
     runs-on: ubuntu-24.04
-    env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
-      ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
-      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-      IMAGE_REPOSITORY: ${{ vars.ECR_REGISTRY }}/${{ vars.ECR_REPOSITORY }}
-      COSIGN_EXPERIMENTAL: "1"
-      ACTION_COMMIT: b114d38dd6d4c300a7bf80ec16567027dd5d4be1
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      candidate-prefix: ${{ steps.release.outputs.candidate-prefix }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Validate release request
-        shell: bash
+        id: release
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
@@ -38,28 +42,134 @@ jobs:
           [[ "$GITHUB_REF" == refs/heads/main ]]
           [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$(node -p 'require("./package.json").version')" == "$REQUESTED_VERSION" ]]
-          [[ "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$ACTION_COMMIT" != "$GITHUB_SHA" ]]
+          [[ "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ && "$ACTION_COMMIT" != "$GITHUB_SHA" ]]
           gh api "repos/$GITHUB_REPOSITORY/commits/$ACTION_COMMIT" --silent
-          grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" \
-            .github/workflows/steward-task.yml
-          existing_tags="$(gh api \
-            "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v$REQUESTED_VERSION" \
-            --jq 'length')"
-          if [[ "$existing_tags" != 0 ]]; then
-            echo "tag v$REQUESTED_VERSION already exists" >&2
-            exit 1
-          fi
-          if gh release view "v$REQUESTED_VERSION" >/dev/null 2>&1; then
-            echo "release v$REQUESTED_VERSION already exists" >&2
-            exit 1
-          fi
-          echo "VERSION=$REQUESTED_VERSION" >> "$GITHUB_ENV"
-          echo "CANDIDATE_TAG=candidate-$REQUESTED_VERSION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+          grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task.yml
+          [[ "$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v$REQUESTED_VERSION" --jq length)" == 0 ]]
+          ! gh release view "v$REQUESTED_VERSION" >/dev/null 2>&1
+          echo "version=$REQUESTED_VERSION" >> "$GITHUB_OUTPUT"
+          echo "candidate-prefix=candidate-$REQUESTED_VERSION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
-          platforms: arm64
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+      - name: Reject an existing semantic image tag
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          existing="$(aws ecr batch-get-image --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$VERSION" --query 'images[0].imageId.imageDigest' --output text)"
+          [[ "$existing" == None ]]
+
+  build-children:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            hostArchitecture: x86_64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            hostArchitecture: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      CANDIDATE_TAG: ${{ needs.prepare.outputs.candidate-prefix }}-${{ matrix.architecture }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Require the native worker architecture
+        run: '[[ "$(uname -m)" == "${{ matrix.hostArchitecture }}" ]]'
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          driver-opts: image=docker.io/moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+      - run: aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+      - name: Verify governed job-container image
+        if: ${{ matrix.architecture == 'amd64' }}
+        run: >-
+          docker run --rm --entrypoint /bin/bash -v "${{ github.workspace }}:/workspace:ro"
+          663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61
+          -c 'test "$(id -un)" = runner && command -v node && command -v git && command -v tar && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
+      - name: Build and publish native candidate child
+        run: |
+          docker buildx build \
+            --platform linux/${{ matrix.architecture }} \
+            --build-arg "VERSION=$VERSION" --build-arg "REVISION=$GITHUB_SHA" \
+            --build-arg "SOURCE_REPOSITORY=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --tag "$IMAGE_REPOSITORY:$CANDIDATE_TAG" --provenance=mode=max \
+            --attest "type=sbom,generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9" \
+            --metadata-file child-metadata.json --output type=registry \
+            --output type=oci,dest=release-image.oci.tar .
+      - name: Verify the published native child and attestations
+        run: |
+          digest="$(node -e 'process.stdout.write(require("./child-metadata.json")["containerimage.digest"])')"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "CANDIDATE_DIGEST=$digest" >> "$GITHUB_ENV"
+          published="$(aws ecr batch-get-image --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$CANDIDATE_TAG" --query 'images[0].imageId.imageDigest' --output text)"
+          [[ "$published" == "$digest" ]]
+          docker buildx imagetools inspect "$IMAGE_REPOSITORY@$digest" \
+            --raw > registry-index-manifest.json
+          mkdir release-image-oci
+          tar -xf release-image.oci.tar -C release-image-oci
+          node scripts/verify-runnable-image-platforms.mjs registry-index-manifest.json linux/${{ matrix.architecture }}
+          node scripts/verify-release-attestations.mjs registry-index-manifest.json release-image-oci "$digest" \
+            child-attestation-summary.json linux/${{ matrix.architecture }}
+      - name: Smoke-test the native candidate child
+        run: >-
+          docker run --rm --entrypoint /bin/bash -v "${{ github.workspace }}:/workspace:ro"
+          "$IMAGE_REPOSITORY@$CANDIDATE_DIGEST"
+          -c 'test "$(id -un)" = runner && test -x /home/runner/run.sh && test -d /home/runner/k8s && sudo -n true && sudo -n apt-get check && ! command -v curl && ! command -v docker && ! command -v dockerd && ! command -v runc && command -v node && command -v git && command -v jq && command -v python3 && command -v tar && command -v unzip && /home/runner/bin/Runner.Listener --version && ldd /home/runner/bin/Runner.Listener >/dev/null && ! ldd /home/runner/bin/Runner.Listener | grep -F "not found" && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
+      - name: Scan the native runnable child
+        run: |
+          runnable="$(node scripts/resolve-runnable-image-digest.mjs registry-index-manifest.json linux "${{ matrix.architecture }}")"
+          aws ecr wait image-scan-complete --repository-name "$ECR_REPOSITORY" --image-id "imageDigest=$runnable"
+          aws ecr describe-image-scan-findings --repository-name "$ECR_REPOSITORY" \
+            --image-id "imageDigest=$runnable" --output json > ecr-image-scan-findings.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: steward-run-release-child-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            child-metadata.json
+            child-attestation-summary.json
+            ecr-image-scan-findings.json
+            registry-index-manifest.json
+            release-image.oci.tar
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build-children]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      CANDIDATE_TAG: ${{ needs.prepare.outputs.candidate-prefix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+      - run: npm ci
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          driver-opts: image=docker.io/moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: steward-run-release-child-amd64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: child-amd64
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: steward-run-release-child-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: child-arm64
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.1.2
@@ -67,177 +177,71 @@ jobs:
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
-      - name: Authenticate to ECR
-        run: aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
-      - name: Verify governed job-container image
-        run: >-
-          docker run --rm --platform linux/amd64
-          --entrypoint /bin/bash
-          -v "${{ github.workspace }}:/workspace:ro"
-          663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61
-          -c 'test "$(id -un)" = runner && command -v node && command -v git && command -v tar && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
-      - name: Reject an existing semantic image tag
-        shell: bash
+      - run: aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+      - name: Assemble and publish the exact release-index candidate
         run: |
-          existing_digest="$(aws ecr batch-get-image \
-            --repository-name "$ECR_REPOSITORY" \
-            --image-ids imageTag="$VERSION" \
-            --query 'images[0].imageId.imageDigest' \
-            --output text)"
-          [[ "$existing_digest" == None ]]
-      - name: Build and publish unique candidate
-        shell: bash
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg "VERSION=$VERSION" \
-            --build-arg "REVISION=$GITHUB_SHA" \
-            --build-arg "SOURCE_REPOSITORY=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --tag "$IMAGE_REPOSITORY:$CANDIDATE_TAG" \
-            --provenance=mode=max \
-            --sbom=true \
-            --metadata-file release-metadata.json \
-            --push .
-      - name: Resolve immutable image digest
-        shell: bash
-        run: |
-          image_digest="$(node -e 'const metadata = require("./release-metadata.json"); process.stdout.write(metadata["containerimage.digest"])')"
-          echo "IMAGE_DIGEST=$image_digest" >> "$GITHUB_ENV"
-      - name: Verify exact runnable platform set and smoke each image
-        shell: bash
-        run: |
-          docker buildx imagetools inspect \
-            "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
-            --raw > image-index-manifest.json
-          node scripts/verify-runnable-image-platforms.mjs \
-            image-index-manifest.json linux/amd64 linux/arm64
-          for architecture in amd64 arm64; do
-            docker run --rm --platform "linux/$architecture" \
-              --entrypoint /bin/bash \
-              -v "${{ github.workspace }}:/workspace:ro" \
-              "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
-              -c 'test "$(id -un)" = runner && test -x /home/runner/run.sh && test -d /home/runner/k8s && sudo -n true && sudo -n apt-get check && ! command -v curl && ! command -v docker && ! command -v dockerd && ! command -v runc && command -v node && command -v git && command -v jq && command -v python3 && command -v tar && command -v unzip && /home/runner/bin/Runner.Listener --version && ldd /home/runner/bin/Runner.Listener >/dev/null && ! ldd /home/runner/bin/Runner.Listener | grep -F "not found" && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
-          done
-      - name: Require completed ECR scan for every runnable image
-        shell: bash
+          mkdir child-amd64/oci child-arm64/oci
+          tar -xf child-amd64/release-image.oci.tar -C child-amd64/oci
+          tar -xf child-arm64/release-image.oci.tar -C child-arm64/oci
+          digest="$(node scripts/assemble-release-index.mjs release-image-oci release-index-manifest.json \
+            release-metadata.json linux/amd64=child-amd64/oci linux/arm64=child-arm64/oci)"
+          echo "IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+          node scripts/verify-runnable-image-platforms.mjs release-index-manifest.json linux/amd64 linux/arm64
+          node scripts/verify-release-attestations.mjs release-index-manifest.json release-image-oci "$digest" \
+            release-attestation-summary.json linux/amd64 linux/arm64
+          published="$(aws ecr put-image --repository-name "$ECR_REPOSITORY" --image-tag "$CANDIDATE_TAG" \
+            --image-manifest file://release-index-manifest.json --query 'image.imageId.imageDigest' --output text)"
+          [[ "$published" == "$digest" ]]
+          docker buildx imagetools inspect "$IMAGE_REPOSITORY@$digest" \
+            --raw > registry-index-manifest.json
+          node scripts/verify-release-attestations.mjs registry-index-manifest.json release-image-oci "$digest" \
+            release-attestation-summary.json linux/amd64 linux/arm64
+      - name: Bind completed scans to the release index
         run: |
           for architecture in amd64 arm64; do
-            runnable_digest="$(node scripts/resolve-runnable-image-digest.mjs \
-              image-index-manifest.json linux "$architecture")"
-            if [[ "$architecture" == amd64 ]]; then
-              findings_path=ecr-image-scan-findings.json
-              summary_path=ecr-image-scan-summary.json
-            else
-              findings_path="ecr-image-scan-findings-$architecture.json"
-              summary_path="ecr-image-scan-summary-$architecture.json"
-            fi
-            aws ecr wait image-scan-complete \
-              --repository-name "$ECR_REPOSITORY" \
-              --image-id "imageDigest=$runnable_digest"
-            aws ecr describe-image-scan-findings \
-              --repository-name "$ECR_REPOSITORY" \
-              --image-id "imageDigest=$runnable_digest" \
-              --output json > "$findings_path"
-            node scripts/write-ecr-scan-summary.mjs \
-              "$findings_path" \
-              "$summary_path" \
-              "$ECR_REPOSITORY" \
-              "$IMAGE_DIGEST" \
-              "$runnable_digest" \
-              "$architecture"
+            runnable="$(node scripts/resolve-runnable-image-digest.mjs release-index-manifest.json linux "$architecture")"
+            [[ "$architecture" == amd64 ]] && summary=ecr-image-scan-summary.json || summary="ecr-image-scan-summary-$architecture.json"
+            node scripts/write-ecr-scan-summary.mjs "child-$architecture/ecr-image-scan-findings.json" "$summary" \
+              "$ECR_REPOSITORY" "$IMAGE_DIGEST" "$runnable" "$architecture"
           done
       - name: Bind action and workflow commits to the image digest
-        shell: bash
-        run: |
-          node scripts/write-release-manifest.mjs \
-            release-metadata.json \
-            release-manifest.json \
-            "$VERSION" \
-            "$ACTION_COMMIT" \
-            "$GITHUB_SHA" \
-            "$IMAGE_REPOSITORY" \
-            "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61"
+        run: >-
+          node scripts/write-release-manifest.mjs release-metadata.json release-manifest.json "$VERSION"
+          "$ACTION_COMMIT" "$GITHUB_SHA" "$IMAGE_REPOSITORY"
+          "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61"
       - name: Sign and verify immutable release artifacts
-        shell: bash
         run: |
-          certificate_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
-          cosign sign --yes \
-            --bundle image-signature.sigstore.json \
-            --registry-referrers-mode=oci-1-1 \
-            "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
-          cosign verify-blob \
-            --bundle image-signature.sigstore.json \
-            --certificate-identity "$certificate_identity" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "$IMAGE_DIGEST"
-          registry_verified=false
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
+          cosign sign --yes --bundle image-signature.sigstore.json --registry-referrers-mode=oci-1-1 "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
+          cosign verify-blob --bundle image-signature.sigstore.json --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE_DIGEST"
+          verified=false
           for attempt in {1..6}; do
-            if cosign verify \
-              --experimental-oci11=true \
-              --certificate-identity "$certificate_identity" \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              "$IMAGE_REPOSITORY@$IMAGE_DIGEST"; then
-              registry_verified=true
-              break
-            fi
-            if [[ "$attempt" -lt 6 ]]; then
-              sleep 10
-            fi
+            if cosign verify --experimental-oci11=true --certificate-identity "$identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE_REPOSITORY@$IMAGE_DIGEST"; then verified=true; break; fi
+            [[ "$attempt" -eq 6 ]] || sleep 10
           done
-          [[ "$registry_verified" == true ]]
-          cosign sign-blob --yes \
-            --bundle release-manifest.sigstore.json \
-            release-manifest.json
-          cosign verify-blob \
-            --bundle release-manifest.sigstore.json \
-            --certificate-identity "$certificate_identity" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            release-manifest.json
-          cosign sign-blob --yes \
-            --bundle ecr-image-scan-summary.sigstore.json \
-            ecr-image-scan-summary.json
-          cosign verify-blob \
-            --bundle ecr-image-scan-summary.sigstore.json \
-            --certificate-identity "$certificate_identity" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            ecr-image-scan-summary.json
-          cosign sign-blob --yes \
-            --bundle ecr-image-scan-summary-arm64.sigstore.json \
-            ecr-image-scan-summary-arm64.json
-          cosign verify-blob \
-            --bundle ecr-image-scan-summary-arm64.sigstore.json \
-            --certificate-identity "$certificate_identity" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            ecr-image-scan-summary-arm64.json
+          [[ "$verified" == true ]]
+          for artifact in release-manifest release-attestation-summary ecr-image-scan-summary ecr-image-scan-summary-arm64; do
+            cosign sign-blob --yes --bundle "$artifact.sigstore.json" "$artifact.json"
+            cosign verify-blob --bundle "$artifact.sigstore.json" --certificate-identity "$identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com "$artifact.json"
+          done
       - name: Promote verified candidate to semantic image tag
-        shell: bash
         run: |
-          docker buildx imagetools create \
-            --tag "$IMAGE_REPOSITORY:$VERSION" \
-            "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
-          published_digest="$(aws ecr batch-get-image \
-            --repository-name "$ECR_REPOSITORY" \
-            --image-ids imageTag="$VERSION" \
-            --query 'images[0].imageId.imageDigest' \
-            --output text)"
-          [[ "$published_digest" == "$IMAGE_DIGEST" ]]
+          published="$(aws ecr put-image --repository-name "$ECR_REPOSITORY" --image-tag "$VERSION" \
+            --image-manifest file://release-index-manifest.json --query 'image.imageId.imageDigest' --output text)"
+          [[ "$published" == "$IMAGE_DIGEST" ]]
       - name: Create verified release and immutable handoff
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v$VERSION" \
-            --target "$GITHUB_SHA" \
-            --title "steward-run v$VERSION" \
-            --notes "Verified in-cluster Steward integration release for linux/amd64 and linux/arm64 with an OCI 1.1 image signature, completed per-platform ECR scan evidence, provenance, SBOM, and immutable GitOps handoff." \
-            release-manifest.json \
-            release-manifest.sigstore.json \
-            image-signature.sigstore.json \
-            ecr-image-scan-summary.json \
-            ecr-image-scan-summary.sigstore.json \
-            ecr-image-scan-summary-arm64.json \
-            ecr-image-scan-summary-arm64.sigstore.json \
-            release-metadata.json
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "steward-run v$VERSION" \
+            --notes "Verified native linux/amd64 and linux/arm64 release with per-platform scan, provenance, SPDX, OCI 1.1 signature, and immutable handoff." \
+            release-manifest.json release-manifest.sigstore.json image-signature.sigstore.json \
+            release-attestation-summary.json release-attestation-summary.sigstore.json \
+            ecr-image-scan-summary.json ecr-image-scan-summary.sigstore.json \
+            ecr-image-scan-summary-arm64.json ecr-image-scan-summary-arm64.sigstore.json release-metadata.json
           {
             echo "## Immutable release handoff"
             echo "- Action commit: \`$ACTION_COMMIT\`"
@@ -248,12 +252,14 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ always() && hashFiles('release-metadata.json') != '' }}
         with:
-          name: steward-run-${{ env.VERSION }}-metadata
+          name: steward-run-${{ needs.prepare.outputs.version }}-metadata
           path: |
             release-metadata.json
             release-manifest.json
             release-manifest.sigstore.json
             image-signature.sigstore.json
+            release-attestation-summary.json
+            release-attestation-summary.sigstore.json
             ecr-image-scan-summary.json
             ecr-image-scan-summary.sigstore.json
             ecr-image-scan-summary-arm64.json
