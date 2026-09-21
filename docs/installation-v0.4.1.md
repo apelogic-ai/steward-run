@@ -1,4 +1,4 @@
-# steward-run v0.4.0 installation guide
+# steward-run v0.4.1 installation guide
 
 This guide installs a fork-built `steward-run` runner scale set. The runner
 image and action are this product; the ARC controller, GitHub registration,

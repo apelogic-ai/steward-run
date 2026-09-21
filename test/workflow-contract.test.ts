@@ -450,7 +450,7 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
   const productionHandoffs = `${readme}\n${specification}\n${releaseWorkflow}`;
 
   assert.doesNotMatch(productionHandoffs, /steward-task\.yml@main/u);
-  assert.match(readme, /docs\/installation-v0\.4\.0\.md/u);
+  assert.match(readme, /docs\/installation-v0\.4\.1\.md/u);
   assert.doesNotMatch(readme, /uses:\s*apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml/u);
   assert.doesNotMatch(readme, /action-commit:/u);
   assert.match(releaseWorkflow, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));

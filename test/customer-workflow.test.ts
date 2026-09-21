@@ -63,7 +63,7 @@ test("the customer workflow executes only its own immutable action with GitHub O
 
 test("the current handoff documents the fork workflow and keeps live acceptance pending", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
-  const guide = await readFile(new URL("../docs/installation-v0.4.0.md", import.meta.url), "utf8");
+  const guide = await readFile(new URL("../docs/installation-v0.4.1.md", import.meta.url), "utf8");
   const rebuild = await readFile(new URL("../docs/customer-rebuild.md", import.meta.url), "utf8");
   for (const document of [readme, guide, rebuild]) {
     assert.match(document, /steward-task-customer\.yml/u);
