@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parse } from "yaml";
 
-const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml", "steward-task-self-hosted.yml"];
+const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml", "steward-task-self-hosted.yml", "steward-task-customer.yml"];
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";

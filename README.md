@@ -79,9 +79,11 @@ The action accepts an exact Task source (`workflow` or `invocation-path`),
 workspace-relative input/output paths, a Steward HTTPS URL, and a GitHub OIDC
 exchange HTTPS URL with its exact audience. `id-token: write` is the GitHub
 Actions input; a static Steward bearer token is not a customer production
-credential. The current ApeLogic-pinned reusable workflows are not a fork
-installation path. A fork-self-pinned customer workflow is still pending
-security approval and live acceptance, as described in the installation guide.
+credential. The [customer ARC reusable workflow](.github/workflows/steward-task-customer.yml)
+checks out its own action from the exact reusable-workflow repository and
+commit reported by GitHub, not from a caller-selected action ref. The existing
+ApeLogic-pinned reusable workflows are not the fork installation path. See
+the installation guide for the exact caller pin and pending live acceptance.
 
 The caller checks the invocation manifest into its repository, then uploads `request`; the reusable
 job checks out the exact triggered commit for local validation without persisting Git credentials,

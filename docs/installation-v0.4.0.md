@@ -4,15 +4,16 @@ This guide installs a fork-built `steward-run` runner scale set. The runner
 image and action are this product; the ARC controller, GitHub registration,
 customer Steward API, and GitHub OIDC exchange are external. There is no
 long-running steward-run API service. The chart path and image build below
-have passed offline render and local image smoke tests. Registration and a
-real governed job are **not yet live-tested**; the customer reusable workflow
-is pending a separate security approval. Do not treat this guide as delivery
+have passed offline render and local image smoke tests. The
+[`steward-task-customer.yml`](../.github/workflows/steward-task-customer.yml)
+reusable workflow is statically tested but registration and a real governed
+job are **not yet live-tested**. Do not treat this guide as delivery
 acceptance until the last section is run against real customer endpoints.
 
 ## Prerequisites
 
 - GitHub.com organization or repository with Actions enabled. GitHub
-  Enterprise Server is not covered: the planned fork-self-pinned reusable
+  Enterprise Server is not covered: the fork-self-pinned reusable
   workflow uses GitHub.com `job.workflow_repository` and `job.workflow_sha`.
 - Kubernetes `1.30`–`1.34`, `linux/amd64` schedulable nodes, Helm `3.17+`,
   `kubectl`, Node.js 24, Docker Buildx, and an OCI registry controlled by the
@@ -256,12 +257,71 @@ kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n arc-runners
 ```
 
 In GitHub **Settings → Actions → Runners**, confirm the `steward-run` scale
-set is registered at the selected repository/organization. The production
-job must grant `contents: read` and `id-token: write`, pin the fork's
-reusable workflow/action to an exact reviewed commit, and point to customer
-Steward/identity HTTPS endpoints with the configured OIDC audience. That
-customer workflow artifact is not approved in this revision. Do not use the
-existing ApeLogic-pinned workflows for this installation.
+set is registered at the selected repository/organization. Run the
+[`steward-task-customer.yml`](../.github/workflows/steward-task-customer.yml)
+reusable workflow at an exact reviewed fork commit. It uses `job.workflow_repository`
+and `job.workflow_sha` to check out its own action under
+`.steward-run-action`, rejects a caller repository that already occupies that
+path, and never accepts a caller-selected executable action ref or job image.
+The action stays in the digest-pinned ARC runner Pod; no ECR job container is
+needed. GitHub Enterprise Server is not covered because those job contexts
+are not available there. Make the fork accessible to the caller as required
+by GitHub's reusable-workflow and repository checkout access policies.
+
+Check a caller workflow into the approved repository. The first job uploads
+a known `request/` directory as the `request` artifact; the governed job
+downloads it under `in/` and uploads `out/` as `result`. Replace every
+`CUSTOMER_*` and `REVIEWED_40_HEX_COMMIT` example below with reviewed values,
+including the real Steward Workflow reference. The `uses` commit must be a
+literal 40-character SHA in the checked-in caller workflow, not an expression
+or moving tag. Review changes to this caller workflow: its current exchange
+contract accepts an endpoint and audience supplied by the caller. Further
+trust hardening is tracked in [issue #43](https://github.com/apelogic-ai/steward-run/issues/43),
+outside this installation slice.
+
+```yaml
+name: Governed Steward delivery test
+on: workflow_dispatch
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: request
+          path: request/
+          if-no-files-found: error
+  governed:
+    needs: prepare
+    permissions:
+      contents: read
+      id-token: write
+    uses: CUSTOMER_ORG/steward-run/.github/workflows/steward-task-customer.yml@REVIEWED_40_HEX_COMMIT
+    with:
+      runner-label: steward-run
+      workflow: CUSTOMER_WORKFLOW_REFERENCE
+      input-artifact: request
+      output-artifact: result
+      steward-api-url: https://steward.customer.example
+      identity-exchange-url: https://identity.customer.example/v1/exchange
+      identity-exchange-audience: CUSTOMER_EXACT_GITHUB_OIDC_AUDIENCE
+      # Set steward-ca-certificate-file: /etc/steward-run/ca.crt only when mounted.
+```
+
+Supply either `workflow` as above or `invocation-path` to a checked-in
+manifest, never both. For `invocation-path`, the customer workflow checks out
+the caller's exact triggering commit without persisting credentials; Steward
+must separately authorize and fetch that same source. The action exchanges
+GitHub's job-scoped OIDC token for a short-lived `steward-task-api` token; it
+does not use the GitHub App registration Secret. Inspect the job's `status`,
+`task-uid`, and `runtime-uid` outputs and the `result` artifact without
+printing token material. This workflow has not yet been exercised against a
+customer ARC registration and Steward/identity deployment; the delivery
+tests below remain mandatory. Do not use the ApeLogic-pinned workflows for
+this installation.
 
 ## Upgrade
 
@@ -311,7 +371,7 @@ Task UIDs, and bounded outcome categories.
 | `helm lint` and `helm template` above; inspect `rendered-scale-set.yaml` | Exactly one ARC `AutoscalingRunnerSet` with fork image `@sha256`, expected App Secret name, scale-to-zero and security values; no controller Deployment/CRD or key bytes. Record chart digest and render check result. |
 | `kubectl ... get autoscalingrunnersets.actions.github.com,autoscalinglisteners.actions.github.com,pods -n arc-runners` | Scale set exists, listener ready; at idle, zero runner Pods is normal. Record statuses and selected controller/scale-set chart versions. |
 | In GitHub Actions, dispatch a real job on `steward-run`; watch `kubectl ... get pods -n arc-runners -w` | GitHub queues and assigns the job; a Pod using the fork-owned digest pulls and runs, then disappears. Record job run ID, Pod phase, and image digest only. |
-| Run a governed job with the fork-pinned workflow/action, customer endpoints, `id-token: write`, and known input/output artifact | Identity exchange issues a short-lived `steward-task-api` token; Steward Task succeeds and finalizes; output artifact matches expected hash. Record bounded Task UID/status/finalization and job run ID, never token or response bodies. **Pending approved customer workflow and live test.** |
+| Run a governed job with the fork-pinned workflow/action, customer endpoints, `id-token: write`, and known input/output artifact | Identity exchange issues a short-lived `steward-task-api` token; Steward Task succeeds and finalizes; output artifact matches expected hash. Record bounded Task UID/status/finalization and job run ID, never token or response bodies. **Pending live test.** |
 | Repeat with a deliberately wrong OIDC audience; repeat with an untrusted CA or hostname | Both fail closed before a successful Task submission. Record only safe authentication/TLS failure category and absence of a completed Task. **Pending live test.** |
 | Run App-key and CA creation/rotation steps with a new valid credential/certificate, then another registration/job | New runner registers and task succeeds before old key is revoked; no Secret data appears in logs or evidence. **Pending live test.** |
 | Uninstall only `steward-run`, then check controller Deployment and CRDs | Product scale set/listener gone; shared controller/CRDs still present. Record resource names/status. **Pending live test.** |

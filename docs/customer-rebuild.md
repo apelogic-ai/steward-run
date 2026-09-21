@@ -59,16 +59,17 @@ execution identity. The application chart installs the upstream ARC scale
 set, while the shared ARC controller remains external.
 
 The existing `steward-task.yml` and `steward-task-self-hosted.yml` remain
-ApeLogic-pinned workflows and are not the customer invocation path. A
-fork-self-pinned OIDC workflow and live governed-job evidence are still open
-in issue #41. Do not describe the image/chart build alone as a usable
-governed-task installation.
+ApeLogic-pinned workflows and are not the customer invocation path. Use
+[`steward-task-customer.yml`](../.github/workflows/steward-task-customer.yml)
+at an exact fork commit as described in the installation guide. Live
+governed-job evidence is still open in issue #41. Do not describe the
+image/chart build alone as a verified governed-task installation.
 
 ## Work still required for a customer release
 
 - Publish fork-owned image and application chart digests with SBOM, provenance,
   vulnerability scan, and license notices.
-- Approve and validate the cloud-neutral customer OIDC workflow.
+- Validate the fork-self-pinned customer OIDC workflow in a real installation.
 - Run a real ARC registration and governed-job acceptance against customer
   Steward and identity endpoints, including denial cases and cleanup.
 
