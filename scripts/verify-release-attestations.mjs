@@ -207,6 +207,9 @@ for (const platform of expected) {
     ) {
       throw new Error(`${platform} ${annotatedPredicate} statement is malformed`);
     }
+    if (statement.subject.length === 0) {
+      throw new Error(`${platform} ${annotatedPredicate} statement must identify the runnable image`);
+    }
     for (const subject of statement.subject) {
       if (subject?.digest?.sha256 !== runnable.digest.slice("sha256:".length)) {
         throw new Error(`${platform} statement subject does not match runnable image`);

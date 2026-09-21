@@ -19,6 +19,7 @@ const spdxPredicate = "https://spdx.dev/Document";
 type FixtureDefect =
   | "duplicate-attestation"
   | "duplicate-predicate"
+  | "empty-subject"
   | "mismatched-subject"
   | "missing-provenance"
   | "wrong-predicate";
@@ -68,7 +69,9 @@ async function createFixture(
 
     const makeStatement = (predicateType: string) => bytes({
       _type: "https://in-toto.io/Statement/v1",
-      subject: [],
+      subject: architecture === "amd64" && defect === "empty-subject"
+        ? []
+        : [{ name: "fixture", digest: { sha256: runnable.digest.slice("sha256:".length) } }],
       predicateType,
       predicate: predicateType === spdxPredicate
         ? { spdxVersion: "SPDX-2.3", SPDXID: "SPDXRef-DOCUMENT" }
@@ -214,6 +217,7 @@ for (const [defect, message] of [
   ["wrong-predicate", "unexpected attestation predicate"],
   ["duplicate-predicate", "exactly one provenance and one SPDX"],
   ["duplicate-attestation", "exactly one attestation manifest"],
+  ["empty-subject", "must identify the runnable image"],
 ] as const) {
   test(`release attestation verification rejects ${defect}`, async () => {
     const { execution, root } = await verify(defect);
