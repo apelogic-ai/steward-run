@@ -1,11 +1,10 @@
 # Customer rebuild path (superseded)
 
-Use the [versioned installation guide](installation-v0.4.1.md) for the current
+Use the [versioned installation guide](installation-v0.4.2.md) for the current
 fork-owned runner image, installable application chart, GitHub App, and
 acceptance procedure. This document is retained as historical context for
-the earlier library-chart rebuild only. The source is now MIT licensed; no
-public runner image or chart OCI coordinate has yet been published by this
-repository.
+the earlier library-chart rebuild only. The source is MIT licensed, and the
+repository now publishes public runner and chart OCI artifacts to GHCR.
 
 The current Dockerfile pins its Node and runner bases by digest and no longer
 performs an unbounded package upgrade. A customer build still has its own
@@ -76,13 +75,12 @@ The legacy `steward-task.yml` also pins a separate amd64-only job container;
 that limitation does not apply to the customer workflow, which runs directly
 in the multi-platform ARC runner image.
 
-## Work still required for a customer release
+## Optional customer-owned publication
 
-- Publish fork-owned image and application chart digests with SBOM, provenance,
-  vulnerability scan, and license notices.
-- Validate the fork-self-pinned customer OIDC workflow in a real installation.
-- Run a real ARC registration and governed-job acceptance against customer
-  Steward and identity endpoints, including denial cases and cleanup.
+- A fork may publish its own image and application chart digests instead of
+  consuming the public `v0.4.2` artifacts.
+- Runtime integration validation remains the operator's responsibility and is
+  not part of the standalone OCI artifact handoff.
 
 The native per-platform release workflow builds, scans, and attests both Linux
 architectures before assembling one immutable OCI index. A fork may reuse that

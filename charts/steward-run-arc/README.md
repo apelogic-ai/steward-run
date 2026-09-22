@@ -20,9 +20,13 @@ existing pull Secret in `template.spec.imagePullSecrets`. For a customer CA,
 mount an operator-owned public ConfigMap in the runner Pod; the default does
 not invent trust material.
 
-Follow the [v0.4.1 installation guide](../../docs/installation-v0.4.1.md)
+The public chart is
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc:0.4.2`; the matching public
+runner is `ghcr.io/apelogic-ai/steward-run:0.4.2`. Resolve and pin the image
+digest from the release's `oss-release-manifest.json`.
+
+Follow the [v0.4.2 installation guide](../../docs/installation-v0.4.2.md)
 for prerequisites, GitHub App creation, image and chart build/publish,
-values, installation, rotation, upgrade/rollback, and delivery tests. Helm
+values, installation, rotation, upgrade/rollback, and operator checks. Helm
 replaces lists when overlaying values, so preserve the complete runner
-container entry when changing its image or adding mounts. The guide marks
-live registration and governed-job evidence that is still pending.
+container entry when changing its image or adding mounts.

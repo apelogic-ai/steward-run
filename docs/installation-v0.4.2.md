@@ -1,14 +1,14 @@
-# steward-run v0.4.1 installation guide
+# steward-run v0.4.2 installation guide
 
-This guide installs a fork-built `steward-run` runner scale set. The runner
+This guide installs a released or fork-built `steward-run` runner scale set. The runner
 image and action are this product; the ARC controller, GitHub registration,
 customer Steward API, and GitHub OIDC exchange are external. There is no
 long-running steward-run API service. The chart path and image build below
-have passed offline render and local image smoke tests. The
+have passed offline render and image build checks. The
 [`steward-task-customer.yml`](../.github/workflows/steward-task-customer.yml)
-reusable workflow is statically tested but registration and a real governed
-job are **not yet live-tested**. Do not treat this guide as delivery
-acceptance until the last section is run against real customer endpoints.
+reusable workflow is statically tested. GitHub App setup, live registration,
+governed-job execution, credential rotation, and additional acceptance tests
+are operator activities outside the v0.4.2 standalone OCI artifact handoff.
 
 ## Prerequisites
 
@@ -17,9 +17,9 @@ acceptance until the last section is run against real customer endpoints.
   workflow uses GitHub.com `job.workflow_repository` and `job.workflow_sha`.
 - Kubernetes `1.30`–`1.34` with `linux/amd64` or `linux/arm64` schedulable
   nodes, Helm `3.17+`,
-  `kubectl`, Node.js 24, a multi-node Docker Buildx builder backed by native
-  `linux/amd64` and `linux/arm64` workers, and an OCI registry controlled
-  by the customer. The chart declares this Kubernetes range; live compatibility
+  `kubectl`, and Node.js 24. A multi-node Docker Buildx builder backed by native
+  `linux/amd64` and `linux/arm64` workers and an OCI registry are needed only
+  when rebuilding in a fork. The chart declares this Kubernetes range; live compatibility
   across all versions has not been established.
 - Upstream ARC controller chart `gha-runner-scale-set-controller` `0.14.2`
   installed in a separate controller namespace, with its CRDs ready. This
@@ -40,11 +40,8 @@ Compatibility evidence for this source revision: Helm schema/render test of
 the installable chart with ARC scale-set `0.14.2`; CI image build/smoke for
 `linux/amd64` and `linux/arm64` using GitHub runner `2.336.0` with Node
 `24.18.1`; mock GitHub Actions
-OIDC and `/v1/tasks` contract tests. No real GitHub App registration or
-Steward/identity integration result has been recorded for this guide. Publish
-that evidence, tested Kubernetes patch versions, controller and scale-set
-chart versions, image digest, action/workflow commits, Steward and identity
-revisions before declaring a release compatible.
+OIDC and `/v1/tasks` contract tests. Live GitHub App registration and
+Steward/identity integration are not claims of this artifact release.
 
 The multi-platform claim applies to the fork-owned
 `steward-task-customer.yml` path, which runs directly in this runner image.
@@ -80,12 +77,36 @@ upstream ARC chart also creates listener/configuration objects and service
 accounts/RBAC, but no customer private key is rendered when
 `githubConfigSecret` names an existing Secret. The customer chart creates no
 shared ARC controller or CRDs. The inventory is checked against chart render
-and action input names by CI; real creation/rotation still needs a customer
-cluster acceptance run.
+and action input names by CI. Live creation and rotation are operator-owned.
 
 ## Installation
 
-### 1. Prepare an exact fork revision and build its image
+### 1. Resolve the public release artifacts
+
+Release `v0.4.2` publishes anonymous-pull OCI artifacts at:
+
+- runner: `ghcr.io/apelogic-ai/steward-run:0.4.2`
+- chart: `oci://ghcr.io/apelogic-ai/charts/steward-run-arc:0.4.2`
+
+Download the release manifest and use its immutable image digest in values:
+
+```sh
+gh release download v0.4.2 --repo apelogic-ai/steward-run \
+  --pattern oss-release-manifest.json
+IMAGE_REFERENCE="$(jq -r .image oss-release-manifest.json)"
+CHART_REFERENCE="$(jq -r .chart oss-release-manifest.json)"
+test "${IMAGE_REFERENCE#ghcr.io/apelogic-ai/steward-run@sha256:}" != "$IMAGE_REFERENCE"
+test "${CHART_REFERENCE#ghcr.io/apelogic-ai/charts/steward-run-arc@sha256:}" != "$CHART_REFERENCE"
+helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.4.2
+```
+
+No AWS account, ApeLogic ECR access, registry credential, or ApeLogic-owned
+workflow is required to pull these public artifacts.
+
+To publish customer-owned artifacts instead, fork the repository and follow
+the rebuild procedure below.
+
+### 1a. Optional fork rebuild
 
 Fork the repository to a customer-owned GitHub repository and check out a
 reviewed 40-character commit. Record the commit, package lock, base-image
@@ -137,11 +158,11 @@ and validated in step 4:
 ```sh
 helm dependency build charts/steward-run-arc
 helm package charts/steward-run-arc --destination dist
-helm push dist/steward-run-arc-0.1.0.tgz oci://registry.customer.example/charts
+helm push dist/steward-run-arc-0.4.2.tgz oci://registry.customer.example/charts
 ```
 
 The resulting chart coordinate is
-`oci://registry.customer.example/charts/steward-run-arc:0.1.0`. Record its OCI
+`oci://registry.customer.example/charts/steward-run-arc:0.4.2`. Record its OCI
 digest and package SHA-256; do not substitute an ApeLogic artifact. The chart
 package contains its pinned upstream dependency. License review before
 redistribution: this source is MIT; ARC's chart/controller is Apache-2.0;
@@ -342,9 +363,9 @@ must separately authorize and fetch that same source. The action exchanges
 GitHub's job-scoped OIDC token for a short-lived `steward-task-api` token; it
 does not use the GitHub App registration Secret. Inspect the job's `status`,
 `task-uid`, and `runtime-uid` outputs and the `result` artifact without
-printing token material. This workflow has not yet been exercised against a
-customer ARC registration and Steward/identity deployment; the delivery
-tests below remain mandatory. Do not use the ApeLogic-pinned workflows for
+printing token material. Live execution against a customer ARC registration
+and Steward/identity deployment is an operator validation step, not part of
+the v0.4.2 artifact publication. Do not use the ApeLogic-pinned workflows for
 this installation.
 
 ## Upgrade
@@ -383,8 +404,8 @@ after checking that no other scale set uses them.
 
 ## Delivery tests
 
-These are required release acceptance checks, not results asserted by this
-guide. The integration owner supplies exact customer image/chart digests,
+These are optional operator validation checks, not gates for the standalone
+OCI artifact release. The integration owner supplies exact image/chart digests,
 GitHub App installation, Steward and identity revisions/URLs, OIDC audience,
 test repository, and a disposable task invocation with known output. Save
 only source revisions, artifact digests, resource names/status, job run IDs,
@@ -395,12 +416,12 @@ Task UIDs, and bounded outcome categories.
 | `helm lint` and `helm template` above; inspect `rendered-scale-set.yaml` | Exactly one ARC `AutoscalingRunnerSet` with fork image `@sha256`, expected App Secret name, scale-to-zero and security values; no controller Deployment/CRD or key bytes. Record chart digest and render check result. |
 | `kubectl ... get autoscalingrunnersets.actions.github.com,autoscalinglisteners.actions.github.com,pods -n arc-runners` | Scale set exists, listener ready; at idle, zero runner Pods is normal. Record statuses and selected controller/scale-set chart versions. |
 | In GitHub Actions, dispatch a real job on `steward-run`; watch `kubectl ... get pods -n arc-runners -w` | GitHub queues and assigns the job; a Pod using the fork-owned digest pulls and runs, then disappears. Record job run ID, Pod phase, and image digest only. |
-| Run a governed job with the fork-pinned workflow/action, customer endpoints, `id-token: write`, and known input/output artifact | Identity exchange issues a short-lived `steward-task-api` token; Steward Task succeeds and finalizes; output artifact matches expected hash. Record bounded Task UID/status/finalization and job run ID, never token or response bodies. **Pending live test.** |
-| Repeat with a deliberately wrong OIDC audience; repeat with an untrusted CA or hostname | Both fail closed before a successful Task submission. Record only safe authentication/TLS failure category and absence of a completed Task. **Pending live test.** |
-| Run App-key and CA creation/rotation steps with a new valid credential/certificate, then another registration/job | New runner registers and task succeeds before old key is revoked; no Secret data appears in logs or evidence. **Pending live test.** |
-| Uninstall only `steward-run`, then check controller Deployment and CRDs | Product scale set/listener gone; shared controller/CRDs still present. Record resource names/status. **Pending live test.** |
+| Run a governed job with the fork-pinned workflow/action, customer endpoints, `id-token: write`, and known input/output artifact | Identity exchange issues a short-lived `steward-task-api` token; Steward Task succeeds and finalizes; output artifact matches expected hash. Record bounded Task UID/status/finalization and job run ID, never token or response bodies. |
+| Repeat with a deliberately wrong OIDC audience; repeat with an untrusted CA or hostname | Both fail closed before a successful Task submission. Record only safe authentication/TLS failure category and absence of a completed Task. |
+| Run App-key and CA creation/rotation steps with a new valid credential/certificate, then another registration/job | New runner registers and task succeeds before old key is revoked; no Secret data appears in logs or evidence. |
+| Uninstall only `steward-run`, then check controller Deployment and CRDs | Product scale set/listener gone; shared controller/CRDs still present. Record resource names/status. |
 
 CI checks chart values, upstream Secret key names, action inputs, README link,
 and dry-run creation/rotation syntax; it cannot prove GitHub registration or
-external Steward/identity behavior. An outdated README or unrun delivery
-checklist blocks claiming issue #41 complete.
+external Steward/identity behavior. Those live checks are outside the v0.4.2
+artifact-publication scope.

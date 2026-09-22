@@ -2,8 +2,8 @@ apiVersion: v2
 name: steward-run-arc
 description: Installable steward-run adapter for the upstream ARC runner scale set
 type: application
-version: 0.1.0
-appVersion: 0.4.1
+version: 0.4.2
+appVersion: 0.4.2
 kubeVersion: ">=1.30.0-0 <1.35.0-0"
 sources:
   - https://github.com/actions/actions-runner-controller
