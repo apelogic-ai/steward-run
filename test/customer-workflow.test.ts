@@ -61,9 +61,9 @@ test("the customer workflow executes only its own immutable action with GitHub O
   assert.ok(steps.indexOf(selfCheckout ?? {}) < steps.indexOf(task ?? {}));
 });
 
-test("the current handoff documents the fork workflow and keeps live acceptance pending", async () => {
+test("the current handoff documents the fork workflow and published OSS artifacts", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
-  const guide = await readFile(new URL("../docs/installation-v0.4.1.md", import.meta.url), "utf8");
+  const guide = await readFile(new URL("../docs/installation-v0.4.2.md", import.meta.url), "utf8");
   const rebuild = await readFile(new URL("../docs/customer-rebuild.md", import.meta.url), "utf8");
   for (const document of [readme, guide, rebuild]) {
     assert.match(document, /steward-task-customer\.yml/u);
@@ -72,5 +72,5 @@ test("the current handoff documents the fork workflow and keeps live acceptance 
   assert.match(guide, /job\.workflow_repository/u);
   assert.match(guide, /job\.workflow_sha/u);
   assert.match(guide, /GitHub Enterprise Server is not covered/u);
-  assert.match(guide, /Pending live test/u);
+  assert.match(guide, /ghcr\.io\/apelogic-ai\/steward-run:0\.4\.2/u);
 });

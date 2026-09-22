@@ -4,14 +4,16 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-Start with the [versioned installation guide](docs/installation-v0.4.1.md).
+Start with the [versioned installation guide](docs/installation-v0.4.2.md).
 The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. No public runner image or chart coordinate
-has yet been published by this repository. The guide documents a fork-owned
-build and installation, and explicitly marks the live acceptance still pending.
+long-running Steward API service. Release `v0.4.2` publishes the standalone
+multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.4.2` and the
+application chart at
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc:0.4.2`. The attached
+`oss-release-manifest.json` records both immutable OCI digests.
 
 The client implements Steward's six-operation `/v1/tasks` lifecycle documented in
 `contracts/steward-run-v1.openapi.yaml`. It submits, uploads a workspace-relative tar archive,
@@ -83,7 +85,7 @@ credential. The [customer ARC reusable workflow](.github/workflows/steward-task-
 checks out its own action from the exact reusable-workflow repository and
 commit reported by GitHub, not from a caller-selected action ref. The existing
 ApeLogic-pinned reusable workflows are not the fork installation path. See
-the installation guide for the exact caller pin and pending live acceptance.
+the installation guide for the exact caller pin.
 
 The caller checks the invocation manifest into its repository, then uploads `request`; the reusable
 job checks out the exact triggered commit for local validation without persisting Git credentials,
@@ -113,9 +115,9 @@ customer-owned runner image at a full `sha256` digest and a GitHub registration
 URL plus existing App Secret reference. It defaults to zero idle runners and
 non-root, no-privilege runner Pods without a Kubernetes API token. The old
 [`steward-run` library chart](charts/steward-run/) remains an internal helper,
-not the customer installation path. No image or chart OCI coordinate is
-published by this repository yet; the [guide](docs/installation-v0.4.1.md)
-shows how a fork publishes its own artifacts.
+not the customer installation path. The public runner and chart are published
+at the GHCR coordinates above; the [guide](docs/installation-v0.4.2.md)
+shows how to resolve their immutable digests or publish fork-owned artifacts.
 The supported runner artifact is one multi-platform OCI index containing
 `linux/amd64` and `linux/arm64`; the chart remains architecture-neutral and
 pins the index digest so Kubernetes selects the matching image.
@@ -166,8 +168,6 @@ The minimal local invocation contract is:
 The token file itself is never a result artifact. Harnesses must mount it outside the declared
 input/output paths and remove it with the disposable cluster.
 
-The current `release.yml` is an ApeLogic-internal ECR handoff, not the fork
-publication procedure. The versioned installation guide gives the portable
-image and chart build/publish commands and the evidence to retain. The
-customer workflow and live end-to-end acceptance remain open in issue #41;
-neither this README nor a passing chart render claims otherwise.
+The current `release.yml` remains the ApeLogic-internal ECR handoff.
+`portable-release.yml` publishes the public GHCR image, OCI chart, release
+manifest, and chart archive without AWS or ApeLogic infrastructure inputs.
