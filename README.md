@@ -11,9 +11,9 @@ composite action, reusable workflow sources, and installable
 runner registration API are external prerequisites; this is not a separate
 long-running Steward API service. Release `v0.4.2` publishes the standalone
 multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.4.2` and the
-application chart at
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc:0.4.2`. The attached
-`oss-release-manifest.json` records both immutable OCI digests.
+application chart in
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.4.2`. The
+attached `oss-release-manifest.json` records both immutable OCI digests.
 
 The client implements Steward's six-operation `/v1/tasks` lifecycle documented in
 `contracts/steward-run-v1.openapi.yaml`. It submits, uploads a workspace-relative tar archive,

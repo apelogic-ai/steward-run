@@ -65,10 +65,11 @@ test("the current handoff documents the fork workflow and published OSS artifact
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const guide = await readFile(new URL("../docs/installation-v0.4.2.md", import.meta.url), "utf8");
   const rebuild = await readFile(new URL("../docs/customer-rebuild.md", import.meta.url), "utf8");
-  for (const document of [readme, guide, rebuild]) {
+  for (const document of [readme, guide]) {
     assert.match(document, /steward-task-customer\.yml/u);
     assert.doesNotMatch(document, /customer reusable workflow is pending|customer workflow artifact is not approved|fork-self-pinned OIDC workflow and live governed-job evidence are still open/u);
   }
+  assert.match(rebuild, /Track B in the versioned installation guide/u);
   assert.match(guide, /job\.workflow_repository/u);
   assert.match(guide, /job\.workflow_sha/u);
   assert.match(guide, /GitHub Enterprise Server is not covered/u);

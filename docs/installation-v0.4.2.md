@@ -1,10 +1,11 @@
 # steward-run v0.4.2 installation guide
 
-This guide installs a released or fork-built `steward-run` runner scale set. The runner
-image and action are this product; the ARC controller, GitHub registration,
-customer Steward API, and GitHub OIDC exchange are external. There is no
-long-running steward-run API service. The chart path and image build below
-have passed offline render and image build checks. The
+This guide installs a released or fork-built `steward-run` runner scale set.
+The runner image, action, reusable workflow sources, and application chart are
+this product; the ARC controller, GitHub registration, customer Steward API,
+and GitHub OIDC exchange are external. There is no long-running steward-run
+API service. The chart path and image build below have passed offline render
+and image build checks. The
 [`steward-task-customer.yml`](../.github/workflows/steward-task-customer.yml)
 reusable workflow is statically tested. GitHub App setup, live registration,
 governed-job execution, credential rotation, and additional acceptance tests
@@ -16,15 +17,14 @@ are operator activities outside the v0.4.2 standalone OCI artifact handoff.
   Enterprise Server is not covered: the fork-self-pinned reusable
   workflow uses GitHub.com `job.workflow_repository` and `job.workflow_sha`.
 - Kubernetes `1.30`–`1.34` with `linux/amd64` or `linux/arm64` schedulable
-  nodes, Helm `3.17+`,
-  `kubectl`, and Node.js 24. A multi-node Docker Buildx builder backed by native
-  `linux/amd64` and `linux/arm64` workers and an OCI registry are needed only
-  when rebuilding in a fork. The chart declares this Kubernetes range; live compatibility
-  across all versions has not been established.
-- Upstream ARC controller chart `gha-runner-scale-set-controller` `0.14.2`
-  installed in a separate controller namespace, with its CRDs ready. This
+  nodes, Helm `3.17+`, `kubectl`, `curl`, and `jq`. The chart
+  declares this Kubernetes range; live compatibility across every patch
+  release has not been established.
+- Upstream ARC controller chart `gha-runner-scale-set-controller` `0.14.2` in
+  a separate controller namespace, with its CRDs ready. Step 2 provides the
+  exact installation command when the cluster does not already have it. This
   product chart pins upstream `gha-runner-scale-set` `0.14.2`; it does not
-  install or remove the shared controller.
+  install, upgrade, or remove the shared controller.
 - Customer Steward HTTPS API implementing
   [`/v1/tasks`](../contracts/steward-run-v1.openapi.yaml) and a customer GitHub
   OIDC exchange HTTPS endpoint. The exchange must accept the configured exact
@@ -33,8 +33,10 @@ are operator activities outside the v0.4.2 standalone OCI artifact handoff.
   most one hour). The action requires HTTPS except loopback tests.
 - DNS, TLS, and egress from runner Pods to GitHub API/Actions, the image
   registry, Steward, and the exchange. Use a public CA, or install a customer
-  CA bundle as described below. No Jira, AWS, ApeLogic registry, or ApeLogic
-  repository is required for the fork build/install procedure.
+  CA bundle as described below. Consuming the public release requires no AWS
+  account, ApeLogic ECR access, or private ApeLogic repository. A fork rebuild
+  additionally requires Node.js 24, Docker Buildx with native `linux/amd64`
+  and `linux/arm64` workers, and a customer-controlled OCI registry.
 
 Compatibility evidence for this source revision: Helm schema/render test of
 the installable chart with ARC scale-set `0.14.2`; CI image build/smoke for
@@ -54,8 +56,11 @@ Use an explicit, task-owned kubeconfig and context for every command below:
 ```sh
 KUBECONFIG_FILE=/absolute/path/to/customer-kubeconfig
 KUBE_CONTEXT=customer-cluster-context
+RUNNER_NAMESPACE=arc-runners
 kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" cluster-info
 ```
+
+Run the procedures in one shell because later commands reuse these variables.
 
 Never substitute a local ApeLogic `stable` or `main` lane kubeconfig. Keep
 credential files outside the repository, mode `0600`, and never print Secret
@@ -65,9 +70,9 @@ data, private keys, OIDC tokens, or Task response bodies as evidence.
 
 | Purpose | Object / type, namespace, keys | Required | Owner and rotation |
 | --- | --- | --- | --- |
-| ARC registration | `steward-run-github-app`, `Opaque` Secret in `arc-runners`; `github_app_id`, `github_app_installation_id`, `github_app_private_key` | Yes for recommended GitHub App path | Customer GitHub App owner creates/rotates; chart references, never creates it. IDs and PEM come from GitHub, not random generation. |
-| Private registry pull | Customer-named `kubernetes.io/dockerconfigjson` Secret in `arc-runners`; `.dockerconfigjson`, referenced by `imagePullSecrets` | Only for private image registry | Registry owner creates/rotates; chart references. Publicly pullable images need none. |
-| Steward/identity TLS trust | Customer-named ConfigMap in `arc-runners`; `ca.crt` public PEM bundle | Only for non-public/customer CA | Customer PKI owner creates/rotates. CA certificate comes from PKI, not random generation; not a private credential. |
+| ARC registration | `steward-run-github-app`, `Opaque` Secret in `$RUNNER_NAMESPACE` (default `arc-runners`); `github_app_id`, `github_app_installation_id`, `github_app_private_key` | Yes for recommended GitHub App path | Customer GitHub App owner creates/rotates; chart references, never creates it. IDs and PEM come from GitHub, not random generation. |
+| Private registry pull | Customer-named `kubernetes.io/dockerconfigjson` Secret in `$RUNNER_NAMESPACE`; `.dockerconfigjson`, referenced by `imagePullSecrets` | Only for private image registry | Registry owner creates/rotates; chart references. Publicly pullable images need none. |
+| Steward/identity TLS trust | Customer-named ConfigMap in `$RUNNER_NAMESPACE`; `ca.crt` public PEM bundle | Only for non-public/customer CA | Customer PKI owner creates/rotates. CA certificate comes from PKI, not random generation; not a private credential. |
 | Task submission | GitHub Actions job-scoped OIDC token via `id-token: write`; no Kubernetes object | Yes at job time | GitHub issues/rotates automatically; do not install a static bearer Secret. |
 
 The ARC registration App above is **not** Steward's optional read-only source
@@ -81,39 +86,66 @@ and action input names by CI. Live creation and rotation are operator-owned.
 
 ## Installation
 
-### 1. Resolve the public release artifacts
+### 1. Select one artifact track
+
+Both tracks must finish with these three shell variables:
+
+- `IMAGE_REFERENCE`: an immutable runner reference ending in `@sha256:<digest>`;
+- `CHART_PACKAGE`: the absolute path to the packaged application chart;
+- `WORKFLOW_COMMIT`: the exact reusable-workflow/action source commit.
+
+All common install and upgrade commands below use only those variables. Do
+not mix a public image with an unreviewed fork chart, or vice versa.
+
+#### Track A — consume the public v0.4.2 release (recommended)
 
 Release `v0.4.2` publishes anonymous-pull OCI artifacts at:
 
 - runner: `ghcr.io/apelogic-ai/steward-run:0.4.2`
-- chart: `oci://ghcr.io/apelogic-ai/charts/steward-run-arc:0.4.2`
+- chart repository: `oci://ghcr.io/apelogic-ai/charts/steward-run-arc`, version `0.4.2`
 
-Download the release manifest and use its immutable image digest in values:
+Download the release manifest, validate its coordinates, and pull the released
+OCI chart. No source checkout or registry login is required:
 
 ```sh
-gh release download v0.4.2 --repo apelogic-ai/steward-run \
-  --pattern oss-release-manifest.json
-IMAGE_REFERENCE="$(jq -r .image oss-release-manifest.json)"
-CHART_REFERENCE="$(jq -r .chart oss-release-manifest.json)"
-test "${IMAGE_REFERENCE#ghcr.io/apelogic-ai/steward-run@sha256:}" != "$IMAGE_REFERENCE"
-test "${CHART_REFERENCE#ghcr.io/apelogic-ai/charts/steward-run-arc@sha256:}" != "$CHART_REFERENCE"
-helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.4.2
+RELEASE_VERSION=0.4.2
+RELEASE_TAG="v$RELEASE_VERSION"
+CHART_OCI=oci://ghcr.io/apelogic-ai/charts/steward-run-arc
+
+curl -fsSLo oss-release-manifest.json \
+  "https://github.com/apelogic-ai/steward-run/releases/download/$RELEASE_TAG/oss-release-manifest.json"
+test "$(jq -er '.version' oss-release-manifest.json)" = "$RELEASE_VERSION"
+IMAGE_REFERENCE="$(jq -er '.image' oss-release-manifest.json)"
+CHART_REFERENCE="$(jq -er '.chart' oss-release-manifest.json)"
+WORKFLOW_COMMIT="$(jq -er '.commit' oss-release-manifest.json)"
+printf '%s\n' "$IMAGE_REFERENCE" |
+  grep -Eq '^ghcr\.io/apelogic-ai/steward-run@sha256:[0-9a-f]{64}$'
+printf '%s\n' "$CHART_REFERENCE" |
+  grep -Eq '^ghcr\.io/apelogic-ai/charts/steward-run-arc@sha256:[0-9a-f]{64}$'
+printf '%s\n' "$WORKFLOW_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+CHART_DIGEST="${CHART_REFERENCE##*@}"
+HELM_PULL_OUTPUT="$(helm pull "$CHART_OCI" --version "$RELEASE_VERSION" 2>&1)"
+printf '%s\n' "$HELM_PULL_OUTPUT"
+printf '%s\n' "$HELM_PULL_OUTPUT" | grep -Fx "Digest: $CHART_DIGEST"
+CHART_PACKAGE="$PWD/steward-run-arc-$RELEASE_VERSION.tgz"
+test -f "$CHART_PACKAGE"
 ```
 
-No AWS account, ApeLogic ECR access, registry credential, or ApeLogic-owned
-workflow is required to pull these public artifacts.
+`helm pull` prints the chart digest. It must equal the digest after `@` in
+`CHART_REFERENCE`. Retain `oss-release-manifest.json` with the deployment
+record. The version tag is for discovery; Kubernetes receives only the
+digest-pinned `IMAGE_REFERENCE`.
 
-To publish customer-owned artifacts instead, fork the repository and follow
-the rebuild procedure below.
-
-### 1a. Optional fork rebuild
+#### Track B — build and publish from a customer fork
 
 Fork the repository to a customer-owned GitHub repository and check out a
 reviewed 40-character commit. Record the commit, package lock, base-image
 digests, scan result, build provenance, and SBOM. The Dockerfile pins both
 base images and does **not** perform an unbounded package upgrade. Rebuilds
 still depend on the exact build toolchain and registry; compare evidence, not
-just a mutable tag.
+just a mutable tag. Authenticate Docker and Helm to the customer registry with
+that registry's documented short-lived credential flow before publishing; do
+not place registry credentials in the repository or values file.
 
 ```sh
 test -z "$(git status --porcelain)"
@@ -132,6 +164,8 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   --attest "type=sbom,generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9" \
   --metadata-file customer-build-metadata.json --push .
 IMAGE_DIGEST="$(node -p 'require("./customer-build-metadata.json")["containerimage.digest"]')"
+IMAGE_REFERENCE="$IMAGE_REPOSITORY@$IMAGE_DIGEST"
+WORKFLOW_COMMIT="$SOURCE_COMMIT"
 ```
 
 Verify `IMAGE_DIGEST` has the form `sha256:` plus 64 lowercase hex characters;
@@ -153,24 +187,56 @@ customer signing evidence for
 `$IMAGE_REPOSITORY@$IMAGE_DIGEST`. The image is a thin ARC runner with Bash,
 Node, Git, and tar; action code is not baked into it. Package and publish the
 exact chart independently; the external `customer-values.yaml` is prepared
-and validated in step 4:
+and validated in step 5:
 
 ```sh
+mkdir -p dist
 helm dependency build charts/steward-run-arc
 helm package charts/steward-run-arc --destination dist
-helm push dist/steward-run-arc-0.4.2.tgz oci://registry.customer.example/charts
+helm push "dist/steward-run-arc-$SOURCE_VERSION.tgz" oci://registry.customer.example/charts
+CHART_PACKAGE="$PWD/dist/steward-run-arc-$SOURCE_VERSION.tgz"
+test -f "$CHART_PACKAGE"
 ```
 
-The resulting chart coordinate is
-`oci://registry.customer.example/charts/steward-run-arc:0.4.2`. Record its OCI
-digest and package SHA-256; do not substitute an ApeLogic artifact. The chart
-package contains its pinned upstream dependency. License review before
-redistribution: this source is MIT; ARC's chart/controller is Apache-2.0;
+The resulting chart repository is
+`oci://registry.customer.example/charts/steward-run-arc`, version
+`$SOURCE_VERSION`. Record its OCI digest and package SHA-256; do not substitute
+an unrelated artifact. The chart package contains its pinned upstream
+dependency. License review before redistribution: this source is MIT;
+ARC's chart/controller is Apache-2.0;
 `actions-runner` and `runner-container-hooks` are MIT; Node and Debian/Ubuntu
 packages retain their own notices. Preserve upstream license notices and
 review the final SBOM for your registry distribution policy.
 
-### 2. Create and install the ARC registration GitHub App
+### 2. Install or verify the shared ARC controller
+
+If ARC controller `0.14.2` is not already installed, install it in its own
+namespace. This is a customer-owned shared prerequisite, not part of the
+`steward-run` release:
+
+```sh
+ARC_CONTROLLER_VERSION=0.14.2
+ARC_CONTROLLER_NAMESPACE=arc-system
+ARC_CONTROLLER_RELEASE=arc
+ARC_CONTROLLER_SERVICE_ACCOUNT=arc-gha-rs-controller
+
+helm install "$ARC_CONTROLLER_RELEASE" \
+  --namespace "$ARC_CONTROLLER_NAMESPACE" --create-namespace \
+  oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller \
+  --version "$ARC_CONTROLLER_VERSION"
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
+  -n "$ARC_CONTROLLER_NAMESPACE" rollout status \
+  deployment/arc-gha-rs-controller
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
+  -n "$ARC_CONTROLLER_NAMESPACE" get serviceaccount \
+  "$ARC_CONTROLLER_SERVICE_ACCOUNT"
+```
+
+For an existing controller, do not reinstall it. Set the four variables above
+to its actual version, namespace, release, and ServiceAccount; verify the
+Deployment and CRDs. The supported scale-set/controller version is `0.14.2`.
+
+### 3. Create and install the ARC registration GitHub App
 
 Follow [GitHub's ARC authentication guide](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api)
 and [App registration guide](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app).
@@ -191,17 +257,19 @@ runners or `https://github.com/ORG/REPO` for repository runners. Enterprise
 scope is not supported by the recommended App path. The App installation's
 repository scope must include the selected repository.
 
-### 3. Create registration and conditional trust objects
+### 4. Create registration and conditional trust objects
 
-Create `arc-runners` (the controller stays in its own namespace), then make
-the App Secret from real GitHub-provided files. `kubectl` reports only the
-object name. Preserve the source files at mode `0600` for controlled rotation.
+Create the runner namespace (the controller stays in its own namespace), then
+make the App Secret from real GitHub-provided files. `kubectl` reports only
+the object name. Preserve the source files at mode `0600` for controlled
+rotation.
 
 ```sh
 kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
-  create namespace arc-runners
+  create namespace "$RUNNER_NAMESPACE" --dry-run=client -o yaml | \
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" apply -f -
 chmod 600 ./private/github-app-id.txt ./private/github-app-installation-id.txt ./private/github-app.pem
-kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n arc-runners \
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n "$RUNNER_NAMESPACE" \
   create secret generic steward-run-github-app \
   --from-file=github_app_id=./private/github-app-id.txt \
   --from-file=github_app_installation_id=./private/github-app-installation-id.txt \
@@ -213,56 +281,101 @@ update the protected file, and use a file-only client-side apply; then run a
 new registration job before revoking the old key. Do not emit the manifest:
 
 ```sh
-kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n arc-runners \
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n "$RUNNER_NAMESPACE" \
   create secret generic steward-run-github-app \
   --from-file=github_app_id=./private/github-app-id.txt \
   --from-file=github_app_installation_id=./private/github-app-installation-id.txt \
   --from-file=github_app_private_key=./private/github-app.pem \
   --dry-run=client -o yaml | \
-kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n arc-runners apply -f -
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n "$RUNNER_NAMESPACE" apply -f -
 ```
 
-If the image registry is private, create a registry pull Secret in
-`arc-runners` using the registry's documented credential flow and put its
+If the image registry is private, create a registry pull Secret in the runner
+namespace using the registry's documented credential flow and put its
 existing name in `imagePullSecrets`. Never place registry credentials in
 Helm values. If Steward or the exchange uses a customer CA, install the
 public PEM bundle from customer PKI, and rotate it with the same dry-run/apply
 pattern:
 
 ```sh
-kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n arc-runners \
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n "$RUNNER_NAMESPACE" \
   create configmap steward-run-ca --from-file=ca.crt=./public/customer-ca.crt
-kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n arc-runners \
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n "$RUNNER_NAMESPACE" \
   create configmap steward-run-ca --from-file=ca.crt=./public/customer-ca.crt \
   --dry-run=client -o yaml | \
-kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n arc-runners apply -f -
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n "$RUNNER_NAMESPACE" apply -f -
 ```
 
-### 4. Configure and install the product chart
+### 5. Configure and install the product chart
 
 Verify the shared ARC controller `0.14.2` Deployment and CRDs before
-installing this chart. Record its actual service account name and namespace;
-set `controllerServiceAccount` explicitly for reproducible offline rendering.
+installing this chart. The variables below were set in step 2.
 
 ```sh
 kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
-  -n arc-system get deployment,serviceaccount
+  -n "$ARC_CONTROLLER_NAMESPACE" get deployment,serviceaccount
 kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
   get crd autoscalingrunnersets.actions.github.com
 ```
 
-Copy `charts/steward-run-arc/values.yaml` to `customer-values.yaml`. Under
-`gha-runner-scale-set`, set `githubConfigUrl`,
-`githubConfigSecret: steward-run-github-app`, and the runner container
-`image: "$IMAGE_REPOSITORY@$IMAGE_DIGEST"` (substitute the literal resolved
-reference; Helm does not expand shell variables in YAML). Set
-`controllerServiceAccount.namespace/name` to the actual controller account.
-Keep `runnerScaleSetName: steward-run`, `scaleSetLabels: [steward-run]`,
-`minRunners: 0`, and a capacity-appropriate `maxRunners` (default 5).
-The runner uses the upstream no-permission service account with token mounting
-disabled. Keep the default non-root security and resource requests/limits.
-Helm replaces lists in values overlays: when overriding `containers`, copy
-the complete runner container entry, not only its image field.
+Set the GitHub registration target, then generate the complete values overlay.
+Use `https://github.com/ORG` for an organization scale set or
+`https://github.com/ORG/REPO` for a repository scale set. This file contains
+references and public configuration only; it contains no credentials:
+
+```sh
+GITHUB_CONFIG_URL=https://github.com/CUSTOMER_ORG
+
+cat > customer-values.yaml <<YAML
+gha-runner-scale-set:
+  githubConfigUrl: $GITHUB_CONFIG_URL
+  githubConfigSecret: steward-run-github-app
+  controllerServiceAccount:
+    namespace: $ARC_CONTROLLER_NAMESPACE
+    name: $ARC_CONTROLLER_SERVICE_ACCOUNT
+  runnerScaleSetName: steward-run
+  scaleSetLabels:
+    - steward-run
+  minRunners: 0
+  maxRunners: 5
+  containerMode:
+    type: ""
+  template:
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets: []
+      containers:
+        - name: runner
+          image: $IMAGE_REFERENCE
+          imagePullPolicy: IfNotPresent
+          command: ["/home/runner/run.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            privileged: false
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+YAML
+```
+
+The defaults are zero idle runners and five maximum. Adjust only `maxRunners`
+for capacity. Helm replaces lists rather than merging them, so retain the
+complete runner container entry when adding mounts or changing the image.
 
 For a private registry, set `template.spec.imagePullSecrets` to the existing
 Secret name. For a customer CA, add a `configMap` volume named
@@ -275,12 +388,12 @@ complete list entries; replace its example URL, image digest, and controller
 account with real customer values before use.
 
 ```sh
-helm dependency build charts/steward-run-arc
-helm lint charts/steward-run-arc --strict --values customer-values.yaml
-helm template steward-run charts/steward-run-arc --namespace arc-runners \
+helm lint "$CHART_PACKAGE" --strict --values customer-values.yaml
+helm template steward-run "$CHART_PACKAGE" --namespace "$RUNNER_NAMESPACE" \
   --values customer-values.yaml > rendered-scale-set.yaml
 helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
-  install steward-run charts/steward-run-arc -n arc-runners \
+  install steward-run "$CHART_PACKAGE" -n "$RUNNER_NAMESPACE" \
+  --create-namespace \
   --values customer-values.yaml
 ```
 
@@ -295,16 +408,19 @@ a job is assigned. Confirm the scale set, name/labels, App reference, image
 pull success, scheduling, and GitHub registration without reading Secret data:
 
 ```sh
-kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n arc-runners \
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n "$RUNNER_NAMESPACE" \
   get autoscalingrunnersets.actions.github.com,autoscalinglisteners.actions.github.com,pods
-kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n arc-runners \
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" -n "$RUNNER_NAMESPACE" \
   describe autoscalingrunnerset steward-run
 ```
 
 In GitHub **Settings → Actions → Runners**, confirm the `steward-run` scale
 set is registered at the selected repository/organization. Run the
 [`steward-task-customer.yml`](../.github/workflows/steward-task-customer.yml)
-reusable workflow at an exact reviewed fork commit. It uses `job.workflow_repository`
+reusable workflow at `WORKFLOW_COMMIT` in a reviewed customer fork. The public
+artifact track records the exact release source commit in that variable; a
+fork created from the release retains the same commit identity. The workflow
+uses `job.workflow_repository`
 and `job.workflow_sha` to check out its own action under
 `.steward-run-action`, rejects a caller repository that already occupies that
 path, and never accepts a caller-selected executable action ref or job image.
@@ -319,10 +435,11 @@ downloads it under `in/` and uploads `out/` as `result`. Replace every
 `CUSTOMER_*` and `REVIEWED_40_HEX_COMMIT` example below with reviewed values,
 including the real Steward Workflow reference. The `uses` commit must be a
 literal 40-character SHA in the checked-in caller workflow, not an expression
-or moving tag. Review changes to this caller workflow: its current exchange
-contract accepts an endpoint and audience supplied by the caller. Further
-trust hardening is tracked in [issue #43](https://github.com/apelogic-ai/steward-run/issues/43),
-outside this installation slice.
+or moving tag. Treat the Steward URL, identity-exchange URL, and exact audience
+as reviewed environment configuration: keep them literal in the protected
+caller workflow and do not expose them as unreviewed dispatch inputs. The job
+has `id-token: write`, so code review of those destinations is part of the
+customer trust boundary.
 
 ```yaml
 name: Governed Steward delivery test
@@ -370,19 +487,22 @@ this installation.
 
 ## Upgrade
 
-Build, scan, and publish the new fork image; record its new digest and source
-commit. Review upstream ARC and chart compatibility. Update the literal
-digest in the full runner entry of `customer-values.yaml`, render/lint, and
-upgrade only the product release. Run the delivery checks on new ephemeral
-runners; keep the previous values, image digest, and chart package as rollback
-evidence.
+Repeat Track A or Track B for the target version so `IMAGE_REFERENCE`,
+`CHART_PACKAGE`, and `WORKFLOW_COMMIT` identify one coherent release. Review
+ARC compatibility, replace the literal runner image in `customer-values.yaml`,
+and update the caller workflow's literal source commit. Then lint, render, and
+upgrade only the product release. Keep the previous values, image digest,
+chart package, workflow commit, and Helm revision as rollback evidence.
 
 ```sh
+helm lint "$CHART_PACKAGE" --strict --values customer-values.yaml
+helm template steward-run "$CHART_PACKAGE" --namespace "$RUNNER_NAMESPACE" \
+  --values customer-values.yaml > rendered-scale-set.yaml
 helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
-  upgrade steward-run charts/steward-run-arc -n arc-runners \
+  upgrade steward-run "$CHART_PACKAGE" -n "$RUNNER_NAMESPACE" \
   --values customer-values.yaml
 helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
-  history steward-run -n arc-runners
+  history steward-run -n "$RUNNER_NAMESPACE"
 ```
 
 ## Rollback and uninstall
@@ -392,9 +512,9 @@ release only. Verify listener and newly scheduled runner image digest again.
 
 ```sh
 helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
-  rollback steward-run PREVIOUS_REVISION -n arc-runners
+  rollback steward-run PREVIOUS_REVISION -n "$RUNNER_NAMESPACE"
 helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
-  uninstall steward-run -n arc-runners
+  uninstall steward-run -n "$RUNNER_NAMESPACE"
 ```
 
 Uninstall removes this product's upstream scale-set resources. It **does not
@@ -413,9 +533,9 @@ Task UIDs, and bounded outcome categories.
 
 | Check / action | Expected result and non-secret evidence |
 | --- | --- |
-| `helm lint` and `helm template` above; inspect `rendered-scale-set.yaml` | Exactly one ARC `AutoscalingRunnerSet` with fork image `@sha256`, expected App Secret name, scale-to-zero and security values; no controller Deployment/CRD or key bytes. Record chart digest and render check result. |
-| `kubectl ... get autoscalingrunnersets.actions.github.com,autoscalinglisteners.actions.github.com,pods -n arc-runners` | Scale set exists, listener ready; at idle, zero runner Pods is normal. Record statuses and selected controller/scale-set chart versions. |
-| In GitHub Actions, dispatch a real job on `steward-run`; watch `kubectl ... get pods -n arc-runners -w` | GitHub queues and assigns the job; a Pod using the fork-owned digest pulls and runs, then disappears. Record job run ID, Pod phase, and image digest only. |
+| `helm lint` and `helm template` above; inspect `rendered-scale-set.yaml` | Exactly one ARC `AutoscalingRunnerSet` with the selected image `@sha256`, expected App Secret name, scale-to-zero and security values; no controller Deployment/CRD or key bytes. Record chart digest and render check result. |
+| `kubectl ... get autoscalingrunnersets.actions.github.com,autoscalinglisteners.actions.github.com,pods -n "$RUNNER_NAMESPACE"` | Scale set exists, listener ready; at idle, zero runner Pods is normal. Record statuses and selected controller/scale-set chart versions. |
+| In GitHub Actions, dispatch a real job on `steward-run`; watch `kubectl ... get pods -n "$RUNNER_NAMESPACE" -w` | GitHub queues and assigns the job; a Pod using the selected digest pulls and runs, then disappears. Record job run ID, Pod phase, and image digest only. |
 | Run a governed job with the fork-pinned workflow/action, customer endpoints, `id-token: write`, and known input/output artifact | Identity exchange issues a short-lived `steward-task-api` token; Steward Task succeeds and finalizes; output artifact matches expected hash. Record bounded Task UID/status/finalization and job run ID, never token or response bodies. |
 | Repeat with a deliberately wrong OIDC audience; repeat with an untrusted CA or hostname | Both fail closed before a successful Task submission. Record only safe authentication/TLS failure category and absence of a completed Task. |
 | Run App-key and CA creation/rotation steps with a new valid credential/certificate, then another registration/job | New runner registers and task succeeds before old key is revoked; no Secret data appears in logs or evidence. |

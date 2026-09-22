@@ -1,14 +1,15 @@
 # steward-run — implementation spec (product repo)
 
-Audience: an executing coding agent. Repo: `apelogic-ai/steward-run`. Deliverables: a **composite
-GitHub Action** + a **runner container image**. Layer 2 (a product), and the **reference
-instance of the product-repo convention** the other products (`steward`, `mcp-gw`, `observer`,
-`burble`) follow.
+Audience: maintainers and executing coding agents. Repo: `apelogic-ai/steward-run`.
+Deliverables: a **composite GitHub Action**, **reusable workflow sources**, a
+**runner container image**, and an **installable ARC scale-set adapter chart**.
+Layer 2 (a product), and the **reference instance of the product-repo
+convention** the other products (`steward`, `mcp-gw`, `observer`, `burble`)
+follow.
 
-**Visibility: internal (recommended) — not public by default.** It contains no secrets, but it
-encodes the ARC↔Steward integration contract and the control-plane API shape. Internal
-(org-readable) unless the API contract is deemed sensitive, in which case private. Decide in D4.
-`main` branch-protected.
+**Visibility: public OSS.** The repository and source are MIT licensed. It
+contains no secrets; operators supply external registration and endpoint
+configuration. `main` is branch-protected.
 
 **Purpose.** The thin runner shell + the `steward-run` action — i.e. **the translator** from the
 DEV plan §2.1: validate the job's GitHub OIDC token → resolve the actor to a corporate email →
@@ -24,12 +25,15 @@ tests + image + action, released **by version**, and **environment-agnostic**.
 - The **`steward-run` composite action** (`action.yml` + its scripts).
 - The **runner image** (Dockerfile): `actions/runner` base + the action's prerequisites. Minimal,
   no baked secrets. Steward's immutable Workflow selects runtime configuration and skills.
-- App CI: build + test → push image to ECR (OCI) → tag/release by version.
+- App CI: build + test. The portable release publishes the image and
+  installable chart to public GHCR OCI; a separate workflow retains the
+  ApeLogic-internal ECR evidence handoff.
 - The **thin-shell CI check** (§4) as a first-class test.
 
 **Out of scope.**
-- Which org/cluster/namespace/env it runs in, `runs-on` labels, replica counts, the GitHub App
-  secret — all **`gitops`** (scale-set `HelmRelease`).
+- The operator's org, cluster, namespace, registration credential values,
+  endpoint values, and production capacity choices. The chart exposes these
+  inputs without owning them.
 - Cloud resources — **`infra`**.
 - Any secret value. The action receives config via inputs/env at runtime; it holds nothing.
 - The Steward control-plane itself, and the `Principal::Service` arm it depends on — that's the
@@ -40,13 +44,18 @@ tests + image + action, released **by version**, and **environment-agnostic**.
 ## 2. The layer-2 product-repo convention (stated here; all products follow it)
 
 1. **Chart/image/action live in-repo; the product owns how it is built.**
-2. **CI publishes by version**: image → ECR OCI; chart (for a deployable product) → ECR OCI
-   chart repo. The released version is the deliverable.
-3. **The product never names an environment.** No cluster, namespace, values, or `runs-on`
-   label appears in the repo. If it would differ between DEV and prod, it is `gitops`' job.
-4. **`gitops` pins the version.** Promotion is a one-line PR there, not a change here.
-5. **No secret values.** Config arrives at runtime (action inputs, env, mounted secrets created
-   by ESO).
+2. **CI publishes by version**: runner images and deployable charts are OCI
+   artifacts. The public release uses GHCR; forks may publish to their own
+   registries; ApeLogic's internal handoff remains separate.
+3. **The product never hard-codes a customer environment.** Example names and
+   URLs are placeholders; the operator selects cluster, namespace, endpoints,
+   runner labels, and capacity in its values and caller workflow.
+4. **Consumers pin immutable artifacts.** Images use an OCI digest, charts use
+   a reviewed package/version plus digest evidence, and workflows use an exact
+   source commit.
+5. **No secret values.** Runtime configuration uses action inputs, environment
+   data, and references to operator-created Secrets; the chart never renders a
+   registration key or registry credential.
 6. **Version pins are explicit** (base image, agent runtime, dependencies); nothing floats.
 
 ---
@@ -83,10 +92,13 @@ Direct-package flow: exact trigger checkout for local validation without persist
 → collect out) → `upload-artifact` (regular step). The agentic step is invisible to the
 surrounding YAML; the workspace is the contract.
 
-The reusable workflow supplies a job-level container for Kubernetes-mode ARC. Its ECR image is a
-literal full digest in the workflow, cannot be selected by the caller, and relies on node-level
-pull authorization rather than workflow credentials. The container must provide Bash, Node, Git,
-and tar so JavaScript actions and the composite action run inside the enforced job container.
+The customer reusable workflow runs directly in the digest-pinned ARC runner
+image and pins its own action checkout to the reusable workflow's exact
+repository and commit. It does not accept a caller-selected executable image
+or action ref. The legacy ApeLogic workflow separately supplies a digest-pinned
+ECR job container and is not the customer installation path. Either execution
+container must provide Bash, Node, Git, and tar for JavaScript actions and the
+composite action.
 
 ---
 
@@ -202,21 +214,25 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
   immutable Steward Workflow and are not caller inputs or image contents.
 - **No secrets, minimal packages** (the modern runner image ships lean on purpose; add only what
   the agent needs). Multi-stage build; pinned digests.
-- Published to ECR OCI by version. `gitops` pins the ARC runner by digest; the governed workflow
-  independently pins its job-container image by digest.
+- Published publicly to GHCR as a multi-platform OCI index by version. A fork
+  may publish the same source to a customer-owned registry. Environment config
+  pins the ARC runner by digest; the legacy internal governed workflow
+  independently pins its ECR job-container image by digest.
 
 ---
 
 ## 7. Dependencies & seams
 
-- **Hard dependency: Steward's Task API and identity exchange boundary.** The six-operation Task
-  lifecycle and service groups are implemented. Production callers use the reusable
-  `.github/workflows/steward-task.yml` workflow so GitHub emits an allowlistable
-  `job_workflow_ref`. The call is pinned to `workflow_commit` from the signed release manifest;
-  that workflow pins the remote action to the distinct `action_commit`, and the exchange emits a
-  short-lived `steward-task-api` token.
-- **Consumed by `gitops`** (scale set pins the image) and **by workflows** (the reusable workflow
-  internally uses `apelogic-ai/steward-run@<action_commit>`).
+- **Hard dependency: Steward's Task API and identity exchange boundary.** The
+  six-operation Task lifecycle and service groups are implemented. Customer
+  callers use `.github/workflows/steward-task-customer.yml` from a reviewed
+  fork commit so GitHub emits an allowlistable `job_workflow_ref`; the workflow
+  checks out its action from that same exact repository and commit. The
+  exchange emits a short-lived `steward-task-api` token. ApeLogic's internal
+  workflow retains its separate signed-manifest pins.
+- **Consumed by ARC/operator configuration** (the scale set pins the image)
+  and **by customer workflows** (the reusable workflow is pinned to an exact
+  fork commit). ApeLogic GitOps and workflows are separate internal consumers.
 - **Verified contract:** `contracts/steward-run-v1.openapi.yaml` records Steward's `/v1/tasks`
   submission, input, execute, status, output, and finalization operations. Workspace-relative
   input and output tar archives are limited to 64 MiB each.
@@ -233,7 +249,9 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
    round-trips a file with no workflow-author awareness of the sandbox.
 4. **Thin-shell check passes:** no tool cred, no LLM key, no data-plane egress, REST API the
    only Steward capability; `GITHUB_TOKEN` never reaches the agent.
-5. The image builds, passes the check, and publishes to ECR OCI by version.
+5. The image builds, passes the check, and the standalone release publishes
+   the multi-platform image and application chart to public GHCR OCI by
+   version. A fork can publish equivalent artifacts to its own registry.
 6. `gitleaks` is green; no secret in history.
 
 ---
@@ -245,8 +263,8 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 | D1 | Repo name | `steward-run` (matches the `uses:` line). `arc-runner` if a Steward-agnostic name is wanted | Low |
 | D2 | Provision-per-job vs adopt a standing `AgentRuntime` | Resolved: provision and terminate by default; explicit `agent-runtime` adopts and detaches an existing runtime | — |
 | D3 | Coding-agent runtime | Resolved by Steward from the immutable Workflow reference | — |
-| D4 | Visibility | Internal by default; private if the API contract is sensitive | Low |
-| D5 | `containerMode` coupling | The action must work under both `kubernetes` and `dind`; the choice is `gitops`', not baked here | Low |
+| D4 | Visibility | Resolved: public MIT-licensed OSS | — |
+| D5 | `containerMode` coupling | Resolved for the customer chart: run directly in the hardened runner container with `containerMode.type: ""`; alternate modes require separate operator validation | — |
 
 ---
 
@@ -256,5 +274,7 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
   checked-in Task contract aligned with Steward's generated OpenAPI before each release.
 - **Pin** the base runner image, the agent runtime, and every dependency by digest/version.
 - **The thin-shell check is a build gate**, not documentation.
-- **Stop at the boundary (§1).** No env names, no `runs-on` labels, no secrets — those are
-  `gitops`. If you reach for one, you are in the wrong repo.
+- **Stop at the boundary (§1).** Do not hard-code customer environment names,
+  endpoints, credential values, or private registry coordinates. Expose
+  operator-owned configuration through the documented values and workflow
+  interfaces.

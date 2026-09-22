@@ -2,8 +2,8 @@
 # Deployment, Job, or CronJob. An environment-owned ARC scale set imports its
 # runner Pod spec and owns GitHub registration, scale, RBAC, and network policy.
 image:
-  # A consumer must supply a repository it can actually pull. No public
-  # steward-run image is published by the current ECR-only release workflow.
+  # A consumer must explicitly select a pullable repository. Public releases
+  # use ghcr.io/apelogic-ai/steward-run; no repository is silently trusted.
   repository: ""
   # A release consumer must supply an exact OCI digest. Tags are deliberately
   # not accepted for the runner execution boundary.
