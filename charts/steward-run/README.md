@@ -32,8 +32,9 @@ Set `image.repository` to a repository the cluster can pull and `image.digest`
 to the exact lowercase OCI digest recorded in the corresponding release
 evidence. A tag is never used at this boundary. The default empty repository
 and digest deliberately fail when a consumer renders the Pod fragment. The
-old ApeLogic handoff is not a customer artifact: an independent build has
-its **own** digest and evidence. See the [installation guide](../../docs/installation-v0.4.2.md).
+official public digest comes from the release manifest; an independent fork
+build has its **own** digest and evidence. See the
+[installation guide](../../docs/installation-v0.4.2.md).
 
 `imagePullSecrets` contains only existing Secret names. The chart never creates
 or accepts registry credential values.
@@ -47,10 +48,10 @@ container-hook volume mounts.
 
 ## Import into an ARC values wrapper
 
-After obtaining the exact source under a separate grant and packaging the
-versioned chart locally (or publishing that package to a customer-owned OCI
-registry), a customer/operator wrapper chart may declare this library as a
-dependency and pass only its runner-image contract under `stewardRun`:
+When maintaining a custom wrapper, package the reviewed source locally or
+publish that package to a customer-owned OCI registry. The wrapper may declare
+this library as a dependency and pass only its runner-image contract under
+`stewardRun`:
 
 ```yaml
 # Chart.yaml

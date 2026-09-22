@@ -30,22 +30,32 @@ test("README leads to the versioned, honest customer installation guide", async 
   assert.match(guide, /legacy ApeLogic `steward-task\.yml` remains `linux\/amd64`-only/u);
   assert.match(guide, /^# steward-run v0\.4\.2 installation guide$/mu);
   assert.doesNotMatch(rebuild, /release workflow and DEV handoff remain unchanged/u);
-  assert.match(rebuild, /native per-platform release workflow/u);
+  assert.match(rebuild, /Track B in the versioned installation guide/u);
+  assert.match(rebuild, /intentionally duplicates\s+no shell commands/u);
 });
 
-test("the installation guide prepares customer values before the first values-dependent command", async () => {
+test("the public and fork tracks converge on one packaged-chart runbook", async () => {
   const guide = await readFile(new URL("../docs/installation-v0.4.2.md", import.meta.url), "utf8");
-  const prepareValues = guide.indexOf(
-    "Copy `charts/steward-run-arc/values.yaml` to `customer-values.yaml`.",
-  );
-  const firstValuesCommand = guide.indexOf(
-    "helm lint charts/steward-run-arc --strict --values customer-values.yaml",
-  );
+  const publicTrack = guide.indexOf("#### Track A — consume the public v0.4.2 release");
+  const forkTrack = guide.indexOf("#### Track B — build and publish from a customer fork");
+  const commonInstall = guide.indexOf("### 2. Install or verify the shared ARC controller");
+  const prepareValues = guide.indexOf("cat > customer-values.yaml <<YAML");
+  const firstValuesCommand = guide.indexOf('helm lint "$CHART_PACKAGE" --strict --values customer-values.yaml');
 
-  assert.ok(prepareValues >= 0, "guide must prepare customer-values.yaml");
-  assert.ok(firstValuesCommand >= 0, "guide must lint customer-values.yaml");
-  assert.ok(
-    prepareValues < firstValuesCommand,
-    "guide must prepare customer-values.yaml before using it",
-  );
+  assert.ok(publicTrack >= 0 && forkTrack > publicTrack && commonInstall > forkTrack);
+  assert.ok(guide.indexOf('IMAGE_REFERENCE="$(jq -er', publicTrack) < forkTrack);
+  assert.ok(guide.indexOf('CHART_PACKAGE="$PWD/steward-run-arc-$RELEASE_VERSION.tgz"', publicTrack) < forkTrack);
+  assert.ok(guide.indexOf('WORKFLOW_COMMIT="$(jq -er', publicTrack) < forkTrack);
+  assert.ok(guide.indexOf('IMAGE_REFERENCE="$IMAGE_REPOSITORY@$IMAGE_DIGEST"', forkTrack) < commonInstall);
+  assert.ok(guide.indexOf('CHART_PACKAGE="$PWD/dist/steward-run-arc-$SOURCE_VERSION.tgz"', forkTrack) < commonInstall);
+  assert.ok(guide.indexOf('WORKFLOW_COMMIT="$SOURCE_COMMIT"', forkTrack) < commonInstall);
+  assert.ok(prepareValues >= 0 && prepareValues < firstValuesCommand);
+  assert.match(guide, /helm install "\$ARC_CONTROLLER_RELEASE"[\s\S]*?gha-runner-scale-set-controller[\s\S]*?--version "\$ARC_CONTROLLER_VERSION"/u);
+  assert.match(guide, /install steward-run "\$CHART_PACKAGE"/u);
+  assert.match(guide, /upgrade steward-run "\$CHART_PACKAGE"/u);
+  assert.doesNotMatch(guide.slice(commonInstall), /(?:install|upgrade) steward-run charts\/steward-run-arc/u);
+  assert.doesNotMatch(guide, /issue #43/u);
+  for (const tool of ["Helm `3.17+`", "`kubectl`", "`curl`", "`jq`"]) {
+    assert.ok(guide.includes(tool), `prerequisite: ${tool}`);
+  }
 });
