@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { parseAllDocuments } from "yaml";
+import { resolveControllerIdentity } from "../scripts/arc-controller-identity.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const chartSource = join(root, "charts", "steward-run-arc");
@@ -38,6 +39,13 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     assert.equal(scaleSet.spec.maxRunners, 5);
     assert.equal(scaleSet.spec.containerMode?.type, undefined);
     assert.deepEqual(scaleSet.spec.runnerScaleSetLabels, ["steward-run"]);
+    const managerBinding = objects.find((object) => object.kind === "RoleBinding" && object.metadata?.name === "steward-run-gha-rs-manager");
+    const derivedController = resolveControllerIdentity({ namespace: "arc-system", releaseName: "arc" });
+    assert.deepEqual(managerBinding?.subjects, [{
+      kind: "ServiceAccount",
+      name: derivedController.serviceAccountName,
+      namespace: derivedController.namespace,
+    }]);
     const pod = scaleSet.spec.template.spec;
     assert.equal(pod.containers[0].name, "runner");
     assert.equal(pod.nodeSelector, undefined);
@@ -61,9 +69,42 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       /sha256|digest/u,
     );
     assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", `gha-runner-scale-set.template.spec.containers[0].image=registry.example/steward-run@sha256:${"0".repeat(64)}`),
+      /gha-runner-scale-set\.template\.spec\.containers\[0\]\.image|Must not validate/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--skip-schema-validation", "--set", `gha-runner-scale-set.template.spec.containers[0].image=registry.example/steward-run@sha256:${"0".repeat(64)}`),
+      /gha-runner-scale-set\.template\.spec\.containers\[0\]\.image must be a released immutable digest/u,
+    );
+    assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.githubConfigUrl=https://git.example.com/customer/example"),
       /githubConfigUrl/u,
     );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.controllerServiceAccount.name="),
+      /controllerServiceAccount\.name/u,
+    );
+    const overridden = template(
+      "steward-run",
+      chart,
+      "--namespace",
+      "arc-runners",
+      "--values",
+      fixture,
+      "--set",
+      "gha-runner-scale-set.controllerServiceAccount.namespace=customer-controllers",
+      "--set",
+      "gha-runner-scale-set.controllerServiceAccount.name=customer-controller-sa",
+    );
+    const overrideBinding = parseAllDocuments(overridden)
+      .map((doc) => doc.toJSON())
+      .filter(Boolean)
+      .find((object: any) => object.kind === "RoleBinding" && object.metadata?.name === "steward-run-gha-rs-manager");
+    assert.deepEqual(overrideBinding?.subjects, [{
+      kind: "ServiceAccount",
+      name: "customer-controller-sa",
+      namespace: "customer-controllers",
+    }]);
     const metadata = readFileSync(join(chart, "Chart.yaml"), "utf8");
     assert.match(metadata, /type: application/u);
     assert.match(metadata, /version: 0\.14\.2/u);
@@ -73,7 +114,7 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     for (const key of ["github_app_id", "github_app_installation_id", "github_app_private_key", "githubConfigSecret", "imagePullSecrets"]) {
       assert.ok(upstreamValues.includes(key) || (key === "imagePullSecrets" && upstreamValues.includes("template:")), `upstream ARC contract: ${key}`);
     }
-    const guide = readFileSync(join(root, "docs", "installation-v0.4.2.md"), "utf8");
+    const guide = readFileSync(join(root, "docs", "installation-v0.5.0.md"), "utf8");
     const action = readFileSync(join(root, "action.yml"), "utf8");
     for (const key of ["github_app_id", "github_app_installation_id", "github_app_private_key", "imagePullSecrets", "ca.crt"]) {
       assert.ok(guide.includes(key), `inventory: ${key}`);

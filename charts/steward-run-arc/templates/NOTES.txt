@@ -1,0 +1,16 @@
+steward-run-arc requires the separately installed ARC 0.14.2 controller.
+
+Configured controller ServiceAccount:
+  {{ (index .Values "gha-runner-scale-set").controllerServiceAccount.namespace }}/{{ (index .Values "gha-runner-scale-set").controllerServiceAccount.name }}
+
+For the pinned upstream controller chart, the standard ServiceAccount name is
+<controller Helm release>-gha-rs-controller (for example, release "arc" uses
+"arc-gha-rs-controller"). An explicit controller serviceAccount.name override
+takes precedence.
+
+Read-only existence check:
+  kubectl get serviceaccount {{ (index .Values "gha-runner-scale-set").controllerServiceAccount.name }} --namespace {{ (index .Values "gha-runner-scale-set").controllerServiceAccount.namespace }}
+
+Run the released steward-run-arc-preflight.mjs before registration, and again
+with --runner-namespace and --runner-scale-set-name before workload dispatch.
+The preflight and minimum RBAC are documented in docs/arc-controller-preflight.md.

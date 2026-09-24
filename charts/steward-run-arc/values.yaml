@@ -3,6 +3,12 @@
 gha-runner-scale-set:
   githubConfigUrl: ""
   githubConfigSecret: ""
+  # Required explicit identity of the separately installed ARC controller.
+  # Generate these values from its Helm release with the released identity
+  # helper, or set the exact ServiceAccount name when the controller overrides it.
+  controllerServiceAccount:
+    namespace: ""
+    name: ""
   runnerScaleSetName: steward-run
   scaleSetLabels:
     - steward-run

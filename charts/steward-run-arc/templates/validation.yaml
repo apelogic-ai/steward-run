@@ -1,0 +1,9 @@
+{{- range $index, $container := (index .Values "gha-runner-scale-set").template.spec.containers -}}
+{{- $path := printf "gha-runner-scale-set.template.spec.containers[%d].image" $index -}}
+{{- if not (regexMatch "^[^@\\s]+@sha256:[0-9a-f]{64}$" $container.image) -}}
+{{- fail (printf "%s must be a released immutable image reference in repository@sha256:<64 lowercase hex> form" $path) -}}
+{{- end -}}
+{{- if regexMatch "^[^@\\s]+@sha256:0{64}$" $container.image -}}
+{{- fail (printf "%s must be a released immutable digest; the all-zero placeholder is invalid" $path) -}}
+{{- end -}}
+{{- end -}}

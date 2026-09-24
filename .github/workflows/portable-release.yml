@@ -26,6 +26,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.18.1
       - name: Validate release and public coordinates
         id: refs
         env:
@@ -72,8 +75,8 @@ jobs:
             VERSION=${{ inputs.version }}
             REVISION=${{ github.sha }}
             SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
-          provenance: false
-          sbom: false
+          provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
 
   build-arm64:
     needs: preflight
@@ -101,10 +104,14 @@ jobs:
             VERSION=${{ inputs.version }}
             REVISION=${{ github.sha }}
             SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
-          provenance: false
-          sbom: false
+          provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
 
   publish:
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
     needs: [preflight, build-amd64, build-arm64]
     runs-on: ubuntu-24.04
     env:
@@ -115,10 +122,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.18.1
       - uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4.3.1
         with:
           version: v3.17.1
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.2
       - name: Install pinned ORAS
         env:
           ORAS_VERSION: 1.3.3
@@ -163,18 +176,87 @@ jobs:
           [[ "$chart_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
           docker buildx imagetools inspect "$IMAGE@$image_digest" --raw > "$RUNNER_TEMP/image-index.json"
           node scripts/verify-runnable-image-platforms.mjs "$RUNNER_TEMP/image-index.json" linux/amd64 linux/arm64
+          oras cp --to-oci-layout "$IMAGE@$image_digest" "$RUNNER_TEMP/release-image:v$VERSION"
+          node scripts/verify-release-attestations.mjs \
+            "$RUNNER_TEMP/release-image/index.json" "$RUNNER_TEMP/release-image" "$image_digest" \
+            "$RUNNER_TEMP/release-attestation-summary.json" linux/amd64 linux/arm64
           printf 'IMAGE_DIGEST=%s\nCHART_DIGEST=%s\n' "$image_digest" "$chart_digest" >> "$GITHUB_ENV"
+      - name: Sign immutable OCI artifacts
+        run: |
+          set -euo pipefail
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/portable-release.yml@$GITHUB_REF"
+          cosign sign --yes --bundle "$RUNNER_TEMP/image-signature.sigstore.json" \
+            --registry-referrers-mode=oci-1-1 "$IMAGE@$IMAGE_DIGEST"
+          cosign sign --yes --bundle "$RUNNER_TEMP/chart-signature.sigstore.json" \
+            --registry-referrers-mode=oci-1-1 "$CHART@$CHART_DIGEST"
+          cosign verify --experimental-oci11=true --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE@$IMAGE_DIGEST"
+          cosign verify --experimental-oci11=true --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$CHART@$CHART_DIGEST"
       - name: Publish immutable OSS handoff
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          cp scripts/arc-controller-identity.mjs "$RUNNER_TEMP/arc-controller-identity.mjs"
+          cp scripts/steward-run-arc-preflight.mjs "$RUNNER_TEMP/steward-run-arc-preflight.mjs"
+          chart_package="steward-run-arc-$VERSION.tgz"
+          chart_sha256="$(sha256sum "$RUNNER_TEMP/$chart_package" | cut -d ' ' -f 1)"
+          identity_sha256="$(sha256sum "$RUNNER_TEMP/arc-controller-identity.mjs" | cut -d ' ' -f 1)"
+          preflight_sha256="$(sha256sum "$RUNNER_TEMP/steward-run-arc-preflight.mjs" | cut -d ' ' -f 1)"
+          attestation_sha256="$(sha256sum "$RUNNER_TEMP/release-attestation-summary.json" | cut -d ' ' -f 1)"
           jq -n --arg version "$VERSION" --arg commit "$GITHUB_SHA" \
             --arg image "$IMAGE@$IMAGE_DIGEST" --arg chart "$CHART@$CHART_DIGEST" \
-            '{version:$version,commit:$commit,image:$image,chart:$chart,platforms:["linux/amd64","linux/arm64"]}' \
+            --arg chart_package "$chart_package" --arg chart_sha256 "$chart_sha256" \
+            --arg identity_sha256 "$identity_sha256" --arg preflight_sha256 "$preflight_sha256" \
+            --arg attestation_sha256 "$attestation_sha256" \
+            '{
+              schemaVersion:2,
+              version:$version,
+              commit:$commit,
+              image:$image,
+              chart:$chart,
+              platforms:["linux/amd64","linux/arm64"],
+              arcControllerVersion:"0.14.2",
+              attestations:{provenance:"https://slsa.dev/provenance/v1",sbom:"https://spdx.dev/Document",summaryAsset:"release-attestation-summary.json"},
+              signatures:{imageBundle:"image-signature.sigstore.json",chartBundle:"chart-signature.sigstore.json"},
+              assets:{
+                ($chart_package):{sha256:$chart_sha256},
+                "arc-controller-identity.mjs":{sha256:$identity_sha256},
+                "steward-run-arc-preflight.mjs":{sha256:$preflight_sha256},
+                "release-attestation-summary.json":{sha256:$attestation_sha256}
+              }
+            }' \
             > "$RUNNER_TEMP/oss-release-manifest.json"
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum "$chart_package" arc-controller-identity.mjs steward-run-arc-preflight.mjs \
+              release-attestation-summary.json oss-release-manifest.json > SHA256SUMS
+          )
+          cosign sign-blob --yes --bundle "$RUNNER_TEMP/oss-release-manifest.sigstore.json" \
+            "$RUNNER_TEMP/oss-release-manifest.json"
+          cosign sign-blob --yes --bundle "$RUNNER_TEMP/SHA256SUMS.sigstore.json" \
+            "$RUNNER_TEMP/SHA256SUMS"
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          Public standalone OSS runner image and Helm chart with immutable
+          coordinates, keyless signatures, SLSA provenance, SPDX SBOM, and
+          checksums in oss-release-manifest.json. Run the released read-only
+          ARC preflight before registration; it prints no Secret or token data.
+
+          Sanitized success example:
+          PASS ARC 0.14.2 controller arc-system/arc-gha-rs-controller
+          PASS controller ServiceAccount arc-system/arc-gha-rs-controller
+          EOF
           gh release create "v$VERSION" --target "$GITHUB_SHA" \
             --title "steward-run v$VERSION" \
-            --notes 'Public standalone OSS runner image and Helm chart. Use the immutable digest references in oss-release-manifest.json.' \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
             "$RUNNER_TEMP/oss-release-manifest.json" \
-            "$RUNNER_TEMP/steward-run-arc-$VERSION.tgz"
+            "$RUNNER_TEMP/oss-release-manifest.sigstore.json" \
+            "$RUNNER_TEMP/SHA256SUMS" \
+            "$RUNNER_TEMP/SHA256SUMS.sigstore.json" \
+            "$RUNNER_TEMP/release-attestation-summary.json" \
+            "$RUNNER_TEMP/image-signature.sigstore.json" \
+            "$RUNNER_TEMP/chart-signature.sigstore.json" \
+            "$RUNNER_TEMP/arc-controller-identity.mjs" \
+            "$RUNNER_TEMP/steward-run-arc-preflight.mjs" \
+            "$RUNNER_TEMP/$chart_package"

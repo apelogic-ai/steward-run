@@ -10,6 +10,9 @@ the template context, for example (dict "Values" .Values.stewardRun).
 {{- if not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.image.digest) -}}
 {{- fail "steward-run.image.digest must be an exact lowercase sha256 OCI digest" -}}
 {{- end -}}
+{{- if eq .Values.image.digest "sha256:0000000000000000000000000000000000000000000000000000000000000000" -}}
+{{- fail "steward-run.image.digest must be a released immutable digest; the all-zero placeholder is invalid" -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "steward-run.image" -}}

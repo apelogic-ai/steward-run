@@ -1,6 +1,6 @@
 # Customer rebuild path (superseded)
 
-Use [Track B in the versioned installation guide](installation-v0.4.2.md)
+Use [Track B in the versioned installation guide](installation-v0.5.0.md)
 for the maintained fork build, verification, publication, and installation
 procedure. It produces the same normalized `IMAGE_REFERENCE`, `CHART_PACKAGE`,
 and `WORKFLOW_COMMIT` inputs used by the public-release path.
