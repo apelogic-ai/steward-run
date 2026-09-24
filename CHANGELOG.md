@@ -19,6 +19,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A released, read-only ARC controller preflight with stable text/JSON failure
+  classifications, exact 0.14.2 compatibility checks, optional scale-set
+  linkage verification, and documented least-privilege reads.
 - A third-party license inventory for the bundled action, runner image, and
   application-chart dependency.
 - This changelog.

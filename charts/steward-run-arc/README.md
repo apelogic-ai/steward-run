@@ -21,7 +21,10 @@ node scripts/arc-controller-identity.mjs \
 
 The standard `arc` release resolves to `arc-system/arc-gha-rs-controller`.
 Pass `--service-account-name` when the controller chart uses an explicit
-ServiceAccount override.
+ServiceAccount override. Run the
+[read-only preflight](../../docs/arc-controller-preflight.md) against the live
+cluster before registration and again with runner-linkage arguments before
+dispatching a workload.
 
 The image must be a released immutable reference in
 `repository@sha256:<64 lowercase hex>` form. Mutable tags and sentinel values,

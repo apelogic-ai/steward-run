@@ -5,6 +5,9 @@ live GitHub Actions job into a governed Steward Task. The workspace is the only 
 author-facing data contract.
 
 Start with the [versioned installation guide](docs/installation-v0.4.2.md).
+Before registration or scale-set installation, run the released
+[read-only ARC controller preflight](docs/arc-controller-preflight.md) to verify
+the exact controller release, ServiceAccount, and supported ARC version.
 The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
