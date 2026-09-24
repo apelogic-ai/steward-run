@@ -44,17 +44,17 @@ mount an operator-owned public ConfigMap in the runner Pod; the default does
 not invent trust material.
 
 The public chart repository is
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc`; pull version `0.4.2` with:
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc`; pull version `0.5.0` with:
 
 ```sh
-helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.4.2
+helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.5.0
 ```
 
-The matching runner tag is `ghcr.io/apelogic-ai/steward-run:0.4.2`. Tags are
+The matching runner tag is `ghcr.io/apelogic-ai/steward-run:0.5.0`. Tags are
 for discovery only: resolve and pin the image digest from the release's
 `oss-release-manifest.json`.
 
-Follow the [v0.4.2 installation guide](../../docs/installation-v0.4.2.md)
+Follow the [v0.5.0 installation guide](../../docs/installation-v0.5.0.md)
 for prerequisites, public artifact verification or fork publication, GitHub
 App creation, values, installation, rotation, upgrade/rollback, and operator
 checks. Helm replaces lists when overlaying values, so preserve the complete

@@ -7,6 +7,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.5.0] - 2026-09-24
+
 ### Changed
 
 - The application chart now requires an explicit ARC controller namespace and
@@ -14,14 +18,16 @@ This project follows [Semantic Versioning](https://semver.org/).
   contract and supports exact ServiceAccount overrides.
 - Runner image validation now rejects the all-zero SHA-256 sentinel in both
   the application and library chart paths before reconciliation.
-- Reworked the v0.4.2 installation guide into executable public-release and
-  customer-fork paths with one common install, upgrade, and rollback flow.
+- Promoted the installation guide to v0.5.0 with executable public-release and
+  customer-fork paths plus one common install, upgrade, and rollback flow.
 
 ### Added
 
 - A released, read-only ARC controller preflight with stable text/JSON failure
   classifications, exact 0.14.2 compatibility checks, optional scale-set
   linkage verification, and documented least-privilege reads.
+- A signed public handoff with asset checksums and verified per-platform SLSA
+  provenance and SPDX SBOM attestations.
 - A third-party license inventory for the bundled action, runner image, and
   application-chart dependency.
 - This changelog.
@@ -74,7 +80,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/apelogic-ai/steward-run/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/apelogic-ai/steward-run/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/apelogic-ai/steward-run/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/apelogic-ai/steward-run/compare/v0.3.9...v0.4.0

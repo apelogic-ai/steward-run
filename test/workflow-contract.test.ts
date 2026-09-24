@@ -426,6 +426,23 @@ test("release gates semantic tags on signed scan evidence for every runnable ima
   );
 });
 
+test("portable OSS release publishes verified attestations, signatures, checksums, and preflight", async () => {
+  const release = await readFile(
+    new URL("../.github/workflows/portable-release.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(release, /provenance: mode=max,builder-id=\$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\/actions\/runs\/\$\{\{ github\.run_id \}\}/u);
+  assert.match(release, /sbom: generator=docker\.io\/docker\/buildkit-syft-scanner@sha256:[a-f0-9]{64}/u);
+  assert.match(release, /verify-release-attestations\.mjs/u);
+  assert.match(release, /release-attestation-summary\.json/u);
+  assert.match(release, /cosign sign --yes[\s\S]*?\$IMAGE@\$IMAGE_DIGEST/u);
+  assert.match(release, /cosign sign --yes[\s\S]*?\$CHART@\$CHART_DIGEST/u);
+  assert.match(release, /SHA256SUMS/u);
+  assert.match(release, /steward-run-arc-preflight\.mjs/u);
+  assert.match(release, /arc-controller-identity\.mjs/u);
+  assert.doesNotMatch(release, /provenance: false|sbom: false/u);
+});
+
 test("mock OIDC routing is isolated from production workflows", async () => {
   const productionSources = await Promise.all(
     ["../action.yml", "../.github/workflows/ci.yml", "../.github/workflows/release.yml", "../.github/workflows/steward-task.yml"].map(
@@ -450,7 +467,7 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
   const productionHandoffs = `${readme}\n${specification}\n${releaseWorkflow}`;
 
   assert.doesNotMatch(productionHandoffs, /steward-task\.yml@main/u);
-  assert.match(readme, /docs\/installation-v0\.4\.2\.md/u);
+  assert.match(readme, /docs\/installation-v0\.5\.0\.md/u);
   assert.doesNotMatch(readme, /uses:\s*apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml/u);
   assert.doesNotMatch(readme, /action-commit:/u);
   assert.match(releaseWorkflow, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));

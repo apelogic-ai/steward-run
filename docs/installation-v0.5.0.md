@@ -1,4 +1,4 @@
-# steward-run v0.4.2 installation guide
+# steward-run v0.5.0 installation guide
 
 This guide installs a released or fork-built `steward-run` runner scale set.
 The runner image, action, reusable workflow sources, and application chart are
@@ -9,7 +9,7 @@ and image build checks. The
 [`steward-task-customer.yml`](../.github/workflows/steward-task-customer.yml)
 reusable workflow is statically tested. GitHub App setup, live registration,
 governed-job execution, credential rotation, and additional acceptance tests
-are operator activities outside the v0.4.2 standalone OCI artifact handoff.
+are operator activities outside the v0.5.0 standalone OCI artifact handoff.
 
 ## Prerequisites
 
@@ -17,7 +17,8 @@ are operator activities outside the v0.4.2 standalone OCI artifact handoff.
   Enterprise Server is not covered: the fork-self-pinned reusable
   workflow uses GitHub.com `job.workflow_repository` and `job.workflow_sha`.
 - Kubernetes `1.30`–`1.34` with `linux/amd64` or `linux/arm64` schedulable
-  nodes, Helm `3.17+`, `kubectl`, `curl`, and `jq`. The chart
+  nodes, Helm `3.17+`, `kubectl`, `curl`, `jq`, and Node.js `24`. Install
+  Cosign `3.1+` when consuming the signed public handoff. The chart
   declares this Kubernetes range; live compatibility across every patch
   release has not been established.
 - Upstream ARC controller chart `gha-runner-scale-set-controller` `0.14.2` in
@@ -97,23 +98,28 @@ Both tracks must finish with these three shell variables:
 All common install and upgrade commands below use only those variables. Do
 not mix a public image with an unreviewed fork chart, or vice versa.
 
-#### Track A — consume the public v0.4.2 release (recommended)
+#### Track A — consume the public v0.5.0 release (recommended)
 
-Release `v0.4.2` publishes anonymous-pull OCI artifacts at:
+Release `v0.5.0` publishes anonymous-pull OCI artifacts at:
 
-- runner: `ghcr.io/apelogic-ai/steward-run:0.4.2`
-- chart repository: `oci://ghcr.io/apelogic-ai/charts/steward-run-arc`, version `0.4.2`
+- runner: `ghcr.io/apelogic-ai/steward-run:0.5.0`
+- chart repository: `oci://ghcr.io/apelogic-ai/charts/steward-run-arc`, version `0.5.0`
 
-Download the release manifest, validate its coordinates, and pull the released
-OCI chart. No source checkout or registry login is required:
+Download the signed release manifest, checksum inventory, read-only preflight,
+and released OCI chart. No source checkout or registry login is required:
 
 ```sh
-RELEASE_VERSION=0.4.2
+RELEASE_VERSION=0.5.0
 RELEASE_TAG="v$RELEASE_VERSION"
 CHART_OCI=oci://ghcr.io/apelogic-ai/charts/steward-run-arc
+RELEASE_BASE="https://github.com/apelogic-ai/steward-run/releases/download/$RELEASE_TAG"
 
-curl -fsSLo oss-release-manifest.json \
-  "https://github.com/apelogic-ai/steward-run/releases/download/$RELEASE_TAG/oss-release-manifest.json"
+for asset in oss-release-manifest.json oss-release-manifest.sigstore.json \
+  SHA256SUMS SHA256SUMS.sigstore.json release-attestation-summary.json \
+  image-signature.sigstore.json chart-signature.sigstore.json \
+  arc-controller-identity.mjs steward-run-arc-preflight.mjs; do
+  curl -fsSLO "$RELEASE_BASE/$asset"
+done
 test "$(jq -er '.version' oss-release-manifest.json)" = "$RELEASE_VERSION"
 IMAGE_REFERENCE="$(jq -er '.image' oss-release-manifest.json)"
 CHART_REFERENCE="$(jq -er '.chart' oss-release-manifest.json)"
@@ -129,12 +135,30 @@ printf '%s\n' "$HELM_PULL_OUTPUT"
 printf '%s\n' "$HELM_PULL_OUTPUT" | grep -Fx "Digest: $CHART_DIGEST"
 CHART_PACKAGE="$PWD/steward-run-arc-$RELEASE_VERSION.tgz"
 test -f "$CHART_PACKAGE"
+sha256sum -c SHA256SUMS
+RELEASE_IDENTITY="https://github.com/apelogic-ai/steward-run/.github/workflows/portable-release.yml@refs/heads/main"
+cosign verify-blob --bundle oss-release-manifest.sigstore.json \
+  --certificate-identity "$RELEASE_IDENTITY" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  oss-release-manifest.json
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity "$RELEASE_IDENTITY" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+cosign verify --experimental-oci11=true --certificate-identity "$RELEASE_IDENTITY" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE_REFERENCE"
+cosign verify --experimental-oci11=true --certificate-identity "$RELEASE_IDENTITY" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$CHART_REFERENCE"
+ARC_IDENTITY="$PWD/arc-controller-identity.mjs"
+ARC_PREFLIGHT="$PWD/steward-run-arc-preflight.mjs"
 ```
 
 `helm pull` prints the chart digest. It must equal the digest after `@` in
 `CHART_REFERENCE`. Retain `oss-release-manifest.json` with the deployment
 record. The version tag is for discovery; Kubernetes receives only the
-digest-pinned `IMAGE_REFERENCE`.
+digest-pinned `IMAGE_REFERENCE`. `release-attestation-summary.json` records
+the verified SLSA provenance and SPDX SBOM predicates for both runnable
+platforms; the OCI and blob signatures bind the handoff to the public release
+workflow identity.
 
 #### Track B — build and publish from a customer fork
 
@@ -166,6 +190,8 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 IMAGE_DIGEST="$(node -p 'require("./customer-build-metadata.json")["containerimage.digest"]')"
 IMAGE_REFERENCE="$IMAGE_REPOSITORY@$IMAGE_DIGEST"
 WORKFLOW_COMMIT="$SOURCE_COMMIT"
+ARC_IDENTITY="$PWD/scripts/arc-controller-identity.mjs"
+ARC_PREFLIGHT="$PWD/scripts/steward-run-arc-preflight.mjs"
 ```
 
 Verify `IMAGE_DIGEST` has the form `sha256:` plus 64 lowercase hex characters;
@@ -218,23 +244,39 @@ namespace. This is a customer-owned shared prerequisite, not part of the
 ARC_CONTROLLER_VERSION=0.14.2
 ARC_CONTROLLER_NAMESPACE=arc-system
 ARC_CONTROLLER_RELEASE=arc
-ARC_CONTROLLER_SERVICE_ACCOUNT=arc-gha-rs-controller
+ARC_CONTROLLER_SERVICE_ACCOUNT_OVERRIDE=
 
 helm install "$ARC_CONTROLLER_RELEASE" \
   --namespace "$ARC_CONTROLLER_NAMESPACE" --create-namespace \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller \
   --version "$ARC_CONTROLLER_VERSION"
-kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
-  -n "$ARC_CONTROLLER_NAMESPACE" rollout status \
-  deployment/arc-gha-rs-controller
-kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
-  -n "$ARC_CONTROLLER_NAMESPACE" get serviceaccount \
-  "$ARC_CONTROLLER_SERVICE_ACCOUNT"
 ```
 
 For an existing controller, do not reinstall it. Set the four variables above
-to its actual version, namespace, release, and ServiceAccount; verify the
-Deployment and CRDs. The supported scale-set/controller version is `0.14.2`.
+to its actual version, namespace, release, and optional ServiceAccount
+override. Resolve and verify the exact live identity before creating any
+registration object:
+
+```sh
+PREFLIGHT_ARGS=()
+if [[ -n "$ARC_CONTROLLER_SERVICE_ACCOUNT_OVERRIDE" ]]; then
+  PREFLIGHT_ARGS+=(--service-account-name "$ARC_CONTROLLER_SERVICE_ACCOUNT_OVERRIDE")
+fi
+ARC_CONTROLLER_IDENTITY="$(node "$ARC_PREFLIGHT" \
+  --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
+  --namespace "$ARC_CONTROLLER_NAMESPACE" --release-name "$ARC_CONTROLLER_RELEASE" \
+  "${PREFLIGHT_ARGS[@]}" --output json)"
+test "$(jq -er '.status' <<<"$ARC_CONTROLLER_IDENTITY")" = ok
+ARC_CONTROLLER_SERVICE_ACCOUNT="$(jq -er '.identity.serviceAccountName' <<<"$ARC_CONTROLLER_IDENTITY")"
+ARC_CONTROLLER_DEPLOYMENT="$(jq -er '.identity.deploymentName' <<<"$ARC_CONTROLLER_IDENTITY")"
+```
+
+The standard release `arc` resolves to
+`arc-system/arc-gha-rs-controller`; it does not resolve to
+`arc-system/arc-controller`. The preflight checks the namespace, Deployment,
+Helm release ownership, exact ServiceAccount, and supported ARC 0.14.2 labels
+using read-only API calls. See the
+[preflight reference and minimum RBAC](arc-controller-preflight.md).
 
 ### 3. Create and install the ARC registration GitHub App
 
@@ -395,6 +437,11 @@ helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
   install steward-run "$CHART_PACKAGE" -n "$RUNNER_NAMESPACE" \
   --create-namespace \
   --values customer-values.yaml
+node "$ARC_PREFLIGHT" \
+  --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
+  --namespace "$ARC_CONTROLLER_NAMESPACE" --release-name "$ARC_CONTROLLER_RELEASE" \
+  "${PREFLIGHT_ARGS[@]}" --runner-namespace "$RUNNER_NAMESPACE" \
+  --runner-scale-set-name steward-run
 ```
 
 The rendered file contains references and public configuration, not the App
@@ -482,7 +529,7 @@ does not use the GitHub App registration Secret. Inspect the job's `status`,
 `task-uid`, and `runtime-uid` outputs and the `result` artifact without
 printing token material. Live execution against a customer ARC registration
 and Steward/identity deployment is an operator validation step, not part of
-the v0.4.2 artifact publication. Do not use the ApeLogic-pinned workflows for
+the v0.5.0 artifact publication. Do not use the ApeLogic-pinned workflows for
 this installation.
 
 ## Upgrade
@@ -493,6 +540,13 @@ ARC compatibility, replace the literal runner image in `customer-values.yaml`,
 and update the caller workflow's literal source commit. Then lint, render, and
 upgrade only the product release. Keep the previous values, image digest,
 chart package, workflow commit, and Helm revision as rollback evidence.
+
+When upgrading from v0.4.2, add the now-required explicit
+`gha-runner-scale-set.controllerServiceAccount.namespace` and `.name` values
+shown above. Run the controller preflight first; do not retain the old
+`arc-system/arc-controller` assumption or allow upstream fallback discovery.
+Replace any all-zero image digest fixture with the released digest from the
+v0.5.0 handoff because placeholder digests now fail schema validation.
 
 ```sh
 helm lint "$CHART_PACKAGE" --strict --values customer-values.yaml
@@ -543,5 +597,5 @@ Task UIDs, and bounded outcome categories.
 
 CI checks chart values, upstream Secret key names, action inputs, README link,
 and dry-run creation/rotation syntax; it cannot prove GitHub registration or
-external Steward/identity behavior. Those live checks are outside the v0.4.2
+external Steward/identity behavior. Those live checks are outside the v0.5.0
 artifact-publication scope.

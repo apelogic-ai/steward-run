@@ -14,7 +14,7 @@ Installing this legacy library chart directly is intentionally unsupported. A
 Helm library chart is imported by a consumer chart; rendering it alone
 produces no workload. The supported customer scale-set installation path is
 the [installable application chart](../steward-run-arc/) and its
-[versioned guide](../../docs/installation-v0.4.2.md).
+[versioned guide](../../docs/installation-v0.5.0.md).
 
 Those concerns are environment authority: ARC installation, GitHub
 registration, runner scale, workload identity, certificate projection, egress,
@@ -35,7 +35,7 @@ and digest deliberately fail when a consumer renders the Pod fragment. The
 official public digest comes from the release manifest; an independent fork
 build has its **own** digest and evidence. The all-zero SHA-256 sentinel is a
 placeholder, not a released digest, and fails validation. See the
-[installation guide](../../docs/installation-v0.4.2.md).
+[installation guide](../../docs/installation-v0.5.0.md).
 
 `imagePullSecrets` contains only existing Secret names. The chart never creates
 or accepts registry credential values.

@@ -4,7 +4,7 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-Start with the [versioned installation guide](docs/installation-v0.4.2.md).
+Start with the [versioned installation guide](docs/installation-v0.5.0.md).
 Before registration or scale-set installation, run the released
 [read-only ARC controller preflight](docs/arc-controller-preflight.md) to verify
 the exact controller release, ServiceAccount, and supported ARC version.
@@ -12,11 +12,13 @@ The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. Release `v0.4.2` publishes the standalone
-multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.4.2` and the
+long-running Steward API service. Release `v0.5.0` publishes the standalone
+multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.5.0` and the
 application chart in
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.4.2`. The
-attached `oss-release-manifest.json` records both immutable OCI digests.
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.5.0`. The
+attached `oss-release-manifest.json` records both immutable OCI digests, the
+pinned ARC compatibility version, release-asset checksums, SLSA provenance,
+SPDX SBOM evidence, and keyless signature bundles.
 
 The client implements Steward's six-operation `/v1/tasks` lifecycle documented in
 `contracts/steward-run-v1.openapi.yaml`. It submits, uploads a workspace-relative tar archive,
@@ -119,7 +121,7 @@ URL plus existing App Secret reference. It defaults to zero idle runners and
 non-root, no-privilege runner Pods without a Kubernetes API token. The old
 [`steward-run` library chart](charts/steward-run/) remains an internal helper,
 not the customer installation path. The public runner and chart are published
-at the GHCR coordinates above; the [guide](docs/installation-v0.4.2.md)
+at the GHCR coordinates above; the [guide](docs/installation-v0.5.0.md)
 shows how to resolve their immutable digests or publish fork-owned artifacts.
 The supported runner artifact is one multi-platform OCI index containing
 `linux/amd64` and `linux/arm64`; the chart remains architecture-neutral and
@@ -173,4 +175,6 @@ input/output paths and remove it with the disposable cluster.
 
 The current `release.yml` remains the ApeLogic-internal ECR handoff.
 `portable-release.yml` publishes the public GHCR image, OCI chart, release
-manifest, and chart archive without AWS or ApeLogic infrastructure inputs.
+manifest, checksums, verified provenance/SBOM summary, signatures, chart
+archive, and read-only ARC preflight without AWS or ApeLogic infrastructure
+inputs.

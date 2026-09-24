@@ -4,9 +4,9 @@ import test from "node:test";
 
 test("README leads to the versioned, honest customer installation guide", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
-  const guide = await readFile(new URL("../docs/installation-v0.4.2.md", import.meta.url), "utf8");
+  const guide = await readFile(new URL("../docs/installation-v0.5.0.md", import.meta.url), "utf8");
   const rebuild = await readFile(new URL("../docs/customer-rebuild.md", import.meta.url), "utf8");
-  assert.match(readme, /docs\/installation-v0\.4\.2\.md/u);
+  assert.match(readme, /docs\/installation-v0\.5\.0\.md/u);
   assert.match(readme, /ARC controller[\s\S]*?external/u);
   assert.match(readme, /steward-run-arc/u);
   assert.doesNotMatch(readme, /this private source repository|There is currently no public steward-run runner image or OCI chart/u);
@@ -28,15 +28,20 @@ test("README leads to the versioned, honest customer installation guide", async 
   assert.doesNotMatch(guide, /--sbom=true|buildkit-syft-scanner:stable-1/u);
   assert.match(guide, /native[\s\S]*`linux\/amd64`[\s\S]*`linux\/arm64`/u);
   assert.match(guide, /legacy ApeLogic `steward-task\.yml` remains `linux\/amd64`-only/u);
-  assert.match(guide, /^# steward-run v0\.4\.2 installation guide$/mu);
+  assert.match(guide, /^# steward-run v0\.5\.0 installation guide$/mu);
+  assert.match(guide, /steward-run-arc-preflight\.mjs/u);
+  assert.match(guide, /controllerServiceAccount/u);
+  assert.match(guide, /arc-gha-rs-controller/u);
+  assert.match(guide, /sha256sum -c SHA256SUMS/u);
+  assert.match(guide, /cosign verify/u);
   assert.doesNotMatch(rebuild, /release workflow and DEV handoff remain unchanged/u);
   assert.match(rebuild, /Track B in the versioned installation guide/u);
   assert.match(rebuild, /intentionally duplicates\s+no shell commands/u);
 });
 
 test("the public and fork tracks converge on one packaged-chart runbook", async () => {
-  const guide = await readFile(new URL("../docs/installation-v0.4.2.md", import.meta.url), "utf8");
-  const publicTrack = guide.indexOf("#### Track A — consume the public v0.4.2 release");
+  const guide = await readFile(new URL("../docs/installation-v0.5.0.md", import.meta.url), "utf8");
+  const publicTrack = guide.indexOf("#### Track A — consume the public v0.5.0 release");
   const forkTrack = guide.indexOf("#### Track B — build and publish from a customer fork");
   const commonInstall = guide.indexOf("### 2. Install or verify the shared ARC controller");
   const prepareValues = guide.indexOf("cat > customer-values.yaml <<YAML");
@@ -55,7 +60,7 @@ test("the public and fork tracks converge on one packaged-chart runbook", async 
   assert.match(guide, /upgrade steward-run "\$CHART_PACKAGE"/u);
   assert.doesNotMatch(guide.slice(commonInstall), /(?:install|upgrade) steward-run charts\/steward-run-arc/u);
   assert.doesNotMatch(guide, /issue #43/u);
-  for (const tool of ["Helm `3.17+`", "`kubectl`", "`curl`", "`jq`"]) {
+  for (const tool of ["Helm `3.17+`", "`kubectl`", "`curl`", "`jq`", "Node.js `24`", "Cosign `3.1+`"]) {
     assert.ok(guide.includes(tool), `prerequisite: ${tool}`);
   }
 });
