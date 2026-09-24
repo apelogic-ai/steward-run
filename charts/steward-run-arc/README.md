@@ -8,6 +8,21 @@ an existing GitHub App Secret reference, a GitHub registration URL, and an
 operator-selected runner image pinned by `sha256` digest. No credential value is
 accepted in Helm values.
 
+The separately installed controller identity is also required explicitly at
+`gha-runner-scale-set.controllerServiceAccount.namespace` and `.name`; the
+chart never performs ARC's cluster-wide fallback discovery. For the pinned
+ARC controller chart 0.14.2, generate the standard identity from the exact
+controller Helm release name with:
+
+```sh
+node scripts/arc-controller-identity.mjs \
+  --namespace arc-system --release-name arc --output values
+```
+
+The standard `arc` release resolves to `arc-system/arc-gha-rs-controller`.
+Pass `--service-account-name` when the controller chart uses an explicit
+ServiceAccount override.
+
 The image must be a released immutable reference in
 `repository@sha256:<64 lowercase hex>` form. Mutable tags and sentinel values,
 including the all-zero SHA-256 placeholder, fail schema validation before any

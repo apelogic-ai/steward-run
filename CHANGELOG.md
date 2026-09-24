@@ -9,6 +9,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The application chart now requires an explicit ARC controller namespace and
+  ServiceAccount. A release-name resolver follows the pinned ARC 0.14.2 naming
+  contract and supports exact ServiceAccount overrides.
 - Runner image validation now rejects the all-zero SHA-256 sentinel in both
   the application and library chart paths before reconciliation.
 - Reworked the v0.4.2 installation guide into executable public-release and
