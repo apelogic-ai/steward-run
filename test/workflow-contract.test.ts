@@ -434,6 +434,15 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /provenance: mode=max,builder-id=\$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\/actions\/runs\/\$\{\{ github\.run_id \}\}/u);
   assert.match(release, /sbom: generator=docker\.io\/docker\/buildkit-syft-scanner@sha256:[a-f0-9]{64}/u);
   assert.match(release, /verify-release-attestations\.mjs/u);
+  assert.match(
+    release,
+    /verify-release-attestations\.mjs[\s\\\n]+"\$RUNNER_TEMP\/image-index\.json"/u,
+  );
+  assert.match(release, /resume_image_digest:/u);
+  assert.match(release, /resume_chart_digest:/u);
+  assert.match(release, /helm pull "oci:\/\/\$CHART"/u);
+  assert.match(release, /"\$image_digest" == "\$RESUME_IMAGE_DIGEST"/u);
+  assert.match(release, /"\$chart_digest" == "\$RESUME_CHART_DIGEST"/u);
   assert.match(release, /release-attestation-summary\.json/u);
   assert.match(release, /cosign sign --yes[\s\S]*?\$IMAGE@\$IMAGE_DIGEST/u);
   assert.match(release, /cosign sign --yes[\s\S]*?\$CHART@\$CHART_DIGEST/u);

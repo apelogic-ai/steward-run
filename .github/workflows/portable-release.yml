@@ -7,6 +7,16 @@ on:
         description: Semantic version matching package.json and the application chart
         required: true
         type: string
+      resume_image_digest:
+        description: Exact existing image digest when resuming an interrupted publication
+        required: false
+        default: ""
+        type: string
+      resume_chart_digest:
+        description: Exact existing chart digest when resuming an interrupted publication
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -33,6 +43,8 @@ jobs:
         id: refs
         env:
           VERSION: ${{ inputs.version }}
+          RESUME_IMAGE_DIGEST: ${{ inputs.resume_image_digest }}
+          RESUME_CHART_DIGEST: ${{ inputs.resume_chart_digest }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -45,11 +57,16 @@ jobs:
             printf 'release v%s already exists\n' "$VERSION" >&2
             exit 1
           fi
+          if [[ -n "$RESUME_IMAGE_DIGEST" || -n "$RESUME_CHART_DIGEST" ]]; then
+            [[ "$RESUME_IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+            [[ "$RESUME_CHART_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          fi
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           printf 'image=ghcr.io/%s/steward-run\n' "$owner" >> "$GITHUB_OUTPUT"
           printf 'chart=ghcr.io/%s/charts/steward-run-arc\n' "$owner" >> "$GITHUB_OUTPUT"
 
   build-amd64:
+    if: ${{ inputs.resume_image_digest == '' && inputs.resume_chart_digest == '' }}
     needs: preflight
     runs-on: ubuntu-24.04
     outputs:
@@ -79,6 +96,7 @@ jobs:
           sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
 
   build-arm64:
+    if: ${{ inputs.resume_image_digest == '' && inputs.resume_chart_digest == '' }}
     needs: preflight
     runs-on: ubuntu-24.04-arm
     outputs:
@@ -108,6 +126,15 @@ jobs:
           sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
 
   publish:
+    if: >-
+      ${{
+        always() &&
+        needs.preflight.result == 'success' &&
+        (
+          (inputs.resume_image_digest != '' && inputs.resume_chart_digest != '') ||
+          (needs.build-amd64.result == 'success' && needs.build-arm64.result == 'success')
+        )
+      }}
     permissions:
       contents: write
       packages: write
@@ -118,6 +145,8 @@ jobs:
       VERSION: ${{ inputs.version }}
       IMAGE: ${{ needs.preflight.outputs.image }}
       CHART: ${{ needs.preflight.outputs.chart }}
+      RESUME_IMAGE_DIGEST: ${{ inputs.resume_image_digest }}
+      RESUME_CHART_DIGEST: ${{ inputs.resume_chart_digest }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -152,33 +181,45 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - name: Reject existing version tags
+      - name: Validate version tag state
         run: |
           set -euo pipefail
-          if oras manifest fetch --descriptor "$IMAGE:$VERSION" >/dev/null 2>&1 ||
-             oras manifest fetch --descriptor "$CHART:$VERSION" >/dev/null 2>&1; then
+          image_descriptor="$(oras manifest fetch --descriptor "$IMAGE:$VERSION" 2>/dev/null || true)"
+          chart_descriptor="$(oras manifest fetch --descriptor "$CHART:$VERSION" 2>/dev/null || true)"
+          if [[ -n "$RESUME_IMAGE_DIGEST" ]]; then
+            [[ "$(jq -r '.digest // empty' <<<"$image_descriptor")" == "$RESUME_IMAGE_DIGEST" ]]
+            [[ "$(jq -r '.digest // empty' <<<"$chart_descriptor")" == "$RESUME_CHART_DIGEST" ]]
+          elif [[ -n "$image_descriptor" || -n "$chart_descriptor" ]]; then
             printf 'version tag already exists; published artifacts are immutable\n' >&2
             exit 1
           fi
       - name: Publish image and chart
         run: |
           set -euo pipefail
-          docker buildx imagetools create --tag "$IMAGE:$VERSION" \
-            "$IMAGE@${{ needs.build-amd64.outputs.digest }}" \
-            "$IMAGE@${{ needs.build-arm64.outputs.digest }}"
-          helm dependency build charts/steward-run-arc
-          helm package charts/steward-run-arc --destination "$RUNNER_TEMP"
-          helm push "$RUNNER_TEMP/steward-run-arc-$VERSION.tgz" \
-            "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
+          if [[ -n "$RESUME_IMAGE_DIGEST" ]]; then
+            helm pull "oci://$CHART" --version "$VERSION" --destination "$RUNNER_TEMP"
+          else
+            docker buildx imagetools create --tag "$IMAGE:$VERSION" \
+              "$IMAGE@${{ needs.build-amd64.outputs.digest }}" \
+              "$IMAGE@${{ needs.build-arm64.outputs.digest }}"
+            helm dependency build charts/steward-run-arc
+            helm package charts/steward-run-arc --destination "$RUNNER_TEMP"
+            helm push "$RUNNER_TEMP/steward-run-arc-$VERSION.tgz" \
+              "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
+          fi
           image_digest="$(oras manifest fetch --descriptor "$IMAGE:$VERSION" | jq -r '.digest')"
           chart_digest="$(oras manifest fetch --descriptor "$CHART:$VERSION" | jq -r '.digest')"
           [[ "$image_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
           [[ "$chart_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          if [[ -n "$RESUME_IMAGE_DIGEST" ]]; then
+            [[ "$image_digest" == "$RESUME_IMAGE_DIGEST" ]]
+            [[ "$chart_digest" == "$RESUME_CHART_DIGEST" ]]
+          fi
           docker buildx imagetools inspect "$IMAGE@$image_digest" --raw > "$RUNNER_TEMP/image-index.json"
           node scripts/verify-runnable-image-platforms.mjs "$RUNNER_TEMP/image-index.json" linux/amd64 linux/arm64
           oras cp --to-oci-layout "$IMAGE@$image_digest" "$RUNNER_TEMP/release-image:v$VERSION"
           node scripts/verify-release-attestations.mjs \
-            "$RUNNER_TEMP/release-image/index.json" "$RUNNER_TEMP/release-image" "$image_digest" \
+            "$RUNNER_TEMP/image-index.json" "$RUNNER_TEMP/release-image" "$image_digest" \
             "$RUNNER_TEMP/release-attestation-summary.json" linux/amd64 linux/arm64
           printf 'IMAGE_DIGEST=%s\nCHART_DIGEST=%s\n' "$image_digest" "$chart_digest" >> "$GITHUB_ENV"
       - name: Sign immutable OCI artifacts
