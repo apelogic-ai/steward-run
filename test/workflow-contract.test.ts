@@ -446,6 +446,7 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /release-attestation-summary\.json/u);
   assert.match(release, /cosign sign --yes[\s\S]*?\$IMAGE@\$IMAGE_DIGEST/u);
   assert.match(release, /cosign sign --yes[\s\S]*?\$CHART@\$CHART_DIGEST/u);
+  assert.match(release, /COSIGN_EXPERIMENTAL: "1"/u);
   assert.match(release, /SHA256SUMS/u);
   assert.match(release, /steward-run-arc-preflight\.mjs/u);
   assert.match(release, /arc-controller-identity\.mjs/u);
