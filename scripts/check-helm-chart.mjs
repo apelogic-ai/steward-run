@@ -75,7 +75,7 @@ try {
   );
   assert.throws(
     () => helm("template", "steward-run-render-test", fixture, "--values", values, "--set", `steward-run.image.digest=sha256:${"0".repeat(64)}`),
-    /image\.digest: Must not validate the schema/u,
+    /image(?:\.|\/)digest[\s\S]*(?:Must not validate the schema|'not' failed)/u,
     "a consumer must not render the all-zero placeholder digest",
   );
   assert.throws(
