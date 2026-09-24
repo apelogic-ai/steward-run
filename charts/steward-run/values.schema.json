@@ -8,7 +8,13 @@
       "type": "object", "additionalProperties": false, "required": ["repository", "digest", "pullPolicy"],
       "properties": {
         "repository": {"type": "string", "pattern": "^(?:$|\\S+)$"},
-        "digest": {"type": "string", "pattern": "^$|^sha256:[0-9a-f]{64}$"},
+        "digest": {
+          "type": "string",
+          "allOf": [
+            {"pattern": "^$|^sha256:[0-9a-f]{64}$"},
+            {"not": {"const": "sha256:0000000000000000000000000000000000000000000000000000000000000000"}}
+          ]
+        },
         "pullPolicy": {"enum": ["IfNotPresent", "Always", "Never"]}
       }
     },

@@ -43,7 +43,7 @@ try {
   assert.equal(pod.spec.containers.length, 1);
   assert.deepEqual(pod.spec.containers[0], {
     name: "runner",
-    image: "registry.example.com/apelogic/steward-run@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    image: "registry.example.com/apelogic/steward-run@sha256:b818f4eda4cb3610c7efbe9ec93c432155bb44af676e8443aa06139b98b5ad32",
     imagePullPolicy: "IfNotPresent",
     command: ["/home/runner/run.sh"],
     securityContext: {
@@ -72,6 +72,16 @@ try {
     () => helm("template", "steward-run-render-test", fixture, "--values", values, "--set", "steward-run.image.digest="),
     /steward-run\.image\.digest must be an exact lowercase sha256 OCI digest/,
     "a consumer must not render a mutable or empty runner image reference",
+  );
+  assert.throws(
+    () => helm("template", "steward-run-render-test", fixture, "--values", values, "--set", `steward-run.image.digest=sha256:${"0".repeat(64)}`),
+    /image\.digest: Must not validate the schema/u,
+    "a consumer must not render the all-zero placeholder digest",
+  );
+  assert.throws(
+    () => helm("template", "steward-run-render-test", fixture, "--values", values, "--skip-schema-validation", "--set", `steward-run.image.digest=sha256:${"0".repeat(64)}`),
+    /steward-run\.image\.digest must be a released immutable digest/u,
+    "template validation must identify the placeholder value path and remediation",
   );
   assert.throws(
     () => helm("template", "steward-run-render-test", fixture, "--values", values, "--set", "steward-run.image.repository="),

@@ -1,7 +1,7 @@
 steward-run:
   image:
     repository: registry.example.com/apelogic/steward-run
-    digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    digest: sha256:b818f4eda4cb3610c7efbe9ec93c432155bb44af676e8443aa06139b98b5ad32
     pullPolicy: IfNotPresent
   imagePullSecrets:
     - name: existing-registry-pull-secret

@@ -61,6 +61,14 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       /sha256|digest/u,
     );
     assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", `gha-runner-scale-set.template.spec.containers[0].image=registry.example/steward-run@sha256:${"0".repeat(64)}`),
+      /gha-runner-scale-set\.template\.spec\.containers\[0\]\.image|Must not validate/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--skip-schema-validation", "--set", `gha-runner-scale-set.template.spec.containers[0].image=registry.example/steward-run@sha256:${"0".repeat(64)}`),
+      /gha-runner-scale-set\.template\.spec\.containers\[0\]\.image must be a released immutable digest/u,
+    );
+    assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.githubConfigUrl=https://git.example.com/customer/example"),
       /githubConfigUrl/u,
     );

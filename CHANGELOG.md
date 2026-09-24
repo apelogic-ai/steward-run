@@ -9,6 +9,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Runner image validation now rejects the all-zero SHA-256 sentinel in both
+  the application and library chart paths before reconciliation.
 - Reworked the v0.4.2 installation guide into executable public-release and
   customer-fork paths with one common install, upgrade, and rollback flow.
 

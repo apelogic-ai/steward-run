@@ -29,7 +29,13 @@
                     "type": "object", "required": ["name", "image"],
                     "properties": {
                       "name": {"const": "runner"},
-                      "image": {"type": "string", "pattern": "^[^@\\s]+@sha256:[0-9a-f]{64}$"}
+                      "image": {
+                        "type": "string",
+                        "allOf": [
+                          {"pattern": "^[^@\\s]+@sha256:[0-9a-f]{64}$"},
+                          {"not": {"pattern": "^[^@\\s]+@sha256:0{64}$"}}
+                        ]
+                      }
                     }
                   }
                 }

@@ -8,6 +8,11 @@ an existing GitHub App Secret reference, a GitHub registration URL, and an
 operator-selected runner image pinned by `sha256` digest. No credential value is
 accepted in Helm values.
 
+The image must be a released immutable reference in
+`repository@sha256:<64 lowercase hex>` form. Mutable tags and sentinel values,
+including the all-zero SHA-256 placeholder, fail schema validation before any
+cluster reconciliation.
+
 The image digest may identify the supported multi-platform OCI index with
 `linux/amd64` and `linux/arm64` manifests. This chart deliberately sets no
 architecture selector; Kubernetes selects the matching image on each runner

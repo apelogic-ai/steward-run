@@ -10,7 +10,7 @@ gha-runner-scale-set:
         - name: customer-registry
       containers:
         - name: runner
-          image: registry.example/steward-run@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          image: registry.example/steward-run@sha256:b818f4eda4cb3610c7efbe9ec93c432155bb44af676e8443aa06139b98b5ad32
           imagePullPolicy: IfNotPresent
           command: ["/home/runner/run.sh"]
           securityContext:

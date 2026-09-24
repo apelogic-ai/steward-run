@@ -33,7 +33,8 @@ to the exact lowercase OCI digest recorded in the corresponding release
 evidence. A tag is never used at this boundary. The default empty repository
 and digest deliberately fail when a consumer renders the Pod fragment. The
 official public digest comes from the release manifest; an independent fork
-build has its **own** digest and evidence. See the
+build has its **own** digest and evidence. The all-zero SHA-256 sentinel is a
+placeholder, not a released digest, and fails validation. See the
 [installation guide](../../docs/installation-v0.4.2.md).
 
 `imagePullSecrets` contains only existing Secret names. The chart never creates
