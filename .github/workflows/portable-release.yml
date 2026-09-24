@@ -223,6 +223,8 @@ jobs:
             "$RUNNER_TEMP/release-attestation-summary.json" linux/amd64 linux/arm64
           printf 'IMAGE_DIGEST=%s\nCHART_DIGEST=%s\n' "$image_digest" "$chart_digest" >> "$GITHUB_ENV"
       - name: Sign immutable OCI artifacts
+        env:
+          COSIGN_EXPERIMENTAL: "1"
         run: |
           set -euo pipefail
           identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/portable-release.yml@$GITHUB_REF"
