@@ -12,8 +12,8 @@ contains no secrets; operators supply external registration and endpoint
 configuration. `main` is branch-protected.
 
 **Purpose.** The thin runner shell + the `steward-run` action — i.e. **the translator** from the
-DEV plan §2.1: validate the job's GitHub OIDC token → resolve the actor to a corporate email →
-call Steward's REST API as a *service principal acting-for the resolved user* → materialise
+DEV plan §2.1: discover the trusted task issuer → exchange the job's GitHub OIDC token →
+call Steward's REST API with the returned short-lived task token → materialise
 inputs into the sandbox and collect outputs back via the workspace. It is a product: source +
 tests + image + action, released **by version**, and **environment-agnostic**.
 
@@ -125,8 +125,9 @@ the resumed invocation (a new job, new token).
 | `inputs` | Workspace path(s) materialised into the sandbox as its input directory |
 | `outputs` | Sandbox output path(s) written back to the workspace |
 | `steward-api-url` | The control-plane API base (env-supplied; not hardcoded) |
-| `steward-ca-certificate-file` *(optional)* | Filesystem path to the PEM CA bundle trusted for Steward TLS |
-| `identity-exchange-url` *(authentication choice)* | HTTPS endpoint that exchanges GitHub OIDC for a short-lived Steward token |
+| `steward-ca-certificate-file` *(deprecated compatibility, default `""`)* | Filesystem path to a public PEM CA bundle extending process trust for Steward and Identity |
+| `identity-exchange-url` *(deprecated compatibility, default `""`)* | Explicit HTTPS exchange endpoint; when absent, discover from Steward |
+| `identity-exchange-audience` *(deprecated compatibility, default `""`)* | Exact GitHub OIDC audience for the explicit exchange URL only |
 | `oidc-audience` *(test authentication choice)* | Direct GitHub OIDC audience; allowed only with a loopback Steward API |
 | `bearer-token-file` *(authentication choice)* | Filesystem path to a rotating JWT with a maximum one-hour lifetime |
 | `agent-runtime` *(optional)* | Adopt an existing `AgentRuntime` id for the existing Workflow path only (D2) |
@@ -137,11 +138,32 @@ callers. The runner verifies that a direct invocation path is canonical, exists 
 trigger checkout, contains no symlink component, and names a regular file. This is an early local
 failure only: Steward's authenticated exact-commit source retrieval is authoritative.
 
-Exactly one authentication choice is required. Tokens are never action inputs. A CA is supplied as
-a file path rather than inline PEM, and custom trust is scoped to Steward requests. Remote API URLs
-must use HTTPS; missing/invalid CA files, untrusted chains, and hostname mismatch fail closed. The
-exchange always requests GitHub audience `apelogic-github-identity-exchange` and accepts only an
-exchanged token with sole audience `steward-task-api`.
+With no explicit authentication choice, production uses discovery. The action
+derives `/.well-known/oauth-protected-resource` from the exact Steward resource,
+requires that document to identify the same resource and exactly one issuer,
+then derives `/.well-known/oauth-authorization-server` from that issuer. The
+Identity document must repeat the exact issuer and provide `token_endpoint`.
+The GitHub audience is its non-empty, bounded `github_oidc_audience`, or the
+exact issuer URL when the field is absent. The action never derives an exchange
+endpoint from a hostname convention.
+
+Discovery allows no redirects, caps each JSON document at 64 KiB, permits at
+most two metadata requests, limits each request to five seconds and the total
+to ten seconds, and caches only a successful result for the action process.
+Every URL is bounded to 2,048 characters, rejects credentials/fragments, and
+requires HTTPS except for loopback tests. The returned token must retain the
+existing sole `steward-task-api` audience and lifetime checks.
+
+An explicit `identity-exchange-url` takes precedence and bypasses discovery;
+`identity-exchange-audience` is rejected without it. A CA is supplied only as
+a file path, never inline PEM, and extends rather than replaces system trust.
+An explicit URL with an empty audience retains the historical
+`apelogic-github-identity-exchange` audience.
+All three compatibility inputs are optional with empty defaults and emit
+sanitized deprecation notices when used. They cannot be removed without a
+separately reviewed major-version contract and migration. `oidc-audience` and
+`bearer-token-file` remain test/internal modes and are not public reusable-
+workflow inputs. Tokens are never action inputs.
 
 | Output | Meaning |
 |---|---|

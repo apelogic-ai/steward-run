@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import tar from "tar-stream";
 import { createInputArchive } from "../src/archive.ts";
+import { identityExchangeTokenProvider, STEWARD_TASK_API_AUDIENCE } from "../src/identity-exchange.ts";
 import { StewardClient, StewardRequestFailure, type Task } from "../src/steward-client.ts";
 import { createStewardFetch } from "../src/transport.ts";
 
@@ -158,6 +159,11 @@ function close(server: Server): Promise<void> {
   );
 }
 
+function jwt(payload: Record<string, unknown>): string {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.signature`;
+}
+
 test("a trusted private CA succeeds while a wrong CA and hostname mismatch fail closed", async () => {
   const root = await mkdtemp(join(tmpdir(), "steward-run-tls-"));
   const authority = await createCertificateAuthority(root, "trusted");
@@ -237,6 +243,50 @@ test("adding a private CA preserves the process default trust store", async () =
       },
     );
     assert.equal(child.stdout, "ok");
+  } finally {
+    await close(tlsServer.server);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the explicit exchange URL, audience, and CA-file compatibility path remains executable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "steward-run-explicit-auth-"));
+  const authority = await createCertificateAuthority(root, "explicit-auth");
+  const matching = await issueServerCertificate(root, authority, "explicit-auth", "IP:127.0.0.1");
+  const now = 1_800_000_000;
+  const sourceToken = jwt({ aud: "explicit-customer-audience" });
+  const stewardToken = jwt({ aud: STEWARD_TASK_API_AUDIENCE, iat: now, exp: now + 120 });
+  let exchangeRequests = 0;
+  const tlsServer = await startTlsServer(
+    matching.certificate,
+    matching.key,
+    (request, response) => {
+      exchangeRequests += 1;
+      assert.equal(request.url, "/v1/exchange");
+      assert.equal(request.headers.authorization, `Bearer ${sourceToken}`);
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ access_token: stewardToken, expires_in: 120, token_type: "Bearer" }));
+    },
+  );
+  try {
+    const provider = identityExchangeTokenProvider(
+      {
+        ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.actions.example/id",
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-secret",
+      },
+      `${tlsServer.url}/v1/exchange`,
+      async (input) => {
+        assert.equal(new URL(String(input)).searchParams.get("audience"), "explicit-customer-audience");
+        return new Response(JSON.stringify({ value: sourceToken }), {
+          headers: { "content-type": "application/json" },
+        });
+      },
+      () => now,
+      "explicit-customer-audience",
+      await createStewardFetch(authority.certificate),
+    );
+    assert.equal(await provider(), stewardToken);
+    assert.equal(exchangeRequests, 1);
   } finally {
     await close(tlsServer.server);
     await rm(root, { recursive: true, force: true });

@@ -7,7 +7,25 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+
+- Secure RFC 9728/RFC 8414 task-authentication discovery rooted at the exact
+  Steward API resource, with bounded metadata, zero redirects, exact issuer
+  validation, deterministic GitHub OIDC audience selection, and successful-
+  result caching.
+- Optional, operator-owned public CA ConfigMap support for ARC and library-
+  chart runners without placing certificate content in Helm values.
+
+### Changed
+
+- `identity-exchange-url`, `identity-exchange-audience`, and
+  `steward-ca-certificate-file` are optional empty-default compatibility inputs
+  in every supported workflow. Existing explicit callers remain deterministic
+  and receive sanitized deprecation notices; removal requires a separately
+  reviewed major-version migration.
+- System/process trust and discovery are now the default. See the
+  [unreleased notes](docs/release-notes-unreleased.md) for activation order and
+  rollback.
 
 ## [0.5.0] - 2026-09-24
 

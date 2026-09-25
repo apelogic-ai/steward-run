@@ -30,15 +30,17 @@ on:
         required: true
         type: string
       identity-exchange-url:
-        description: GitHub OIDC exchange endpoint
-        required: true
+        description: Deprecated compatibility exchange endpoint; empty discovers from Steward
+        required: false
         type: string
+        default: ""
       identity-exchange-audience:
-        description: Exact GitHub OIDC audience accepted by the Identity exchange
-        required: true
+        description: Deprecated compatibility audience; valid only with identity-exchange-url
+        required: false
         type: string
+        default: ""
       steward-ca-certificate-file:
-        description: Filesystem path to the Steward CA bundle
+        description: Deprecated compatibility CA path; empty uses system trust
         required: false
         type: string
         default: ""

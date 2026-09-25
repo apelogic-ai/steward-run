@@ -48,7 +48,6 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
         GITHUB_STEP_SUMMARY: summaryFile,
         GITHUB_WORKSPACE: workspace,
         STEWARD_RUN_API_URL: mock.url,
-        STEWARD_RUN_IDENTITY_EXCHANGE_URL: `${mock.url}/v1/exchange`,
         STEWARD_RUN_INPUTS: "in",
         STEWARD_RUN_OUTPUTS: "out/payload.bin",
         STEWARD_RUN_INVOCATION_PATH: invocationPath,
@@ -69,6 +68,8 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
     assert.equal(await readFile(summaryFile, "utf8"), "");
     assert.ok(mock.observations.oidcRequests >= 5);
     assert.equal(mock.observations.exchangeRequests, mock.observations.oidcRequests);
+    assert.equal(mock.observations.protectedResourceDiscoveryRequests, 1);
+    assert.equal(mock.observations.identityDiscoveryRequests, 1);
     assert.equal(mock.observations.sourceTokenAtSteward, 0);
     assert.equal(mock.observations.stewardTokenAtExchange, 0);
     assert.ok(mock.observations.stewardTokenAtSteward >= 5);
@@ -318,6 +319,7 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
           GITHUB_WORKSPACE: workspace,
           STEWARD_RUN_API_URL: mock.url,
           STEWARD_RUN_IDENTITY_EXCHANGE_URL: `${mock.url}/v1/exchange`,
+          STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE: "apelogic-github-identity-exchange",
           STEWARD_RUN_INPUTS: "in",
           STEWARD_RUN_OUTPUTS: "out",
           STEWARD_RUN_WORKFLOW: "repository-review@1",
@@ -413,6 +415,11 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
         );
       }
       assert.doesNotMatch(visible, /task agent exited|bundle-private-token|Bearer|header:/u);
+      assert.match(visible, /Deprecated steward-run input::identity-exchange-url/u);
+      assert.match(visible, /Deprecated steward-run input::identity-exchange-audience/u);
+      assert.doesNotMatch(visible, new RegExp(`${mock.url}/v1/exchange`, "u"));
+      assert.equal(mock.observations.protectedResourceDiscoveryRequests, 0);
+      assert.equal(mock.observations.identityDiscoveryRequests, 0);
       assert.match(await readFile(finalizationMarker, "utf8"), /^[0-9a-f-]+\n$/u);
     } finally {
       await mock.close();

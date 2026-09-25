@@ -233,7 +233,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   const workflow = parse(source) as {
     on: {
       workflow_call: {
-        inputs: Record<string, { required?: boolean; type?: string }>;
+        inputs: Record<string, { required?: boolean; type?: string; default?: string }>;
         outputs: Record<string, unknown>;
       };
     };
@@ -276,8 +276,14 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   }
   assert.equal(workflow.on.workflow_call.inputs["coding-agent-runtime"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["action-commit"], undefined);
-  assert.equal(workflow.on.workflow_call.inputs["identity-exchange-url"]?.required, true);
-  assert.equal(workflow.on.workflow_call.inputs["identity-exchange-audience"]?.required, true);
+  for (const name of [
+    "identity-exchange-url",
+    "identity-exchange-audience",
+    "steward-ca-certificate-file",
+  ]) {
+    assert.notEqual(workflow.on.workflow_call.inputs[name]?.required, true, name);
+    assert.equal(workflow.on.workflow_call.inputs[name]?.default, "", name);
+  }
   assert.equal(workflow.on.workflow_call.inputs["runner-label"]?.required, true);
   assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
@@ -359,7 +365,14 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   assert.equal(workflow.jobs.governed?.permissions?.contents, "read");
   assert.equal(workflow.jobs.governed?.permissions?.["id-token"], "write");
   assert.equal(workflow.jobs.governed?.container, undefined);
-  assert.equal(workflow.on.workflow_call.inputs["identity-exchange-audience"]?.required, true);
+  for (const name of [
+    "identity-exchange-url",
+    "identity-exchange-audience",
+    "steward-ca-certificate-file",
+  ]) {
+    assert.notEqual(workflow.on.workflow_call.inputs[name]?.required, true, name);
+    assert.equal((workflow.on.workflow_call.inputs[name] as { default?: string })?.default, "", name);
+  }
   assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.match(

@@ -4,7 +4,11 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-Start with the [versioned installation guide](docs/installation-v0.5.0.md).
+The [current installation and integration guide](docs/installation.md)
+describes source after v0.5.0 and must be used with a tagged release that
+contains that guide. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
+authoritative guide for v0.5.0, which predates authentication discovery and
+requires the explicit Identity exchange inputs.
 Before registration or scale-set installation, run the released
 [read-only ARC controller preflight](docs/arc-controller-preflight.md) to verify
 the exact controller release, ServiceAccount, and supported ARC version.
@@ -12,7 +16,8 @@ The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. Release `v0.5.0` publishes the standalone
+long-running Steward API service. The latest published release, `v0.5.0`,
+publishes the standalone
 multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.5.0` and the
 application chart in
 `oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.5.0`. The
@@ -59,13 +64,14 @@ Assertion failures may use exact agent exits 78 through 81. They retain the exis
 summary row remain unchanged; a staged assertion adds a second bounded annotation and summary
 row. Malformed reasons and any other numeric exits cannot select an assertion stage.
 
-For the existing ApeLogic workflow, production authentication exchanges a
-GitHub OIDC token with audience `apelogic-github-identity-exchange` for a
-short-lived token whose sole audience is `steward-task-api`. Customer
-installations must configure their own exact audience and exchange endpoint.
-The exchange validates the caller and resolves the actor before Steward sees
-the credential. The mock round trip proves token routing but does not prove a
-deployed exchange, Steward control plane, or real Agent Sandbox.
+Production authentication starts from `steward-api-url`. The action reads
+RFC 9728 protected-resource metadata, requires exactly one trusted Identity
+issuer, reads its RFC 8414 metadata, requests a GitHub OIDC assertion for the
+advertised `github_oidc_audience` (or the exact issuer URL when that field is
+absent), and exchanges it for a short-lived token whose sole audience is
+`steward-task-api`. No Identity hostname or path is inferred. The mock round
+trip proves this routing but does not prove a deployed Steward control plane,
+Identity service, or Agent Sandbox.
 
 ## Development
 
@@ -83,10 +89,11 @@ See `docs/steward-run-spec.md` for the product boundary.
 ## Action and workflow contract
 
 The action accepts an exact Task source (`workflow` or `invocation-path`),
-workspace-relative input/output paths, a Steward HTTPS URL, and a GitHub OIDC
-exchange HTTPS URL with its exact audience. `id-token: write` is the GitHub
-Actions input; a static Steward bearer token is not a customer production
-credential. The [customer ARC reusable workflow](.github/workflows/steward-task-customer.yml)
+workspace-relative input/output paths, and a Steward HTTPS URL. That is the
+complete production authentication configuration when Steward and Identity
+publish the discovery contract. `id-token: write` is the GitHub Actions input;
+a static Steward bearer token is not a customer production credential. The
+[customer ARC reusable workflow](.github/workflows/steward-task-customer.yml)
 checks out its own action from the exact reusable-workflow repository and
 commit reported by GitHub, not from a caller-selected action ref. The existing
 ApeLogic-pinned reusable workflows are not the fork installation path. See
@@ -121,7 +128,7 @@ URL plus existing App Secret reference. It defaults to zero idle runners and
 non-root, no-privilege runner Pods without a Kubernetes API token. The old
 [`steward-run` library chart](charts/steward-run/) remains an internal helper,
 not the customer installation path. The public runner and chart are published
-at the GHCR coordinates above; the [guide](docs/installation-v0.5.0.md)
+at the GHCR coordinates above; the [guide](docs/installation.md)
 shows how to resolve their immutable digests or publish fork-owned artifacts.
 The supported runner artifact is one multi-platform OCI index containing
 `linux/amd64` and `linux/arm64`; the chart remains architecture-neutral and
@@ -138,20 +145,29 @@ Git, and tar installation and must restrict the runner label to that local envir
 separate workflow identity and must be authorized explicitly by the identity policy; it is not a
 caller switch on the ARC workflow.
 
-`steward-ca-certificate-file` is an optional filesystem path to a PEM CA bundle used only for
-Steward API TLS. Missing or malformed files, an untrusted chain, and hostname mismatch fail closed.
-Remote Steward URLs must use HTTPS; plaintext HTTP is accepted only for loopback tests.
+System/process trust is the default for Steward discovery, Identity discovery,
+the exchange, and Steward API calls. `identity-exchange-url`,
+`identity-exchange-audience`, and `steward-ca-certificate-file` remain optional,
+empty-by-default compatibility inputs. Supplying an exchange URL bypasses
+discovery and preserves the existing explicit endpoint behavior; an explicit
+audience is valid only with that URL. Supplying a CA file extends the process
+trust roots for Steward and Identity. Each supplied compatibility input emits
+a value-free deprecation warning. Removal requires a separately reviewed
+major-version migration.
 
-For production direct-action use, set `identity-exchange-url`; the action requests and exchanges a
-fresh GitHub OIDC token for every Steward request. The exchange and Steward URLs require HTTPS.
-Plaintext is accepted only for loopback tests, and direct GitHub-token-to-Steward authentication
-through `oidc-audience` is also loopback-only.
+Discovery and all remote production URLs require HTTPS. Metadata URLs are
+derived by the RFC well-known rules, not hostname conventions. The action
+rejects credentials, fragments, issuer/resource mismatches, multiple issuers,
+redirects, oversized metadata, and bounded-request timeouts. Plaintext HTTP
+and direct GitHub-token-to-Steward authentication through `oidc-audience` are
+allowed only for loopback tests.
 
 For a standards-based service that projects rotating credentials into the job, set
 `bearer-token-file` to the projected file path. The action rereads the file for every request and
-accepts only JWTs with `iat` and `exp` whose total lifetime is at most one hour. Exactly one of
-`identity-exchange-url`, `oidc-audience`, and `bearer-token-file` is required. Token contents must
-never be supplied as action inputs.
+accepts only JWTs with `iat` and `exp` whose total lifetime is at most one hour.
+Direct OIDC and bearer-file modes are internal/test seams. If neither is set
+and no explicit exchange URL is supplied, discovery is selected. Token
+contents must never be supplied as action inputs.
 
 Local cross-product harnesses should use that same `bearer-token-file` input with a short-lived,
 pre-minted test JWT. This is the supported non-GitHub invocation seam; it does not bypass token

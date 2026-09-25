@@ -18,8 +18,12 @@ test("the customer workflow executes only its own immutable action with GitHub O
   assert.equal(job?.["runs-on"], "${{ inputs.runner-label }}");
   assert.deepEqual(Object.keys(workflow.on.workflow_call.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
   assert.deepEqual(Object.keys(workflow.on.workflow_call.inputs).sort(), Object.keys(existing.on.workflow_call.inputs).sort());
-  for (const required of ["runner-label", "input-artifact", "output-artifact", "steward-api-url", "identity-exchange-url", "identity-exchange-audience"]) {
+  for (const required of ["runner-label", "input-artifact", "output-artifact", "steward-api-url"]) {
     assert.equal(workflow.on.workflow_call.inputs[required]?.required, true, required);
+  }
+  for (const optional of ["identity-exchange-url", "identity-exchange-audience", "steward-ca-certificate-file"]) {
+    assert.notEqual(workflow.on.workflow_call.inputs[optional]?.required, true, optional);
+    assert.equal((workflow.on.workflow_call.inputs[optional] as { default?: string })?.default, "", optional);
   }
   for (const forbidden of ["action-repository", "action-ref", "action-commit", "container-image", "job-container-image"]) {
     assert.equal(workflow.on.workflow_call.inputs[forbidden], undefined, forbidden);
@@ -63,15 +67,15 @@ test("the customer workflow executes only its own immutable action with GitHub O
 
 test("the current handoff documents the fork workflow and published OSS artifacts", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
-  const guide = await readFile(new URL("../docs/installation-v0.5.0.md", import.meta.url), "utf8");
+  const guide = await readFile(new URL("../docs/installation.md", import.meta.url), "utf8");
   const rebuild = await readFile(new URL("../docs/customer-rebuild.md", import.meta.url), "utf8");
   for (const document of [readme, guide]) {
     assert.match(document, /steward-task-customer\.yml/u);
     assert.doesNotMatch(document, /customer reusable workflow is pending|customer workflow artifact is not approved|fork-self-pinned OIDC workflow and live governed-job evidence are still open/u);
   }
-  assert.match(rebuild, /Track B in the versioned installation guide/u);
+  assert.match(rebuild, /current installation guide/u);
   assert.match(guide, /job\.workflow_repository/u);
   assert.match(guide, /job\.workflow_sha/u);
   assert.match(guide, /GitHub Enterprise Server is not covered/u);
-  assert.match(guide, /ghcr\.io\/apelogic-ai\/steward-run:0\.5\.0/u);
+  assert.match(guide, /oauth-protected-resource/u);
 });

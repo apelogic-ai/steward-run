@@ -1,5 +1,10 @@
 # steward-run v0.5.0 installation guide
 
+> Historical release guide: this page describes the v0.5.0 interface, which
+> required explicit Identity exchange inputs. For current source and releases
+> after v0.5.0, use the [current installation guide](installation.md), where
+> authentication discovery and system trust are the defaults.
+
 This guide installs a released or fork-built `steward-run` runner scale set.
 The runner image, action, reusable workflow sources, and application chart are
 this product; the ARC controller, GitHub registration, customer Steward API,

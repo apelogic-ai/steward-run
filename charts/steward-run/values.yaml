@@ -10,6 +10,12 @@ image:
   digest: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
+# Optional reference to an operator-owned ConfigMap containing public CA
+# certificates. Leave configMapName empty to use only Node/process system trust.
+# The chart never accepts certificate contents or private keys.
+trustBundle:
+  configMapName: ""
+  key: ca.crt
 runner:
   # ARC requires the primary runner container to retain this name.
   name: runner

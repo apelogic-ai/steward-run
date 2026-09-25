@@ -30,16 +30,16 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// node_modules/events-universal/default.js
+// ../../node_modules/events-universal/default.js
 var require_default = __commonJS({
-  "node_modules/events-universal/default.js"(exports2, module2) {
+  "../../node_modules/events-universal/default.js"(exports2, module2) {
     module2.exports = require("events");
   }
 });
 
-// node_modules/fast-fifo/fixed-size.js
+// ../../node_modules/fast-fifo/fixed-size.js
 var require_fixed_size = __commonJS({
-  "node_modules/fast-fifo/fixed-size.js"(exports2, module2) {
+  "../../node_modules/fast-fifo/fixed-size.js"(exports2, module2) {
     module2.exports = class FixedFIFO {
       constructor(hwm) {
         if (!(hwm > 0) || (hwm - 1 & hwm) !== 0) throw new Error("Max size for a FixedFIFO should be a power of two");
@@ -77,9 +77,9 @@ var require_fixed_size = __commonJS({
   }
 });
 
-// node_modules/fast-fifo/index.js
+// ../../node_modules/fast-fifo/index.js
 var require_fast_fifo = __commonJS({
-  "node_modules/fast-fifo/index.js"(exports2, module2) {
+  "../../node_modules/fast-fifo/index.js"(exports2, module2) {
     var FixedFIFO = require_fixed_size();
     module2.exports = class FastFIFO {
       constructor(hwm) {
@@ -124,9 +124,9 @@ var require_fast_fifo = __commonJS({
   }
 });
 
-// node_modules/b4a/index.js
+// ../../node_modules/b4a/index.js
 var require_b4a = __commonJS({
-  "node_modules/b4a/index.js"(exports2, module2) {
+  "../../node_modules/b4a/index.js"(exports2, module2) {
     function isBuffer(value) {
       return Buffer.isBuffer(value) || value instanceof Uint8Array;
     }
@@ -281,9 +281,9 @@ var require_b4a = __commonJS({
   }
 });
 
-// node_modules/text-decoder/lib/pass-through-decoder.js
+// ../../node_modules/text-decoder/lib/pass-through-decoder.js
 var require_pass_through_decoder = __commonJS({
-  "node_modules/text-decoder/lib/pass-through-decoder.js"(exports2, module2) {
+  "../../node_modules/text-decoder/lib/pass-through-decoder.js"(exports2, module2) {
     var b4a = require_b4a();
     module2.exports = class PassThroughDecoder {
       constructor(encoding) {
@@ -302,9 +302,9 @@ var require_pass_through_decoder = __commonJS({
   }
 });
 
-// node_modules/text-decoder/lib/utf8-decoder.js
+// ../../node_modules/text-decoder/lib/utf8-decoder.js
 var require_utf8_decoder = __commonJS({
-  "node_modules/text-decoder/lib/utf8-decoder.js"(exports2, module2) {
+  "../../node_modules/text-decoder/lib/utf8-decoder.js"(exports2, module2) {
     var b4a = require_b4a();
     module2.exports = class UTF8Decoder {
       constructor() {
@@ -449,9 +449,9 @@ var require_utf8_decoder = __commonJS({
   }
 });
 
-// node_modules/text-decoder/index.js
+// ../../node_modules/text-decoder/index.js
 var require_text_decoder = __commonJS({
-  "node_modules/text-decoder/index.js"(exports2, module2) {
+  "../../node_modules/text-decoder/index.js"(exports2, module2) {
     var PassThroughDecoder = require_pass_through_decoder();
     var UTF8Decoder = require_utf8_decoder();
     module2.exports = class TextDecoder {
@@ -511,9 +511,9 @@ var require_text_decoder = __commonJS({
   }
 });
 
-// node_modules/streamx/lib/errors.js
+// ../../node_modules/streamx/lib/errors.js
 var require_errors = __commonJS({
-  "node_modules/streamx/lib/errors.js"(exports2, module2) {
+  "../../node_modules/streamx/lib/errors.js"(exports2, module2) {
     module2.exports = class StreamError extends Error {
       constructor(msg, code, fn = StreamError) {
         super(msg);
@@ -553,9 +553,9 @@ var require_errors = __commonJS({
   }
 });
 
-// node_modules/streamx/index.js
+// ../../node_modules/streamx/index.js
 var require_streamx = __commonJS({
-  "node_modules/streamx/index.js"(exports2, module2) {
+  "../../node_modules/streamx/index.js"(exports2, module2) {
     var { EventEmitter } = require_default();
     var FIFO = require_fast_fifo();
     var TextDecoder = require_text_decoder();
@@ -1584,9 +1584,9 @@ var require_streamx = __commonJS({
   }
 });
 
-// node_modules/tar-stream/headers.js
+// ../../node_modules/tar-stream/headers.js
 var require_headers = __commonJS({
-  "node_modules/tar-stream/headers.js"(exports2) {
+  "../../node_modules/tar-stream/headers.js"(exports2) {
     var b4a = require_b4a();
     var ZEROS = "0000000000000000000";
     var SEVENS = "7777777777777777777";
@@ -1845,9 +1845,9 @@ var require_headers = __commonJS({
   }
 });
 
-// node_modules/tar-stream/extract.js
+// ../../node_modules/tar-stream/extract.js
 var require_extract = __commonJS({
-  "node_modules/tar-stream/extract.js"(exports2, module2) {
+  "../../node_modules/tar-stream/extract.js"(exports2, module2) {
     var { Writable, Readable: Readable3, getStreamError } = require_streamx();
     var FIFO = require_fast_fifo();
     var b4a = require_b4a();
@@ -2179,9 +2179,9 @@ var require_extract = __commonJS({
   }
 });
 
-// node_modules/tar-stream/constants.js
+// ../../node_modules/tar-stream/constants.js
 var require_constants = __commonJS({
-  "node_modules/tar-stream/constants.js"(exports2, module2) {
+  "../../node_modules/tar-stream/constants.js"(exports2, module2) {
     var constants = {
       // just for envs without fs
       S_IFMT: 61440,
@@ -2199,9 +2199,9 @@ var require_constants = __commonJS({
   }
 });
 
-// node_modules/tar-stream/pack.js
+// ../../node_modules/tar-stream/pack.js
 var require_pack = __commonJS({
-  "node_modules/tar-stream/pack.js"(exports2, module2) {
+  "../../node_modules/tar-stream/pack.js"(exports2, module2) {
     var { Readable: Readable3, Writable, getStreamError } = require_streamx();
     var b4a = require_b4a();
     var constants = require_constants();
@@ -2433,9 +2433,9 @@ var require_pack = __commonJS({
   }
 });
 
-// node_modules/tar-stream/index.js
+// ../../node_modules/tar-stream/index.js
 var require_tar_stream = __commonJS({
-  "node_modules/tar-stream/index.js"(exports2) {
+  "../../node_modules/tar-stream/index.js"(exports2) {
     exports2.extract = require_extract();
     exports2.pack = require_pack();
   }
@@ -2449,11 +2449,118 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_promises7 = require("node:fs/promises");
 
-// src/auth.ts
-var import_promises = require("node:fs/promises");
+// src/oidc.ts
+async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImplementation = fetch, signal) {
+  if (!requestUrl || !requestToken) {
+    throw new Error(
+      "GitHub OIDC is unavailable; grant the job id-token: write permission"
+    );
+  }
+  const url = new URL(requestUrl);
+  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
+    throw new Error("GitHub OIDC request URL must use HTTPS except on loopback");
+  }
+  url.searchParams.set("audience", audience);
+  let response;
+  try {
+    response = await fetchImplementation(url, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${requestToken}`
+      },
+      ...signal === void 0 ? {} : { signal }
+    });
+  } catch {
+    if (signal?.aborted) {
+      const error = new Error("GitHub OIDC token request was cancelled");
+      error.name = "AbortError";
+      throw error;
+    }
+    throw new Error("GitHub OIDC token request failed");
+  }
+  if (!response.ok) {
+    throw new Error(`GitHub OIDC token request failed with status ${response.status}`);
+  }
+  const payload = await response.json().catch(() => void 0);
+  const value = payload && typeof payload === "object" && "value" in payload ? payload.value : void 0;
+  if (typeof value !== "string" || value.split(".").length !== 3) {
+    throw new Error("GitHub OIDC token response was incompatible");
+  }
+  return value;
+}
+function oidcTokenProvider(environment, audience, fetchImplementation = fetch) {
+  return async (signal) => getGitHubOidcToken(
+    environment.ACTIONS_ID_TOKEN_REQUEST_URL ?? "",
+    environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "",
+    audience,
+    fetchImplementation,
+    signal
+  );
+}
+
+// src/identity-exchange.ts
+var GITHUB_IDENTITY_EXCHANGE_AUDIENCE = "apelogic-github-identity-exchange";
+var STEWARD_TASK_API_AUDIENCE = "steward-task-api";
 var maximumTokenLifetimeSeconds = 60 * 60;
 var minimumRemainingLifetimeSeconds = 30;
 var allowedClockSkewSeconds = 60;
+var maximumExchangeUrlLength = 2048;
+var maximumExchangeResponseBytes = 64 * 1024;
+function isLoopback(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+function validateExchangeUrl(value) {
+  if (!value || value.length > maximumExchangeUrlLength) {
+    throw new Error(`identity-exchange-url is missing or exceeds ${maximumExchangeUrlLength} characters`);
+  }
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("identity-exchange-url must be a valid URL");
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback(url.hostname))) {
+    throw new Error("identity-exchange-url must use HTTPS except on loopback");
+  }
+  if (url.username || url.password || url.hash) {
+    throw new Error("identity-exchange-url must not contain credentials or a fragment");
+  }
+  if (url.href.length > maximumExchangeUrlLength) {
+    throw new Error(`identity-exchange-url exceeds ${maximumExchangeUrlLength} characters`);
+  }
+  return url;
+}
+async function exchangePayload(response) {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maximumExchangeResponseBytes) {
+    throw new Error("identity exchange response was incompatible");
+  }
+  if (!response.body) throw new Error("identity exchange response was incompatible");
+  const reader = response.body.getReader();
+  const chunks = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > maximumExchangeResponseBytes) {
+        await reader.cancel();
+        throw new Error("identity exchange response was incompatible");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks, length).toString("utf8"));
+  } catch {
+    throw new Error("identity exchange response was incompatible");
+  }
+}
 function jwtClaims(token) {
   const segments = token.split(".");
   if (segments.length !== 3 || segments.some((segment) => !segment)) return void 0;
@@ -2464,11 +2571,286 @@ function jwtClaims(token) {
     return void 0;
   }
 }
-function validateShortLivedToken(token, nowSeconds) {
+function hasExactAudience(value, expected) {
+  return value === expected || Array.isArray(value) && value.length === 1 && value[0] === expected;
+}
+function validateStewardToken(token, nowSeconds) {
   const claims = jwtClaims(token);
   const issuedAt = claims?.iat;
   const expiresAt = claims?.exp;
-  if (!Number.isInteger(issuedAt) || !Number.isInteger(expiresAt) || issuedAt > nowSeconds + allowedClockSkewSeconds || expiresAt - issuedAt > maximumTokenLifetimeSeconds || expiresAt - issuedAt <= 0 || expiresAt - nowSeconds < minimumRemainingLifetimeSeconds) {
+  if (!hasExactAudience(claims?.aud, STEWARD_TASK_API_AUDIENCE) || !Number.isInteger(issuedAt) || !Number.isInteger(expiresAt) || issuedAt > nowSeconds + allowedClockSkewSeconds || expiresAt - issuedAt > maximumTokenLifetimeSeconds || expiresAt - issuedAt <= 0 || expiresAt - nowSeconds < minimumRemainingLifetimeSeconds) {
+    throw new Error("identity exchange response was incompatible");
+  }
+  return token;
+}
+function identityExchangeTokenProvider(environment, exchangeUrl, sourceFetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3), audience = GITHUB_IDENTITY_EXCHANGE_AUDIENCE, exchangeFetchImplementation = sourceFetchImplementation) {
+  const url = validateExchangeUrl(exchangeUrl);
+  const getSourceToken = oidcTokenProvider(
+    environment,
+    audience,
+    sourceFetchImplementation
+  );
+  return async (signal) => {
+    const sourceToken = await getSourceToken(signal);
+    let response;
+    try {
+      response = await exchangeFetchImplementation(url, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${sourceToken}`
+        },
+        redirect: "manual",
+        ...signal === void 0 ? {} : { signal }
+      });
+    } catch {
+      if (signal?.aborted) {
+        const error = new Error("identity exchange request was cancelled");
+        error.name = "AbortError";
+        throw error;
+      }
+      throw new Error("identity exchange request failed");
+    }
+    if (!response.ok) {
+      throw new Error(`identity exchange request failed with status ${response.status}`);
+    }
+    const payload = await exchangePayload(response);
+    const candidate = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : void 0;
+    const token = candidate?.access_token;
+    const tokenType = candidate?.token_type;
+    const expiresIn = candidate?.expires_in;
+    if (typeof token !== "string" || tokenType !== "Bearer" || !Number.isInteger(expiresIn) || expiresIn <= 0 || expiresIn > maximumTokenLifetimeSeconds) {
+      throw new Error("identity exchange response was incompatible");
+    }
+    return validateStewardToken(token, now());
+  };
+}
+
+// src/auth-discovery.ts
+var GITHUB_OIDC_AUDIENCE_METADATA_FIELD = "github_oidc_audience";
+var maximumUrlLength = 2048;
+var defaultMaximumResponseBytes = 64 * 1024;
+var defaultRequestTimeoutMilliseconds = 5e3;
+var defaultTotalTimeoutMilliseconds = 1e4;
+function isLoopback2(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+function trustedUrl(value, label, allowQuery) {
+  if (!value || value.length > maximumUrlLength) {
+    throw new Error(`${label} is missing or exceeds ${maximumUrlLength} characters`);
+  }
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${label} must be a valid URL`);
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback2(url.hostname))) {
+    throw new Error(`${label} must use HTTPS except on loopback`);
+  }
+  if (url.username || url.password || url.hash) {
+    throw new Error(`${label} must not contain credentials or a fragment`);
+  }
+  if (!allowQuery && url.search) {
+    throw new Error(`${label} must not contain a query`);
+  }
+  if (url.href.length > maximumUrlLength) {
+    throw new Error(`${label} exceeds ${maximumUrlLength} characters`);
+  }
+  return url;
+}
+function wellKnownUrl(base, suffix) {
+  const result = new URL(base.href);
+  const path = base.pathname === "/" ? "" : base.pathname;
+  result.pathname = `/.well-known/${suffix}${path}`;
+  if (result.href.length > maximumUrlLength) {
+    throw new Error("discovery metadata URL exceeds the supported length");
+  }
+  return result;
+}
+function record(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+}
+function readWithSignal(reader, signal) {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const aborted = () => {
+      reader.cancel(signal.reason).then(
+        () => reject(signal.reason),
+        () => reject(signal.reason)
+      );
+    };
+    signal.addEventListener("abort", aborted, { once: true });
+    reader.read().then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted));
+  });
+}
+async function boundedJson(response, maximumBytes, label, signal) {
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (contentType !== "application/json") {
+    throw new Error(`${label} response must use application/json`);
+  }
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
+    throw new Error(`${label} response exceeds ${maximumBytes} bytes`);
+  }
+  if (!response.body) throw new Error(`${label} response was empty`);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await readWithSignal(reader, signal);
+      if (done) break;
+      length += value.byteLength;
+      if (length > maximumBytes) {
+        await reader.cancel();
+        throw new Error(`${label} response exceeds ${maximumBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = Buffer.concat(chunks, length).toString("utf8");
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error(`${label} response was not valid JSON`);
+  }
+}
+async function fetchMetadata(url, label, fetchImplementation, externalSignal, deadline, requestTimeoutMilliseconds, maximumResponseBytes) {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error("authentication discovery exceeded its total time limit");
+  const timeout = AbortSignal.timeout(Math.max(1, Math.min(remaining, requestTimeoutMilliseconds)));
+  const signal = externalSignal ? AbortSignal.any([externalSignal, timeout]) : timeout;
+  let response;
+  try {
+    response = await fetchImplementation(url, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      redirect: "manual",
+      signal
+    });
+  } catch {
+    if (externalSignal?.aborted) {
+      const error = new Error("authentication discovery was cancelled");
+      error.name = "AbortError";
+      throw error;
+    }
+    if (timeout.aborted) throw new Error(`${label} request timed out`);
+    throw new Error(`${label} request failed`);
+  }
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error(`${label} redirects are not allowed`);
+  }
+  if (!response.ok) throw new Error(`${label} request failed with status ${response.status}`);
+  try {
+    return await boundedJson(response, maximumResponseBytes, label, signal);
+  } catch (error) {
+    if (externalSignal?.aborted) {
+      const cancelled = new Error("authentication discovery was cancelled");
+      cancelled.name = "AbortError";
+      throw cancelled;
+    }
+    if (timeout.aborted) throw new Error(`${label} request timed out`);
+    throw error;
+  }
+}
+async function discoverTaskAuthentication(stewardApiUrl, fetchImplementation = fetch, signal, options = {}) {
+  const maximumResponseBytes = options.maximumResponseBytes ?? defaultMaximumResponseBytes;
+  const requestTimeoutMilliseconds = options.requestTimeoutMilliseconds ?? defaultRequestTimeoutMilliseconds;
+  const totalTimeoutMilliseconds = options.totalTimeoutMilliseconds ?? defaultTotalTimeoutMilliseconds;
+  if (!Number.isSafeInteger(maximumResponseBytes) || maximumResponseBytes <= 0 || !Number.isSafeInteger(requestTimeoutMilliseconds) || requestTimeoutMilliseconds <= 0 || !Number.isSafeInteger(totalTimeoutMilliseconds) || totalTimeoutMilliseconds <= 0) {
+    throw new Error("authentication discovery limits must be positive integers");
+  }
+  const deadline = Date.now() + totalTimeoutMilliseconds;
+  const resource = trustedUrl(stewardApiUrl, "steward-api-url", true);
+  const protectedResourcePayload = record(
+    await fetchMetadata(
+      wellKnownUrl(resource, "oauth-protected-resource"),
+      "Steward protected-resource metadata",
+      fetchImplementation,
+      signal,
+      deadline,
+      requestTimeoutMilliseconds,
+      maximumResponseBytes
+    )
+  );
+  const authorizationServers = protectedResourcePayload?.authorization_servers;
+  if (protectedResourcePayload?.resource !== stewardApiUrl || !Array.isArray(authorizationServers) || authorizationServers.length !== 1 || typeof authorizationServers[0] !== "string") {
+    throw new Error("Steward protected-resource metadata was incompatible");
+  }
+  const issuerIdentifier = authorizationServers[0];
+  const issuer = trustedUrl(issuerIdentifier, "Identity issuer", false);
+  const identityPayload = record(
+    await fetchMetadata(
+      wellKnownUrl(issuer, "oauth-authorization-server"),
+      "Identity authorization-server metadata",
+      fetchImplementation,
+      signal,
+      deadline,
+      requestTimeoutMilliseconds,
+      maximumResponseBytes
+    )
+  );
+  if (identityPayload?.issuer !== issuerIdentifier || typeof identityPayload.token_endpoint !== "string") {
+    throw new Error("Identity authorization-server metadata was incompatible");
+  }
+  trustedUrl(identityPayload.token_endpoint, "Identity token endpoint", true);
+  const advertisedAudience = identityPayload[GITHUB_OIDC_AUDIENCE_METADATA_FIELD];
+  if (advertisedAudience !== void 0 && (typeof advertisedAudience !== "string" || !advertisedAudience || advertisedAudience.length > 1024)) {
+    throw new Error("Identity authorization-server metadata advertised an invalid GitHub OIDC audience");
+  }
+  return {
+    issuer: issuerIdentifier,
+    exchangeUrl: identityPayload.token_endpoint,
+    githubOidcAudience: advertisedAudience ?? issuerIdentifier
+  };
+}
+function discoveredIdentityExchangeTokenProvider(environment, stewardApiUrl, sourceFetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3), discoveryAndExchangeFetchImplementation = sourceFetchImplementation, options = {}) {
+  let cached;
+  return async (signal) => {
+    cached ??= discoverTaskAuthentication(
+      stewardApiUrl,
+      discoveryAndExchangeFetchImplementation,
+      signal,
+      options
+    ).catch((error) => {
+      cached = void 0;
+      throw error;
+    });
+    const discovered = await cached;
+    return identityExchangeTokenProvider(
+      environment,
+      discovered.exchangeUrl,
+      sourceFetchImplementation,
+      now,
+      discovered.githubOidcAudience,
+      discoveryAndExchangeFetchImplementation
+    )(signal);
+  };
+}
+
+// src/auth.ts
+var import_promises = require("node:fs/promises");
+var maximumTokenLifetimeSeconds2 = 60 * 60;
+var minimumRemainingLifetimeSeconds2 = 30;
+var allowedClockSkewSeconds2 = 60;
+function jwtClaims2(token) {
+  const segments = token.split(".");
+  if (segments.length !== 3 || segments.some((segment) => !segment)) return void 0;
+  try {
+    const parsed = JSON.parse(Buffer.from(segments[1] ?? "", "base64url").toString("utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function validateShortLivedToken(token, nowSeconds) {
+  const claims = jwtClaims2(token);
+  const issuedAt = claims?.iat;
+  const expiresAt = claims?.exp;
+  if (!Number.isInteger(issuedAt) || !Number.isInteger(expiresAt) || issuedAt > nowSeconds + allowedClockSkewSeconds2 || expiresAt - issuedAt > maximumTokenLifetimeSeconds2 || expiresAt - issuedAt <= 0 || expiresAt - nowSeconds < minimumRemainingLifetimeSeconds2) {
     throw new Error("bearer-token file contains an invalid short-lived bearer token");
   }
   return token;
@@ -2526,9 +2908,9 @@ function readActionConfig(environment) {
     throw new Error("identity-exchange-audience requires identity-exchange-url");
   }
   const authenticationCount = [identityExchangeUrl, oidcAudience, bearerTokenFile].filter(Boolean).length;
-  if (authenticationCount !== 1) {
+  if (authenticationCount > 1) {
     throw new Error(
-      "configure exactly one authentication method: identity-exchange-url, oidc-audience, or bearer-token-file"
+      "configure at most one explicit authentication method: identity-exchange-url, oidc-audience, or bearer-token-file"
     );
   }
   if (oidcAudience) {
@@ -2549,7 +2931,7 @@ function readActionConfig(environment) {
     kind: "github-oidc-exchange",
     url: identityExchangeUrl,
     ...identityExchangeAudience ? { audience: identityExchangeAudience } : {}
-  } : oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : { kind: "bearer-token-file", path: bearerTokenFile };
+  } : oidcAudience ? { kind: "github-oidc", audience: oidcAudience } : bearerTokenFile ? { kind: "bearer-token-file", path: bearerTokenFile } : { kind: "github-oidc-discovery" };
   const common = {
     inputPaths: required(environment, "STEWARD_RUN_INPUTS"),
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
@@ -2562,6 +2944,27 @@ function readActionConfig(environment) {
     workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
     ...agentRuntime ? { agentRuntime } : {}
   };
+}
+var compatibilityInputNames = [
+  "identity-exchange-url",
+  "identity-exchange-audience",
+  "steward-ca-certificate-file"
+];
+function usedCompatibilityInputs(environment) {
+  const variables = {
+    "identity-exchange-url": "STEWARD_RUN_IDENTITY_EXCHANGE_URL",
+    "identity-exchange-audience": "STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE",
+    "steward-ca-certificate-file": "STEWARD_RUN_CA_CERTIFICATE_FILE"
+  };
+  return compatibilityInputNames.filter((name) => Boolean(environment[variables[name]]?.trim()));
+}
+function compatibilityInputNotice(name) {
+  const guidance = {
+    "identity-exchange-url": "omit it to discover authentication from Steward",
+    "identity-exchange-audience": "omit it with the explicit endpoint to use its historical default, or omit both exchange inputs to use discovery",
+    "steward-ca-certificate-file": "omit it to use normal process/system trust"
+  };
+  return `${name} is deprecated and retained for compatibility; ${guidance[name]}. Removal requires a separately reviewed major-version migration.`;
 }
 
 // src/failure-metadata.ts
@@ -2868,145 +3271,6 @@ var StewardRunFailure = class extends Error {
     this.metadata = safe;
   }
 };
-
-// src/oidc.ts
-async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImplementation = fetch, signal) {
-  if (!requestUrl || !requestToken) {
-    throw new Error(
-      "GitHub OIDC is unavailable; grant the job id-token: write permission"
-    );
-  }
-  const url = new URL(requestUrl);
-  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
-    throw new Error("GitHub OIDC request URL must use HTTPS except on loopback");
-  }
-  url.searchParams.set("audience", audience);
-  let response;
-  try {
-    response = await fetchImplementation(url, {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${requestToken}`
-      },
-      ...signal === void 0 ? {} : { signal }
-    });
-  } catch {
-    if (signal?.aborted) {
-      const error = new Error("GitHub OIDC token request was cancelled");
-      error.name = "AbortError";
-      throw error;
-    }
-    throw new Error("GitHub OIDC token request failed");
-  }
-  if (!response.ok) {
-    throw new Error(`GitHub OIDC token request failed with status ${response.status}`);
-  }
-  const payload = await response.json().catch(() => void 0);
-  const value = payload && typeof payload === "object" && "value" in payload ? payload.value : void 0;
-  if (typeof value !== "string" || value.split(".").length !== 3) {
-    throw new Error("GitHub OIDC token response was incompatible");
-  }
-  return value;
-}
-function oidcTokenProvider(environment, audience, fetchImplementation = fetch) {
-  return async (signal) => getGitHubOidcToken(
-    environment.ACTIONS_ID_TOKEN_REQUEST_URL ?? "",
-    environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "",
-    audience,
-    fetchImplementation,
-    signal
-  );
-}
-
-// src/identity-exchange.ts
-var GITHUB_IDENTITY_EXCHANGE_AUDIENCE = "apelogic-github-identity-exchange";
-var STEWARD_TASK_API_AUDIENCE = "steward-task-api";
-var maximumTokenLifetimeSeconds2 = 60 * 60;
-var minimumRemainingLifetimeSeconds2 = 30;
-var allowedClockSkewSeconds2 = 60;
-function isLoopback(hostname) {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-}
-function validateExchangeUrl(value) {
-  let url;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("identity-exchange-url must be a valid URL");
-  }
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback(url.hostname))) {
-    throw new Error("identity-exchange-url must use HTTPS except on loopback");
-  }
-  if (url.username || url.password || url.hash) {
-    throw new Error("identity-exchange-url must not contain credentials or a fragment");
-  }
-  return url;
-}
-function jwtClaims2(token) {
-  const segments = token.split(".");
-  if (segments.length !== 3 || segments.some((segment) => !segment)) return void 0;
-  try {
-    const parsed = JSON.parse(Buffer.from(segments[1] ?? "", "base64url").toString("utf8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : void 0;
-  } catch {
-    return void 0;
-  }
-}
-function hasExactAudience(value, expected) {
-  return value === expected || Array.isArray(value) && value.length === 1 && value[0] === expected;
-}
-function validateStewardToken(token, nowSeconds) {
-  const claims = jwtClaims2(token);
-  const issuedAt = claims?.iat;
-  const expiresAt = claims?.exp;
-  if (!hasExactAudience(claims?.aud, STEWARD_TASK_API_AUDIENCE) || !Number.isInteger(issuedAt) || !Number.isInteger(expiresAt) || issuedAt > nowSeconds + allowedClockSkewSeconds2 || expiresAt - issuedAt > maximumTokenLifetimeSeconds2 || expiresAt - issuedAt <= 0 || expiresAt - nowSeconds < minimumRemainingLifetimeSeconds2) {
-    throw new Error("identity exchange response was incompatible");
-  }
-  return token;
-}
-function identityExchangeTokenProvider(environment, exchangeUrl, sourceFetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3), audience = GITHUB_IDENTITY_EXCHANGE_AUDIENCE, exchangeFetchImplementation = sourceFetchImplementation) {
-  const url = validateExchangeUrl(exchangeUrl);
-  const getSourceToken = oidcTokenProvider(
-    environment,
-    audience,
-    sourceFetchImplementation
-  );
-  return async (signal) => {
-    const sourceToken = await getSourceToken(signal);
-    let response;
-    try {
-      response = await exchangeFetchImplementation(url, {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          authorization: `Bearer ${sourceToken}`
-        },
-        ...signal === void 0 ? {} : { signal }
-      });
-    } catch {
-      if (signal?.aborted) {
-        const error = new Error("identity exchange request was cancelled");
-        error.name = "AbortError";
-        throw error;
-      }
-      throw new Error("identity exchange request failed");
-    }
-    if (!response.ok) {
-      throw new Error(`identity exchange request failed with status ${response.status}`);
-    }
-    const payload = await response.json().catch(() => void 0);
-    const candidate = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : void 0;
-    const token = candidate?.access_token;
-    const tokenType = candidate?.token_type;
-    const expiresIn = candidate?.expires_in;
-    if (typeof token !== "string" || tokenType !== "Bearer" || !Number.isInteger(expiresIn) || expiresIn <= 0 || expiresIn > maximumTokenLifetimeSeconds2) {
-      throw new Error("identity exchange response was incompatible");
-    }
-    return validateStewardToken(token, now());
-  };
-}
 
 // src/lifecycle.ts
 var import_node_crypto3 = require("node:crypto");
@@ -3393,7 +3657,7 @@ var StewardRequestFailure = class extends Error {
     this.correlationId = sanitizeCorrelationId(details.correlationId);
   }
 };
-function record(value) {
+function record2(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
 }
 function hasOnlyKeys(value, keys) {
@@ -3401,11 +3665,11 @@ function hasOnlyKeys(value, keys) {
   return Object.keys(value).every((key) => allowed2.has(key));
 }
 function parseModelRef(value) {
-  const item = record(value);
+  const item = record2(value);
   return item && hasOnlyKeys(item, ["provider", "model"]) && typeof item.provider === "string" && item.provider && typeof item.model === "string" && item.model ? { provider: item.provider, model: item.model } : void 0;
 }
 function parseToolGrant(value) {
-  const item = record(value);
+  const item = record2(value);
   return item && hasOnlyKeys(item, ["provider", "resource", "action"]) && typeof item.provider === "string" && item.provider && typeof item.resource === "string" && item.resource && typeof item.action === "string" && item.action ? { provider: item.provider, resource: item.resource, action: item.action } : void 0;
 }
 function parseItems(value, parse) {
@@ -3414,7 +3678,7 @@ function parseItems(value, parse) {
   return parsed.every((item) => item !== void 0) ? parsed : void 0;
 }
 function parseTaskDelta(value) {
-  const delta = record(value);
+  const delta = record2(value);
   if (!delta || typeof delta.dimension !== "string") return void 0;
   if (delta.dimension === "budget" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling", "currency"]) && typeof delta.requested === "string" && typeof delta.ceiling === "string" && typeof delta.currency === "string") {
     return {
@@ -3461,11 +3725,11 @@ function parseTaskDelta(value) {
   return void 0;
 }
 function parseTaskDiagnostics(value) {
-  const diagnostics = record(value);
+  const diagnostics = record2(value);
   return diagnostics && hasOnlyKeys(diagnostics, ["executionLog"]) && (diagnostics.executionLog === "off" || diagnostics.executionLog === "full") ? { executionLog: diagnostics.executionLog } : void 0;
 }
 function parseDirectTaskEvidence(value) {
-  const evidence = record(value);
+  const evidence = record2(value);
   if (!evidence || !hasOnlyKeys(evidence, [
     "schemaVersion",
     "taskUid",
@@ -3480,12 +3744,12 @@ function parseDirectTaskEvidence(value) {
   ]) || evidence.schemaVersion !== "steward.task/source-authority-evidence/v1" || typeof evidence.taskUid !== "string" || !evidence.taskUid || typeof evidence.closureDigest !== "string" || !evidence.closureDigest) {
     return void 0;
   }
-  const sourceProvenance = record(evidence.sourceProvenance);
-  const invocation = record(evidence.invocation);
-  const packageSource = record(evidence.package);
-  const closure = record(evidence.closure);
-  const envelope = record(evidence.envelope);
-  const effectiveRequirements = record(evidence.effectiveRequirements);
+  const sourceProvenance = record2(evidence.sourceProvenance);
+  const invocation = record2(evidence.invocation);
+  const packageSource = record2(evidence.package);
+  const closure = record2(evidence.closure);
+  const envelope = record2(evidence.envelope);
+  const effectiveRequirements = record2(evidence.effectiveRequirements);
   const diagnostics = parseTaskDiagnostics(evidence.diagnostics);
   if (!sourceProvenance || !invocation || !packageSource || !closure || !envelope || !effectiveRequirements || !diagnostics) {
     return void 0;
@@ -3511,7 +3775,7 @@ function isUnboundFinalizationTask(task) {
   return task.runtimeUid === null && task.runtimeOwnership === "provisioned" && task.phase === "cancelled" && task.failureReason === void 0;
 }
 function parseTask(payload) {
-  const value = record(payload);
+  const value = record2(payload);
   const rawDeltas = value?.deltas ?? [];
   const deltas = parseItems(rawDeltas, parseTaskDelta);
   const diagnostics = value?.diagnostics === void 0 ? void 0 : parseTaskDiagnostics(value.diagnostics);
@@ -4303,7 +4567,8 @@ function privateCaFetch(ca) {
       });
       const options = {
         method,
-        headers: outgoingHeaders
+        headers: outgoingHeaders,
+        ...init.signal ? { signal: init.signal } : {}
       };
       const request = url.protocol === "https:" ? (0, import_node_https.request)(
         url,
@@ -4375,10 +4640,24 @@ async function main() {
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
+    for (const input of usedCompatibilityInputs(process.env)) {
+      process.stdout.write(
+        `::warning title=Deprecated steward-run input::${compatibilityInputNotice(input)}
+`
+      );
+    }
     const config = readActionConfig(process.env);
     const stewardFetch = await createStewardFetch(config.caCertificateFile);
     const getToken = (() => {
       switch (config.authentication.kind) {
+        case "github-oidc-discovery":
+          return discoveredIdentityExchangeTokenProvider(
+            process.env,
+            config.apiUrl,
+            void 0,
+            void 0,
+            stewardFetch
+          );
         case "github-oidc-exchange":
           return identityExchangeTokenProvider(
             process.env,

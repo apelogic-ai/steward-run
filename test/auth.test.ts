@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { shortLivedBearerTokenFileProvider } from "../src/auth.ts";
-import { readActionConfig } from "../src/config.ts";
+import {
+  compatibilityInputNotice,
+  readActionConfig,
+  usedCompatibilityInputs,
+} from "../src/config.ts";
 
 const baseEnvironment: NodeJS.ProcessEnv = {
   STEWARD_RUN_WORKFLOW: "repository-review@1",
@@ -18,7 +22,10 @@ function jwt(payload: Record<string, unknown>): string {
   return `${encode({ alg: "RS256", typ: "JWT" })}.${encode(payload)}.signature`;
 }
 
-test("action authentication selects exactly one pluggable credential source", () => {
+test("action authentication defaults to discovery and selects at most one explicit source", () => {
+  assert.deepEqual(readActionConfig(baseEnvironment).authentication, {
+    kind: "github-oidc-discovery",
+  });
   assert.deepEqual(
     readActionConfig({
       ...baseEnvironment,
@@ -44,7 +51,6 @@ test("action authentication selects exactly one pluggable credential source", ()
       .authentication,
     { kind: "bearer-token-file", path: "/var/run/token" },
   );
-  assert.throws(() => readActionConfig(baseEnvironment), /exactly one authentication method/);
   assert.throws(
     () =>
       readActionConfig({
@@ -52,7 +58,7 @@ test("action authentication selects exactly one pluggable credential source", ()
         STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://identity.example/v1/exchange",
         STEWARD_RUN_OIDC_AUDIENCE: "steward-task-api",
       }),
-    /exactly one authentication method/,
+    /at most one explicit authentication method/,
   );
   assert.throws(
     () =>
@@ -61,7 +67,7 @@ test("action authentication selects exactly one pluggable credential source", ()
         STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://identity.example/v1/exchange",
         STEWARD_RUN_BEARER_TOKEN_FILE: "/var/run/token",
       }),
-    /exactly one authentication method/,
+    /at most one explicit authentication method/,
   );
   assert.throws(
     () =>
@@ -71,6 +77,26 @@ test("action authentication selects exactly one pluggable credential source", ()
       }),
     /identity-exchange-audience requires identity-exchange-url/,
   );
+});
+
+test("compatibility input notices reveal names but never supplied values", () => {
+  const environment = {
+    ...baseEnvironment,
+    STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://secret.example/v1/exchange",
+    STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE: "secret-audience",
+    STEWARD_RUN_CA_CERTIFICATE_FILE: "/secret/ca.pem",
+  };
+  assert.deepEqual(usedCompatibilityInputs(environment), [
+    "identity-exchange-url",
+    "identity-exchange-audience",
+    "steward-ca-certificate-file",
+  ]);
+  assert.deepEqual(usedCompatibilityInputs(baseEnvironment), []);
+  const notices = usedCompatibilityInputs(environment).map(compatibilityInputNotice).join("\n");
+  for (const name of ["identity-exchange-url", "identity-exchange-audience", "steward-ca-certificate-file"]) {
+    assert.match(notices, new RegExp(name));
+  }
+  assert.doesNotMatch(notices, /secret\.example|secret-audience|\/secret\/ca\.pem/u);
 });
 
 test("direct GitHub OIDC authentication is restricted to loopback Steward tests", () => {

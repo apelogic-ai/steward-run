@@ -26,6 +26,8 @@ export interface MockSteward {
     finalized: boolean;
     oidcRequests: number;
     exchangeRequests: number;
+    protectedResourceDiscoveryRequests: number;
+    identityDiscoveryRequests: number;
     sourceTokenAtExchange: number;
     sourceTokenAtSteward: number;
     stewardTokenAtExchange: number;
@@ -170,6 +172,8 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
     finalized: false,
     oidcRequests: 0,
     exchangeRequests: 0,
+    protectedResourceDiscoveryRequests: 0,
+    identityDiscoveryRequests: 0,
     sourceTokenAtExchange: 0,
     sourceTokenAtSteward: 0,
     stewardTokenAtExchange: 0,
@@ -186,9 +190,30 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
   });
   const acceptedSourceTokens = new Set([sourceToken]);
   let payload: Buffer<ArrayBufferLike> | undefined;
+  let baseUrl = "";
   const server = createServer((request, response) => {
     void (async () => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      if (request.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
+        observations.protectedResourceDiscoveryRequests += 1;
+        json(response, 200, {
+          resource: baseUrl,
+          authorization_servers: [`${baseUrl}/identity`],
+        });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/.well-known/oauth-authorization-server/identity"
+      ) {
+        observations.identityDiscoveryRequests += 1;
+        json(response, 200, {
+          issuer: `${baseUrl}/identity`,
+          token_endpoint: `${baseUrl}/v1/exchange`,
+          github_oidc_audience: sourceAudience,
+        });
+        return;
+      }
       if (url.pathname === "/oidc") {
         observations.oidcRequests += 1;
         if (request.headers.authorization !== "Bearer request-secret") {
@@ -306,8 +331,9 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("mock server has no TCP address");
+  baseUrl = `http://127.0.0.1:${address.port}`;
   return {
-    url: `http://127.0.0.1:${address.port}`,
+    url: baseUrl,
     observations,
     close: async () =>
       new Promise<void>((resolve, reject) =>
