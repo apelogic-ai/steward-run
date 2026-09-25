@@ -2743,7 +2743,9 @@ async function fetchMetadata(url, label, fetchImplementation, externalSignal, de
   if (response.status >= 300 && response.status < 400) {
     throw new Error(`${label} redirects are not allowed`);
   }
-  if (!response.ok) throw new Error(`${label} request failed with status ${response.status}`);
+  if (response.status !== 200) {
+    throw new Error(`${label} request failed with status ${response.status}`);
+  }
   try {
     return await boundedJson(response, maximumResponseBytes, label, signal);
   } catch (error) {

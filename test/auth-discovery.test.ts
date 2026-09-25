@@ -210,6 +210,20 @@ test("discovery rejects redirects, oversized bodies, invalid media, and timeouts
       /failed with status 503/u,
     );
   });
+  for (const status of [201, 206]) {
+    await context.test(`successful non-200 status ${status}`, async () => {
+      await assert.rejects(
+        discoverTaskAuthentication(
+          "https://steward.example/",
+          async () => json({
+            resource: "https://steward.example/",
+            authorization_servers: ["https://identity.example/"],
+          }, status),
+        ),
+        new RegExp(`failed with status ${status}`, "u"),
+      );
+    });
+  }
   await context.test("timeout", async () => {
     await assert.rejects(
       discoverTaskAuthentication(
