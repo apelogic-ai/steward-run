@@ -6,12 +6,17 @@ export const STEWARD_TASK_API_AUDIENCE = "steward-task-api";
 const maximumTokenLifetimeSeconds = 60 * 60;
 const minimumRemainingLifetimeSeconds = 30;
 const allowedClockSkewSeconds = 60;
+const maximumExchangeUrlLength = 2_048;
+const maximumExchangeResponseBytes = 64 * 1_024;
 
 function isLoopback(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 function validateExchangeUrl(value: string): URL {
+  if (!value || value.length > maximumExchangeUrlLength) {
+    throw new Error(`identity-exchange-url is missing or exceeds ${maximumExchangeUrlLength} characters`);
+  }
   let url: URL;
   try {
     url = new URL(value);
@@ -24,7 +29,40 @@ function validateExchangeUrl(value: string): URL {
   if (url.username || url.password || url.hash) {
     throw new Error("identity-exchange-url must not contain credentials or a fragment");
   }
+  if (url.href.length > maximumExchangeUrlLength) {
+    throw new Error(`identity-exchange-url exceeds ${maximumExchangeUrlLength} characters`);
+  }
   return url;
+}
+
+async function exchangePayload(response: Response): Promise<unknown> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maximumExchangeResponseBytes) {
+    throw new Error("identity exchange response was incompatible");
+  }
+  if (!response.body) throw new Error("identity exchange response was incompatible");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > maximumExchangeResponseBytes) {
+        await reader.cancel();
+        throw new Error("identity exchange response was incompatible");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks, length).toString("utf8")) as unknown;
+  } catch {
+    throw new Error("identity exchange response was incompatible");
+  }
 }
 
 function jwtClaims(token: string): Record<string, unknown> | undefined {
@@ -87,6 +125,7 @@ export function identityExchangeTokenProvider(
           accept: "application/json",
           authorization: `Bearer ${sourceToken}`,
         },
+        redirect: "manual",
         ...(signal === undefined ? {} : { signal }),
       });
     } catch {
@@ -101,7 +140,7 @@ export function identityExchangeTokenProvider(
       throw new Error(`identity exchange request failed with status ${response.status}`);
     }
 
-    const payload: unknown = await response.json().catch(() => undefined);
+    const payload: unknown = await exchangePayload(response);
     const candidate =
       payload && typeof payload === "object" && !Array.isArray(payload)
         ? (payload as Record<string, unknown>)

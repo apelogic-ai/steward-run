@@ -1,6 +1,11 @@
 import { appendFile } from "node:fs/promises";
+import { discoveredIdentityExchangeTokenProvider } from "./auth-discovery.js";
 import { shortLivedBearerTokenFileProvider } from "./auth.js";
-import { readActionConfig } from "./config.js";
+import {
+  compatibilityInputNotice,
+  readActionConfig,
+  usedCompatibilityInputs,
+} from "./config.js";
 import {
   FAILURE_METADATA_VERSION,
   StewardRunFailure,
@@ -62,10 +67,23 @@ export async function main(): Promise<void> {
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
+    for (const input of usedCompatibilityInputs(process.env)) {
+      process.stdout.write(
+        `::warning title=Deprecated steward-run input::${compatibilityInputNotice(input)}\n`,
+      );
+    }
     const config = readActionConfig(process.env);
     const stewardFetch = await createStewardFetch(config.caCertificateFile);
     const getToken = (() => {
       switch (config.authentication.kind) {
+        case "github-oidc-discovery":
+          return discoveredIdentityExchangeTokenProvider(
+            process.env,
+            config.apiUrl,
+            undefined,
+            undefined,
+            stewardFetch,
+          );
         case "github-oidc-exchange":
           return identityExchangeTokenProvider(
             process.env,

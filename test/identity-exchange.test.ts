@@ -182,3 +182,33 @@ test("identity exchange fails closed on malformed or unsafe responses", async (c
     });
   }
 });
+
+test("identity exchange does not follow redirects or accept oversized responses", async () => {
+  const environment = {
+    ACTIONS_ID_TOKEN_REQUEST_TOKEN: "github-request-secret",
+    ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.actions.example/id",
+  };
+  const sourceFetch = async () => jsonResponse({ value: sourceToken });
+  const redirected = identityExchangeTokenProvider(
+    environment,
+    "https://identity.example/v1/exchange",
+    sourceFetch,
+    () => now,
+    GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
+    async (_input, init) => {
+      assert.equal(init?.redirect, "manual");
+      return new Response(null, { status: 302, headers: { location: "https://attacker.example/" } });
+    },
+  );
+  await assert.rejects(redirected(), /status 302/u);
+
+  const oversized = identityExchangeTokenProvider(
+    environment,
+    "https://identity.example/v1/exchange",
+    sourceFetch,
+    () => now,
+    GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
+    async () => new Response("x".repeat(64 * 1_024 + 1), { headers: { "content-type": "application/json" } }),
+  );
+  await assert.rejects(oversized(), /response was incompatible/u);
+});

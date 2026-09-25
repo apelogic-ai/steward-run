@@ -138,6 +138,7 @@ function privateCaFetch(ca: string): FetchLike {
       const options = {
         method,
         headers: outgoingHeaders,
+        ...(init.signal ? { signal: init.signal } : {}),
       };
       const request =
         url.protocol === "https:"

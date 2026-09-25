@@ -18,14 +18,17 @@ inputs:
     description: Steward control-plane API base URL
     required: true
   steward-ca-certificate-file:
-    description: Filesystem path to a PEM CA bundle trusted for the Steward API
+    description: Deprecated compatibility path to a PEM CA bundle for Steward and Identity; empty uses system trust
     required: false
+    default: ""
   identity-exchange-url:
-    description: HTTPS endpoint that exchanges GitHub OIDC for a short-lived Steward token
+    description: Deprecated compatibility exchange endpoint; empty discovers authentication from Steward
     required: false
+    default: ""
   identity-exchange-audience:
-    description: Optional exact GitHub OIDC audience accepted by the configured Identity exchange
+    description: Deprecated compatibility audience; valid only with identity-exchange-url
     required: false
+    default: ""
   oidc-audience:
     description: Test-only direct GitHub OIDC audience; allowed only with a loopback Steward API
     required: false

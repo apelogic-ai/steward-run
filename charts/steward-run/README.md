@@ -14,7 +14,7 @@ Installing this legacy library chart directly is intentionally unsupported. A
 Helm library chart is imported by a consumer chart; rendering it alone
 produces no workload. The supported customer scale-set installation path is
 the [installable application chart](../steward-run-arc/) and its
-[versioned guide](../../docs/installation-v0.5.0.md).
+[current installation guide](../../docs/installation.md).
 
 Those concerns are environment authority: ARC installation, GitHub
 registration, runner scale, workload identity, certificate projection, egress,
@@ -35,10 +35,19 @@ and digest deliberately fail when a consumer renders the Pod fragment. The
 official public digest comes from the release manifest; an independent fork
 build has its **own** digest and evidence. The all-zero SHA-256 sentinel is a
 placeholder, not a released digest, and fails validation. See the
-[installation guide](../../docs/installation-v0.5.0.md).
+[installation guide](../../docs/installation.md).
 
 `imagePullSecrets` contains only existing Secret names. The chart never creates
 or accepts registry credential values.
+
+`trustBundle.configMapName` is empty by default, so the runner uses ordinary
+Node/process system trust with no volume or environment override. Set it to an
+operator-owned ConfigMap name, and set `trustBundle.key` to its public CA
+bundle key, only for private PKI. The helper then renders one ConfigMap volume,
+a read-only `/etc/steward-run/trust` mount, and
+`NODE_EXTRA_CA_CERTS=/etc/steward-run/trust/ca.crt`. This extends Node's system
+roots before the action starts. The schema validates the object reference and
+key; certificate content and private keys are never chart values.
 
 The runner writes its GitHub Actions work directory, so
 `readOnlyRootFilesystem` is intentionally `false`. The chart still requires a
@@ -70,6 +79,9 @@ stewardRun:
     digest: sha256:<64 lowercase hex characters>
     pullPolicy: IfNotPresent
   imagePullSecrets: [] # or existing Secret names if the customer registry requires auth
+  trustBundle:
+    configMapName: "" # or an operator-owned public CA ConfigMap
+    key: ca.crt
   resources:
     requests:
       cpu: 250m

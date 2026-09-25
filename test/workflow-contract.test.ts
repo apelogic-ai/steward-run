@@ -7,8 +7,8 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "b114d38dd6d4c300a7bf80ec16567027dd5d4be1";
-const directPackageActionCommit = "b114d38dd6d4c300a7bf80ec16567027dd5d4be1";
+const actionCommit = "5ef90e86d5e87946372bd3283154a3998eda45f7";
+const directPackageActionCommit = "5ef90e86d5e87946372bd3283154a3998eda45f7";
 const buildkitImage =
   "docker.io/moby/buildkit@" +
   "sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8";
@@ -233,7 +233,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   const workflow = parse(source) as {
     on: {
       workflow_call: {
-        inputs: Record<string, { required?: boolean; type?: string }>;
+        inputs: Record<string, { required?: boolean; type?: string; default?: string }>;
         outputs: Record<string, unknown>;
       };
     };
@@ -276,8 +276,14 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   }
   assert.equal(workflow.on.workflow_call.inputs["coding-agent-runtime"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["action-commit"], undefined);
-  assert.equal(workflow.on.workflow_call.inputs["identity-exchange-url"]?.required, true);
-  assert.equal(workflow.on.workflow_call.inputs["identity-exchange-audience"]?.required, true);
+  for (const name of [
+    "identity-exchange-url",
+    "identity-exchange-audience",
+    "steward-ca-certificate-file",
+  ]) {
+    assert.notEqual(workflow.on.workflow_call.inputs[name]?.required, true, name);
+    assert.equal(workflow.on.workflow_call.inputs[name]?.default, "", name);
+  }
   assert.equal(workflow.on.workflow_call.inputs["runner-label"]?.required, true);
   assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
@@ -359,7 +365,14 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   assert.equal(workflow.jobs.governed?.permissions?.contents, "read");
   assert.equal(workflow.jobs.governed?.permissions?.["id-token"], "write");
   assert.equal(workflow.jobs.governed?.container, undefined);
-  assert.equal(workflow.on.workflow_call.inputs["identity-exchange-audience"]?.required, true);
+  for (const name of [
+    "identity-exchange-url",
+    "identity-exchange-audience",
+    "steward-ca-certificate-file",
+  ]) {
+    assert.notEqual(workflow.on.workflow_call.inputs[name]?.required, true, name);
+    assert.equal((workflow.on.workflow_call.inputs[name] as { default?: string })?.default, "", name);
+  }
   assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.match(
@@ -481,6 +494,13 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
   assert.doesNotMatch(readme, /uses:\s*apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml/u);
   assert.doesNotMatch(readme, /action-commit:/u);
   assert.match(releaseWorkflow, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));
+  for (const workflow of ["steward-task.yml", "steward-task-self-hosted.yml"]) {
+    assert.ok(
+      releaseWorkflow.includes(
+        `grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/${workflow}`,
+      ),
+    );
+  }
   assert.match(
     releaseWorkflow,
     /Reusable workflow:.*steward-task\.yml@\$GITHUB_SHA/u,

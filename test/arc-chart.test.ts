@@ -57,8 +57,14 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     const caRendered = template("steward-run", chart, "--namespace", "arc-runners", "--values", caFixture);
     const caObjects = parseAllDocuments(caRendered).map((doc) => doc.toJSON()).filter(Boolean) as Record<string, any>[];
     const caPod = caObjects.find((object) => object.kind === "AutoscalingRunnerSet")?.spec.template.spec;
-    assert.deepEqual(caPod.volumes.find((volume: any) => volume.name === "steward-run-ca")?.configMap, { name: "steward-run-ca" });
-    assert.deepEqual(caPod.containers[0].volumeMounts, [{ name: "steward-run-ca", mountPath: "/etc/steward-run", readOnly: true }]);
+    assert.deepEqual(caPod.volumes.find((volume: any) => volume.name === "steward-run-trust-bundle")?.configMap, {
+      name: "steward-run-ca",
+      items: [{ key: "ca.crt", path: "ca.crt" }],
+    });
+    assert.deepEqual(caPod.containers[0].volumeMounts, [{ name: "steward-run-trust-bundle", mountPath: "/etc/steward-run/trust", readOnly: true }]);
+    assert.deepEqual(caPod.containers[0].env, [{ name: "NODE_EXTRA_CA_CERTS", value: "/etc/steward-run/trust/ca.crt" }]);
+    assert.equal(pod.volumes, undefined);
+    assert.equal(pod.containers[0].env, undefined);
     assert.ok(objects.some((object) => object.kind === "ServiceAccount"));
     assert.ok(objects.some((object) => object.kind === "Role"));
     assert.ok(!objects.some((object) => object.kind === "Deployment" || object.kind === "CustomResourceDefinition"));
@@ -84,6 +90,14 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.controllerServiceAccount.name="),
       /controllerServiceAccount\.name/u,
     );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", caFixture, "--set", "gha-runner-scale-set.template.spec.volumes[0].configMap.name="),
+      /configMap\.name|valid non-empty ConfigMap name/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", caFixture, "--set", "gha-runner-scale-set.template.spec.containers[0].env=null"),
+      /containers(?:\.|\/)0(?:\.|\/)env|requires exactly one ConfigMap volume, runner mount, and NODE_EXTRA_CA_CERTS entry/u,
+    );
     const overridden = template(
       "steward-run",
       chart,
@@ -106,17 +120,21 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       namespace: "customer-controllers",
     }]);
     const metadata = readFileSync(join(chart, "Chart.yaml"), "utf8");
+    const schema = readFileSync(join(chart, "values.schema.json"), "utf8");
     assert.match(metadata, /type: application/u);
     assert.match(metadata, /version: 0\.14\.2/u);
     assert.doesNotMatch(metadata, /apelogic-ai\/steward-run/u);
+    for (const field of ["configMap", "items", "env", "volumeMounts", "mountPath", "readOnly"]) {
+      assert.ok(schema.includes(`\"${field}\"`), `trust-bundle schema: ${field}`);
+    }
 
     const upstreamValues = execFileSync("tar", ["-xOf", join(chart, "charts", "gha-runner-scale-set-0.14.2.tgz"), "gha-runner-scale-set/values.yaml"], { encoding: "utf8" });
     for (const key of ["github_app_id", "github_app_installation_id", "github_app_private_key", "githubConfigSecret", "imagePullSecrets"]) {
       assert.ok(upstreamValues.includes(key) || (key === "imagePullSecrets" && upstreamValues.includes("template:")), `upstream ARC contract: ${key}`);
     }
-    const guide = readFileSync(join(root, "docs", "installation-v0.5.0.md"), "utf8");
+    const guide = readFileSync(join(root, "docs", "installation.md"), "utf8");
     const action = readFileSync(join(root, "action.yml"), "utf8");
-    for (const key of ["github_app_id", "github_app_installation_id", "github_app_private_key", "imagePullSecrets", "ca.crt"]) {
+    for (const key of ["ConfigMap", "NODE_EXTRA_CA_CERTS", "ca.crt"]) {
       assert.ok(guide.includes(key), `inventory: ${key}`);
     }
     assert.match(action, /identity-exchange-url/u);

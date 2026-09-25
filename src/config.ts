@@ -10,6 +10,7 @@ export type WorkflowConfig = CommonWorkflowConfig & (
 );
 
 export type ActionAuthentication =
+  | { kind: "github-oidc-discovery" }
   | { kind: "github-oidc-exchange"; url: string; audience?: string }
   | { kind: "github-oidc"; audience: string }
   | { kind: "bearer-token-file"; path: string };
@@ -57,9 +58,9 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
   }
   const authenticationCount = [identityExchangeUrl, oidcAudience, bearerTokenFile].filter(Boolean)
     .length;
-  if (authenticationCount !== 1) {
+  if (authenticationCount > 1) {
     throw new Error(
-      "configure exactly one authentication method: identity-exchange-url, oidc-audience, or bearer-token-file",
+      "configure at most one explicit authentication method: identity-exchange-url, oidc-audience, or bearer-token-file",
     );
   }
   if (oidcAudience) {
@@ -85,7 +86,9 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
       }
     : oidcAudience
       ? { kind: "github-oidc", audience: oidcAudience }
-      : { kind: "bearer-token-file", path: bearerTokenFile as string };
+      : bearerTokenFile
+        ? { kind: "bearer-token-file", path: bearerTokenFile }
+        : { kind: "github-oidc-discovery" };
   const common = {
     inputPaths: required(environment, "STEWARD_RUN_INPUTS"),
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
@@ -100,4 +103,32 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
         workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
         ...(agentRuntime ? { agentRuntime } : {}),
       };
+}
+
+export const compatibilityInputNames = [
+  "identity-exchange-url",
+  "identity-exchange-audience",
+  "steward-ca-certificate-file",
+] as const;
+
+export function usedCompatibilityInputs(
+  environment: NodeJS.ProcessEnv,
+): Array<(typeof compatibilityInputNames)[number]> {
+  const variables: Record<(typeof compatibilityInputNames)[number], string> = {
+    "identity-exchange-url": "STEWARD_RUN_IDENTITY_EXCHANGE_URL",
+    "identity-exchange-audience": "STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE",
+    "steward-ca-certificate-file": "STEWARD_RUN_CA_CERTIFICATE_FILE",
+  };
+  return compatibilityInputNames.filter((name) => Boolean(environment[variables[name]]?.trim()));
+}
+
+export function compatibilityInputNotice(
+  name: (typeof compatibilityInputNames)[number],
+): string {
+  const guidance: Record<(typeof compatibilityInputNames)[number], string> = {
+    "identity-exchange-url": "omit it to discover authentication from Steward",
+    "identity-exchange-audience": "omit it with the explicit endpoint to use its historical default, or omit both exchange inputs to use discovery",
+    "steward-ca-certificate-file": "omit it to use normal process/system trust",
+  };
+  return `${name} is deprecated and retained for compatibility; ${guidance[name]}. Removal requires a separately reviewed major-version migration.`;
 }

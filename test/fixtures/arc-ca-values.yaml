@@ -7,9 +7,12 @@ gha-runner-scale-set:
   template:
     spec:
       volumes:
-        - name: steward-run-ca
+        - name: steward-run-trust-bundle
           configMap:
             name: steward-run-ca
+            items:
+              - key: ca.crt
+                path: ca.crt
       containers:
         - name: runner
           image: registry.example/steward-run@sha256:b818f4eda4cb3610c7efbe9ec93c432155bb44af676e8443aa06139b98b5ad32
@@ -29,6 +32,9 @@ gha-runner-scale-set:
               cpu: "1"
               memory: 1Gi
           volumeMounts:
-            - name: steward-run-ca
-              mountPath: /etc/steward-run
+            - name: steward-run-trust-bundle
+              mountPath: /etc/steward-run/trust
               readOnly: true
+          env:
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/steward-run/trust/ca.crt

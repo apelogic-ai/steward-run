@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseAllDocuments } from "yaml";
@@ -68,6 +68,18 @@ try {
   });
   assert.equal(pod.spec.serviceAccountName, undefined);
   assert.equal(pod.spec.containers[0].env, undefined);
+  assert.equal(pod.spec.volumes, undefined);
+  const trustedValues = join(helmHome, "trusted-values.yaml");
+  const trustedSource = `${readFileSync(values, "utf8")}\n  trustBundle:\n    configMapName: customer-public-ca\n    key: company-root.pem\n`;
+  writeFileSync(trustedValues, trustedSource);
+  const trustedOutput = helm("template", "steward-run-render-test", fixture, "--values", trustedValues);
+  const trustedPod = parseAllDocuments(trustedOutput).map((document) => document.toJSON()).filter(Boolean)[0];
+  assert.deepEqual(trustedPod.spec.volumes, [{
+    name: "steward-run-trust-bundle",
+    configMap: { name: "customer-public-ca", items: [{ key: "company-root.pem", path: "ca.crt" }] },
+  }]);
+  assert.deepEqual(trustedPod.spec.containers[0].env, [{ name: "NODE_EXTRA_CA_CERTS", value: "/etc/steward-run/trust/ca.crt" }]);
+  assert.deepEqual(trustedPod.spec.containers[0].volumeMounts, [{ name: "steward-run-trust-bundle", mountPath: "/etc/steward-run/trust", readOnly: true }]);
   assert.throws(
     () => helm("template", "steward-run-render-test", fixture, "--values", values, "--set", "steward-run.image.digest="),
     /steward-run\.image\.digest must be an exact lowercase sha256 OCI digest/,

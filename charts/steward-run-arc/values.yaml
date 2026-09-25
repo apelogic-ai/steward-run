@@ -18,6 +18,9 @@ gha-runner-scale-set:
     type: ""
   template:
     spec:
+      # Publicly trusted Steward/Identity endpoints require no trust volume.
+      # For private PKI, use the exact operator-owned ConfigMap volume, runner
+      # mount, and NODE_EXTRA_CA_CERTS shape documented in this chart's README.
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true

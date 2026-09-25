@@ -1,9 +1,56 @@
-{{- range $index, $container := (index .Values "gha-runner-scale-set").template.spec.containers -}}
+{{- $spec := (index .Values "gha-runner-scale-set").template.spec -}}
+{{- range $index, $container := $spec.containers -}}
 {{- $path := printf "gha-runner-scale-set.template.spec.containers[%d].image" $index -}}
 {{- if not (regexMatch "^[^@\\s]+@sha256:[0-9a-f]{64}$" $container.image) -}}
 {{- fail (printf "%s must be a released immutable image reference in repository@sha256:<64 lowercase hex> form" $path) -}}
 {{- end -}}
 {{- if regexMatch "^[^@\\s]+@sha256:0{64}$" $container.image -}}
 {{- fail (printf "%s must be a released immutable digest; the all-zero placeholder is invalid" $path) -}}
+{{- end -}}
+{{- end -}}
+
+{{- $volumeCount := 0 -}}
+{{- range $volume := ($spec.volumes | default (list)) -}}
+{{- if eq ($volume.name | default "") "steward-run-trust-bundle" -}}
+{{- $volumeCount = add1 $volumeCount -}}
+{{- $configMapName := dig "configMap" "name" "" $volume -}}
+{{- if or (gt (len $configMapName) 253) (not (regexMatch "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]*[a-z0-9])?)*$" $configMapName)) -}}
+{{- fail "gha-runner-scale-set.template.spec.volumes steward-run-trust-bundle must reference a valid non-empty ConfigMap name" -}}
+{{- end -}}
+{{- $items := (dig "configMap" "items" (list) $volume) -}}
+{{- if ne (len $items) 1 -}}
+{{- fail "steward-run-trust-bundle ConfigMap must project exactly one public CA key" -}}
+{{- end -}}
+{{- $item := index $items 0 -}}
+{{- if or (gt (len ($item.key | default "")) 253) (not (regexMatch "^[A-Za-z0-9._-]+$" ($item.key | default ""))) (ne ($item.path | default "") "ca.crt") -}}
+{{- fail "steward-run-trust-bundle ConfigMap item must use a non-empty key and path ca.crt" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $mountCount := 0 -}}
+{{- $envCount := 0 -}}
+{{- range $container := $spec.containers -}}
+{{- if eq $container.name "runner" -}}
+{{- range $mount := ($container.volumeMounts | default (list)) -}}
+{{- if eq ($mount.name | default "") "steward-run-trust-bundle" -}}
+{{- $mountCount = add1 $mountCount -}}
+{{- if or (ne ($mount.mountPath | default "") "/etc/steward-run/trust") (ne ($mount.readOnly | default false) true) -}}
+{{- fail "steward-run-trust-bundle must mount read-only at /etc/steward-run/trust" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- range $environment := ($container.env | default (list)) -}}
+{{- if eq ($environment.name | default "") "NODE_EXTRA_CA_CERTS" -}}
+{{- $envCount = add1 $envCount -}}
+{{- if ne ($environment.value | default "") "/etc/steward-run/trust/ca.crt" -}}
+{{- fail "NODE_EXTRA_CA_CERTS must reference /etc/steward-run/trust/ca.crt" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if or (gt $volumeCount 0) (gt $mountCount 0) (gt $envCount 0) -}}
+{{- if or (ne $volumeCount 1) (ne $mountCount 1) (ne $envCount 1) -}}
+{{- fail "the optional steward-run trust bundle requires exactly one ConfigMap volume, runner mount, and NODE_EXTRA_CA_CERTS entry" -}}
 {{- end -}}
 {{- end -}}

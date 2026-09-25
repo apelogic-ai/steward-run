@@ -6,7 +6,7 @@ import { parse } from "yaml";
 test("the composite action exposes the versioned steward-run contract", async () => {
   const source = await readFile(new URL("../action.yml", import.meta.url), "utf8");
   const action = parse(source) as {
-    inputs: Record<string, { required?: boolean; default?: string }>;
+    inputs: Record<string, { required?: boolean; default?: string; description?: string }>;
     outputs: Record<string, unknown>;
     runs: { using: string; steps: Array<{ shell?: string; run?: string }> };
   };
@@ -37,6 +37,14 @@ test("the composite action exposes the versioned steward-run contract", async ()
   assert.notEqual(action.inputs["identity-exchange-url"]?.required, true);
   assert.notEqual(action.inputs["bearer-token-file"]?.required, true);
   assert.notEqual(action.inputs["steward-ca-certificate-file"]?.required, true);
+  for (const name of [
+    "identity-exchange-url",
+    "identity-exchange-audience",
+    "steward-ca-certificate-file",
+  ]) {
+    assert.equal(action.inputs[name]?.default, "", `${name} must default to empty`);
+    assert.match(action.inputs[name]?.description ?? "", /Deprecated compatibility/u);
+  }
   assert.equal(action.inputs["coding-agent-runtime"], undefined);
   assert.deepEqual(Object.keys(action.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
   assert.match(action.runs.steps[0]?.run ?? "", /dist\/index\.cjs/);
