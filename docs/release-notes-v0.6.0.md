@@ -1,4 +1,4 @@
-# Unreleased: task-authentication discovery
+# v0.6.0: task-authentication discovery
 
 This change is backward compatible. With no explicit authentication inputs,
 steward-run now discovers exactly one Identity issuer from the configured

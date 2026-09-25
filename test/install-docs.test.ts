@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
 
-test("README leads to the current guide while v0.5.0 evidence stays historical", async () => {
+test("README leads to the v0.6.0 guide while v0.5.0 evidence stays historical", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const current = await readFile(new URL("../docs/installation.md", import.meta.url), "utf8");
   const guide = await readFile(new URL("../docs/installation-v0.5.0.md", import.meta.url), "utf8");
@@ -35,9 +35,10 @@ test("README leads to the current guide while v0.5.0 evidence stays historical",
   assert.match(guide, /^# steward-run v0\.5\.0 installation guide$/mu);
   assert.match(guide, /Historical release guide/u);
   assert.match(guide, /current installation guide/u);
+  assert.match(readme, /v0\.6\.0 installation and integration guide/u);
   assert.match(readme, /v0\.5\.0[\s\S]*?predates authentication discovery/u);
-  assert.match(arcReadme, /v0\.5\.0[\s\S]*?predates authentication discovery/u);
-  assert.match(arcReadme, /current installation guide[\s\S]*?tagged[\s\S]*?contains that guide/u);
+  assert.match(arcReadme, /v0\.6\.0[\s\S]*?authentication discovery/u);
+  assert.match(arcReadme, /historical v0\.5\.0 guide/u);
   assert.match(guide, /steward-run-arc-preflight\.mjs/u);
   assert.match(guide, /controllerServiceAccount/u);
   assert.match(guide, /arc-gha-rs-controller/u);
@@ -98,7 +99,7 @@ test("current authentication docs and interfaces cannot drift", async () => {
     readFile(new URL("../action.yml", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run-arc/README.md", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run/README.md", import.meta.url), "utf8"),
-    readFile(new URL("../docs/release-notes-unreleased.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/release-notes-v0.6.0.md", import.meta.url), "utf8"),
     readFile(new URL("fixtures/arc-ca-values.yaml", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run/values.yaml", import.meta.url), "utf8"),
   ]);
@@ -132,7 +133,7 @@ test("current authentication docs and interfaces cannot drift", async () => {
     [new URL("../README.md", import.meta.url), readme],
     [new URL("../docs/installation.md", import.meta.url), guide],
     [new URL("../docs/steward-run-spec.md", import.meta.url), specification],
-    [new URL("../docs/release-notes-unreleased.md", import.meta.url), releaseNotes],
+    [new URL("../docs/release-notes-v0.6.0.md", import.meta.url), releaseNotes],
     [new URL("../charts/steward-run-arc/README.md", import.meta.url), arcReadme],
     [new URL("../charts/steward-run/README.md", import.meta.url), libraryReadme],
   ] as const;

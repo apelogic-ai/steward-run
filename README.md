@@ -4,9 +4,8 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-The [current installation and integration guide](docs/installation.md)
-describes source after v0.5.0 and must be used with a tagged release that
-contains that guide. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
+The [v0.6.0 installation and integration guide](docs/installation.md)
+describes the current release contract. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
 authoritative guide for v0.5.0, which predates authentication discovery and
 requires the explicit Identity exchange inputs.
 Before registration or scale-set installation, run the released
@@ -16,11 +15,10 @@ The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. The latest published release, `v0.5.0`,
-publishes the standalone
-multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.5.0` and the
+long-running Steward API service. Release `v0.6.0` publishes the standalone
+multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.6.0` and the
 application chart in
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.5.0`. The
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.6.0`. The
 attached `oss-release-manifest.json` records both immutable OCI digests, the
 pinned ARC compatibility version, release-asset checksums, SLSA provenance,
 SPDX SBOM evidence, and keyless signature bundles.

@@ -7,6 +7,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.6.0] - 2026-09-25
+
 ### Added
 
 - Secure RFC 9728/RFC 8414 task-authentication discovery rooted at the exact
@@ -24,7 +28,7 @@ This project follows [Semantic Versioning](https://semver.org/).
   and receive sanitized deprecation notices; removal requires a separately
   reviewed major-version migration.
 - System/process trust and discovery are now the default. See the
-  [unreleased notes](docs/release-notes-unreleased.md) for activation order and
+  [v0.6.0 release notes](docs/release-notes-v0.6.0.md) for activation order and
   rollback.
 
 ## [0.5.0] - 2026-09-24
@@ -98,7 +102,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/apelogic-ai/steward-run/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/apelogic-ai/steward-run/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/apelogic-ai/steward-run/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/apelogic-ai/steward-run/compare/v0.4.0...v0.4.1

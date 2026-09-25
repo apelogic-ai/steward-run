@@ -53,6 +53,7 @@ jobs:
           [[ "$(node -p 'require("./package.json").version')" == "$VERSION" ]]
           [[ "$(sed -n 's/^version: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
           [[ "$(sed -n 's/^appVersion: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
+          [[ -f "docs/release-notes-v$VERSION.md" ]]
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             printf 'release v%s already exists\n' "$VERSION" >&2
             exit 1
@@ -280,7 +281,11 @@ jobs:
             "$RUNNER_TEMP/oss-release-manifest.json"
           cosign sign-blob --yes --bundle "$RUNNER_TEMP/SHA256SUMS.sigstore.json" \
             "$RUNNER_TEMP/SHA256SUMS"
-          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          cp "docs/release-notes-v$VERSION.md" "$RUNNER_TEMP/release-notes.md"
+          cat >> "$RUNNER_TEMP/release-notes.md" <<EOF
+
+          ## Published artifacts
+
           Public standalone OSS runner image and Helm chart with immutable
           coordinates, keyless signatures, SLSA provenance, SPDX SBOM, and
           checksums in oss-release-manifest.json. Run the released read-only
