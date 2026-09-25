@@ -96,7 +96,7 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     );
     assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", caFixture, "--set", "gha-runner-scale-set.template.spec.containers[0].env=null"),
-      /containers\.0\.env|requires exactly one ConfigMap volume, runner mount, and NODE_EXTRA_CA_CERTS entry/u,
+      /containers(?:\.|\/)0(?:\.|\/)env|requires exactly one ConfigMap volume, runner mount, and NODE_EXTRA_CA_CERTS entry/u,
     );
     const overridden = template(
       "steward-run",
