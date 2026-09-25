@@ -21,7 +21,7 @@ env:
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
   IMAGE_REPOSITORY: ${{ vars.ECR_REGISTRY }}/${{ vars.ECR_REPOSITORY }}
   COSIGN_EXPERIMENTAL: "1"
-  ACTION_COMMIT: b114d38dd6d4c300a7bf80ec16567027dd5d4be1
+  ACTION_COMMIT: 5ef90e86d5e87946372bd3283154a3998eda45f7
 
 jobs:
   prepare:
@@ -48,6 +48,7 @@ jobs:
           [[ "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ && "$ACTION_COMMIT" != "$GITHUB_SHA" ]]
           gh api "repos/$GITHUB_REPOSITORY/commits/$ACTION_COMMIT" --silent
           grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task.yml
+          grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task-self-hosted.yml
           if [[ "$GITHUB_RUN_ATTEMPT" == 1 ]]; then
             [[ "$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v$REQUESTED_VERSION" --jq length)" == 0 ]]
             if gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$REQUESTED_VERSION" --silent 2>/dev/null; then

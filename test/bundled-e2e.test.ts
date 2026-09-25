@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import test from "node:test";
 import { startMockSteward } from "./support/mock-steward.ts";
 
@@ -111,6 +111,73 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
         finalized: true,
       },
     );
+  } finally {
+    await mock.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("both supported wrappers pin and execute the discovery-capable action bundle", async () => {
+  const repository = new URL("..", import.meta.url);
+  const workflowPaths = [
+    ".github/workflows/steward-task.yml",
+    ".github/workflows/steward-task-self-hosted.yml",
+  ];
+  const pins = await Promise.all(
+    workflowPaths.map(async (workflowPath) => {
+      const source = await readFile(new URL(workflowPath, repository), "utf8");
+      const match = source.match(/uses:\s*apelogic-ai\/steward-run@([a-f0-9]{40})/u);
+      assert.ok(match, `${workflowPath} must pin the action to an immutable commit`);
+      return match[1]!;
+    }),
+  );
+  assert.equal(pins[0], pins[1], "supported wrappers must execute the same action commit");
+
+  const workspace = await mkdtemp(join(tmpdir(), "steward-run-pinned-bundle-"));
+  const bundlePath = join(workspace, "pinned-index.cjs");
+  const outputFile = join(workspace, "github-output");
+  const summaryFile = join(workspace, "github-summary");
+  const mock = await startMockSteward();
+  try {
+    const bundle = execFileSync("git", ["show", `${pins[0]}:dist/index.cjs`], {
+      cwd: repository,
+      encoding: "utf8",
+    });
+    await mkdir(join(workspace, "in"));
+    await writeFile(join(workspace, "in", "payload.bin"), "fixture");
+    await writeFile(bundlePath, bundle);
+    await writeFile(outputFile, "");
+    await writeFile(summaryFile, "");
+
+    const child = spawn(process.execPath, [bundlePath], {
+      cwd: repository,
+      env: {
+        ...process.env,
+        ACTIONS_ID_TOKEN_REQUEST_URL: `${mock.url}/oidc?api-version=1`,
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-secret",
+        GITHUB_JOB: "agent",
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_REPOSITORY: "apelogic-ai/example",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_RUN_ID: "123",
+        GITHUB_STEP_SUMMARY: summaryFile,
+        GITHUB_WORKSPACE: workspace,
+        STEWARD_RUN_API_URL: mock.url,
+        STEWARD_RUN_INPUTS: "in",
+        STEWARD_RUN_OUTPUTS: "out/payload.bin",
+        STEWARD_RUN_WORKFLOW: "repository-review@1",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
+    const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+
+    assert.equal(code, 0, stderr);
+    assert.equal(await readFile(join(workspace, "out", "payload.bin"), "utf8"), "fixture");
+    assert.equal(mock.observations.protectedResourceDiscoveryRequests, 1);
+    assert.equal(mock.observations.identityDiscoveryRequests, 1);
+    assert.ok(mock.observations.exchangeRequests > 0);
   } finally {
     await mock.close();
     await rm(workspace, { recursive: true, force: true });
