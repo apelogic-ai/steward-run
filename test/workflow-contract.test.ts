@@ -463,6 +463,8 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /SHA256SUMS/u);
   assert.match(release, /steward-run-arc-preflight\.mjs/u);
   assert.match(release, /arc-controller-identity\.mjs/u);
+  assert.match(release, /docs\/release-notes-v\$VERSION\.md/u);
+  assert.match(release, /cp "docs\/release-notes-v\$VERSION\.md" "\$RUNNER_TEMP\/release-notes\.md"/u);
   assert.doesNotMatch(release, /provenance: false|sbom: false/u);
 });
 

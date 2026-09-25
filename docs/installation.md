@@ -1,6 +1,6 @@
 # steward-run installation and integration
 
-This is the current installation contract for source after v0.5.0. The
+This is the v0.6.0 installation contract. The
 [v0.5.0 guide](installation-v0.5.0.md) remains immutable historical evidence.
 Use a tagged release that includes this document; never combine a workflow,
 chart, action, and runner image from different releases.
@@ -252,6 +252,6 @@ it.
 | This installation/integration guide | Canonical copy-ready discovered and compatibility examples. |
 | `docs/steward-run-spec.md` | Exact metadata, bounds, precedence, and token contract. |
 | Application and library chart READMEs/values/schema | Public-trust default and ConfigMap-backed bundle documented and tested. |
-| `CHANGELOG.md` and unreleased notes | Upgrade and rollback behavior recorded. |
+| `CHANGELOG.md` and v0.6.0 release notes | Upgrade and rollback behavior recorded. |
 | `docs/installation-v0.5.0.md` | Historical; marked superseded and otherwise unchanged. |
 | ARC preflight and vulnerability/security documents | Unaffected: they do not define task authentication or trust values. |
