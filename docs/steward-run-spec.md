@@ -122,6 +122,7 @@ the resumed invocation (a new job, new token).
 |---|---|
 | `invocation-path` | Canonical repository-relative v2 invocation-manifest path; its bytes are never submitted |
 | `workflow` | Existing immutable Steward Workflow reference forwarded unchanged (e.g. `repository-review@1`) |
+| `envelope-digest` *(optional)* | Exact `steward:sha256:<64 lowercase hex>` active-envelope selector for either Task source |
 | `inputs` | Workspace path(s) materialised into the sandbox as its input directory |
 | `outputs` | Sandbox output path(s) written back to the workspace |
 | `steward-api-url` | The control-plane API base (env-supplied; not hardcoded) |
@@ -137,6 +138,11 @@ Exactly one of `invocation-path` and `workflow` is required. The v2 reusable-wor
 callers. The runner verifies that a direct invocation path is canonical, exists at the clean exact
 trigger checkout, contains no symlink component, and names a regular file. This is an early local
 failure only: Steward's authenticated exact-commit source retrieval is authoritative.
+
+Steward resolves `envelope-digest` within the authenticated owner's active envelopes for either a
+versioned Workflow or direct-package invocation, so the selector cannot cross an ownership
+boundary. When it is omitted, submission succeeds only if exactly one active envelope is
+available; zero or multiple active envelopes are explicit admission errors.
 
 With no explicit authentication choice, production uses discovery. The action
 derives `/.well-known/oauth-protected-resource` from the exact Steward resource,

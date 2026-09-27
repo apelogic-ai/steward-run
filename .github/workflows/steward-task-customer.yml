@@ -12,6 +12,11 @@ on:
         required: false
         type: string
         default: ""
+      envelope-digest:
+        description: Optional exact active User Envelope selector for either Task source
+        required: false
+        type: string
+        default: ""
       invocation-path:
         description: Repository-relative direct-package invocation manifest path; mutually exclusive with workflow
         required: false
@@ -96,6 +101,7 @@ jobs:
         uses: ./.steward-run-action
         with:
           workflow: ${{ inputs.workflow }}
+          envelope-digest: ${{ inputs.envelope-digest }}
           invocation-path: ${{ inputs.invocation-path }}
           inputs: in
           outputs: out

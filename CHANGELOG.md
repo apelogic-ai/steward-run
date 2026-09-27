@@ -9,6 +9,29 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 No unreleased changes.
 
+## [0.7.0] - 2026-09-26
+
+### Added
+
+- Added the optional `envelope-digest` action and reusable-workflow input for
+  both versioned Workflow and direct-package Task sources. The value must use
+  the public `steward:sha256:<64 lowercase hex>` format and is forwarded
+  unchanged to `POST /v1/tasks`. Sending it requires Steward 0.3.0 or newer;
+  omitting it remains compatible with older Steward servers when one active
+  Envelope is available.
+- Added both submission shapes to the checked-in OpenAPI contract and tests for
+  action metadata, configuration validation, workflow forwarding, direct-package
+  forwarding, and the bundled action.
+
+### Changed
+
+- Callers with multiple active User Envelopes can now select one exact
+  owner-scoped authority digest. Existing callers that omit the input remain
+  compatible when Steward resolves exactly one active Envelope.
+- Updated every supported reusable workflow, the installation guide, action
+  specification, checked-in bundle, chart/application metadata, and release
+  documentation together for the 0.7.0 contract.
+
 ## [0.6.0] - 2026-09-25
 
 ### Added
@@ -102,7 +125,8 @@ No unreleased changes.
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/apelogic-ai/steward-run/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/apelogic-ai/steward-run/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/apelogic-ai/steward-run/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/apelogic-ai/steward-run/compare/v0.4.1...v0.4.2

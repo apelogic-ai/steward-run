@@ -7,8 +7,8 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "5ef90e86d5e87946372bd3283154a3998eda45f7";
-const directPackageActionCommit = "5ef90e86d5e87946372bd3283154a3998eda45f7";
+const actionCommit = "96cee6a1cfe53fbc2f7bb2cd38a8b360fd9a2ad8";
+const directPackageActionCommit = "96cee6a1cfe53fbc2f7bb2cd38a8b360fd9a2ad8";
 const buildkitImage =
   "docker.io/moby/buildkit@" +
   "sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8";
@@ -253,6 +253,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
     Object.keys(workflow.on.workflow_call.inputs).sort(),
     [
       "agent-runtime",
+      "envelope-digest",
       "identity-exchange-audience",
       "identity-exchange-url",
       "input-artifact",

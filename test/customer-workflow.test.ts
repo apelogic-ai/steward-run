@@ -47,6 +47,7 @@ test("the customer workflow executes only its own immutable action with GitHub O
   assert.equal(task?.uses, "./.steward-run-action");
   assert.deepEqual(task?.with, {
     workflow: "${{ inputs.workflow }}",
+    "envelope-digest": "${{ inputs.envelope-digest }}",
     "invocation-path": "${{ inputs.invocation-path }}",
     inputs: "in",
     outputs: "out",

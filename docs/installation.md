@@ -1,6 +1,6 @@
 # steward-run installation and integration
 
-This is the v0.6.0 installation contract. The
+This is the v0.7.0 installation contract. The
 [v0.5.0 guide](installation-v0.5.0.md) remains immutable historical evidence.
 Use a tagged release that includes this document; never combine a workflow,
 chart, action, and runner image from different releases.
@@ -97,10 +97,18 @@ jobs:
     with:
       runner-label: steward-run
       workflow: CUSTOMER_WORKFLOW_REFERENCE
+      envelope-digest: steward:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       input-artifact: request
       output-artifact: result
       steward-api-url: https://steward.customer.example/api
 ```
+
+`envelope-digest` is optional. Use the same input with `invocation-path` when
+calling a direct package. Sending it requires Steward 0.3.0 or newer; older
+servers require callers to omit it. It must be `steward:sha256:` followed by 64
+lowercase hexadecimal characters. Steward scopes lookup to the authenticated
+canonical owner. Omit it only when that owner has exactly one active Envelope; multiple
+active Envelopes require an explicit digest.
 
 The supported `steward-task.yml`, `steward-task-self-hosted.yml`, and
 `steward-task-customer.yml` workflows all declare the three compatibility
@@ -252,6 +260,6 @@ it.
 | This installation/integration guide | Canonical copy-ready discovered and compatibility examples. |
 | `docs/steward-run-spec.md` | Exact metadata, bounds, precedence, and token contract. |
 | Application and library chart READMEs/values/schema | Public-trust default and ConfigMap-backed bundle documented and tested. |
-| `CHANGELOG.md` and v0.6.0 release notes | Upgrade and rollback behavior recorded. |
+| `CHANGELOG.md` and v0.7.0 release notes | Upgrade and rollback behavior recorded. |
 | `docs/installation-v0.5.0.md` | Historical; marked superseded and otherwise unchanged. |
 | ARC preflight and vulnerability/security documents | Unaffected: they do not define task authentication or trust values. |
