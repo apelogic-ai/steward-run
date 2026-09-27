@@ -5,6 +5,10 @@ inputs:
   workflow:
     description: Existing governed Workflow reference; mutually exclusive with invocation-path
     required: false
+  envelope-digest:
+    description: Optional exact active User Envelope selector for either Task source
+    required: false
+    default: ""
   invocation-path:
     description: Repository-relative direct-package invocation manifest path; mutually exclusive with workflow
     required: false
@@ -56,6 +60,7 @@ runs:
       shell: bash
       env:
         STEWARD_RUN_WORKFLOW: ${{ inputs.workflow }}
+        STEWARD_RUN_ENVELOPE_DIGEST: ${{ inputs.envelope-digest }}
         STEWARD_RUN_INVOCATION_PATH: ${{ inputs.invocation-path }}
         STEWARD_RUN_INPUTS: ${{ inputs.inputs }}
         STEWARD_RUN_OUTPUTS: ${{ inputs.outputs }}

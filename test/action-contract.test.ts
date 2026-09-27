@@ -17,7 +17,8 @@ test("the composite action exposes the versioned steward-run contract", async ()
     [
       "agent-runtime",
       "bearer-token-file",
-    "identity-exchange-url",
+      "envelope-digest",
+      "identity-exchange-url",
       "identity-exchange-audience",
       "invocation-path",
       "inputs",
@@ -37,6 +38,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
   assert.notEqual(action.inputs["identity-exchange-url"]?.required, true);
   assert.notEqual(action.inputs["bearer-token-file"]?.required, true);
   assert.notEqual(action.inputs["steward-ca-certificate-file"]?.required, true);
+  assert.notEqual(action.inputs["envelope-digest"]?.required, true);
   for (const name of [
     "identity-exchange-url",
     "identity-exchange-audience",
@@ -61,6 +63,14 @@ test("the Steward Task API contract covers the complete lifecycle", async () => 
     components: {
       schemas: {
         TaskSubmissionRequest: {
+          oneOf: Array<{ $ref: string }>;
+        };
+        WorkflowTaskSubmissionRequest: {
+          required: string[];
+          properties: Record<string, unknown>;
+          additionalProperties: boolean;
+        };
+        DirectTaskSubmissionRequest: {
           required: string[];
           properties: Record<string, unknown>;
           additionalProperties: boolean;
@@ -83,12 +93,27 @@ test("the Steward Task API contract covers the complete lifecycle", async () => 
   assert.match(source, /steward-task-api/);
   assert.match(source, /67108864/);
   assert.match(source, /Task accepted for controller-owned runtime binding/u);
-  assert.deepEqual(api.components.schemas.TaskSubmissionRequest.required, ["workflow"]);
-  assert.deepEqual(Object.keys(api.components.schemas.TaskSubmissionRequest.properties), [
+  assert.deepEqual(api.components.schemas.TaskSubmissionRequest.oneOf, [
+    { $ref: "#/components/schemas/WorkflowTaskSubmissionRequest" },
+    { $ref: "#/components/schemas/DirectTaskSubmissionRequest" },
+  ]);
+  assert.deepEqual(api.components.schemas.WorkflowTaskSubmissionRequest.required, ["workflow"]);
+  assert.deepEqual(Object.keys(api.components.schemas.WorkflowTaskSubmissionRequest.properties), [
     "workflow",
+    "envelopeDigest",
     "agentRuntimeUid",
   ]);
-  assert.equal(api.components.schemas.TaskSubmissionRequest.additionalProperties, false);
+  assert.equal(api.components.schemas.WorkflowTaskSubmissionRequest.additionalProperties, false);
+  assert.deepEqual(api.components.schemas.DirectTaskSubmissionRequest.required, [
+    "contractVersion",
+    "invocationPath",
+  ]);
+  assert.deepEqual(Object.keys(api.components.schemas.DirectTaskSubmissionRequest.properties), [
+    "contractVersion",
+    "invocationPath",
+    "envelopeDigest",
+  ]);
+  assert.equal(api.components.schemas.DirectTaskSubmissionRequest.additionalProperties, false);
   assert.deepEqual(api.components.schemas.TaskStatusResponse.properties.runtimeUid.oneOf, [
     { type: "string", minLength: 1 },
     { type: "null" },

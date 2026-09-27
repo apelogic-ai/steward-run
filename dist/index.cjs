@@ -2893,6 +2893,7 @@ function readActionConfig(environment) {
   const workflow = environment.STEWARD_RUN_WORKFLOW;
   const invocationPath = environment.STEWARD_RUN_INVOCATION_PATH;
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
+  const envelopeDigest = environment.STEWARD_RUN_ENVELOPE_DIGEST?.trim();
   const identityExchangeUrl = environment.STEWARD_RUN_IDENTITY_EXCHANGE_URL?.trim();
   const identityExchangeAudience = environment.STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE?.trim();
   const oidcAudience = environment.STEWARD_RUN_OIDC_AUDIENCE?.trim();
@@ -2905,6 +2906,9 @@ function readActionConfig(environment) {
   }
   if (invocationPath && agentRuntime) {
     throw new Error("agent-runtime cannot be selected for a direct package invocation");
+  }
+  if (envelopeDigest && !/^steward:sha256:[0-9a-f]{64}$/u.test(envelopeDigest)) {
+    throw new Error("envelope-digest must use steward:sha256:<64 lowercase hex>");
   }
   if (identityExchangeAudience && !identityExchangeUrl) {
     throw new Error("identity-exchange-audience requires identity-exchange-url");
@@ -2941,9 +2945,10 @@ function readActionConfig(environment) {
     authentication,
     ...caCertificateFile ? { caCertificateFile } : {}
   };
-  return invocationPath ? { ...common, invocationPath } : {
+  return invocationPath ? { ...common, invocationPath, ...envelopeDigest ? { envelopeDigest } : {} } : {
     ...common,
     workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
+    ...envelopeDigest ? { envelopeDigest } : {},
     ...agentRuntime ? { agentRuntime } : {}
   };
 }
@@ -4330,9 +4335,11 @@ async function runWorkflow(config, workspace, dependencies) {
     created = await dependencies.client.submitTask(
       "invocationPath" in config ? {
         contractVersion: "steward.task/v2",
-        invocationPath: config.invocationPath
+        invocationPath: config.invocationPath,
+        ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}
       } : {
         workflow: config.workflow,
+        ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {},
         ...config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}
       },
       createIdempotencyKey(dependencies.environment)
