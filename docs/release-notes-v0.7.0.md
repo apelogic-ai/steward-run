@@ -8,11 +8,12 @@ reusable-workflow input is:
 envelope-digest: steward:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
-The selector requires Steward 0.3.0 or newer. Publish Steward Run 0.7.0 first,
-record its immutable action, image, and chart coordinates in Steward's 0.3.0
-compatibility manifest, and only then publish Steward 0.3.0. Callers that omit
-the selector remain compatible with older servers when one active Envelope is
-available.
+The selector requires Steward 0.3.0 or newer. Steward declares the client
+capability minimum without source-pinning future artifacts. After both products
+are released, release/integration packaging records their immutable action,
+workflow, image, and chart coordinates in the signed installation BOM consumed
+by GitOps and operators. Callers that omit the selector remain compatible with
+older servers when one active Envelope is available.
 
 The input is valid with either `workflow` or `invocation-path`. `steward-run`
 validates the public digest shape locally and forwards it unchanged in the

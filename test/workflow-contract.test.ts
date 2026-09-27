@@ -464,6 +464,11 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /SHA256SUMS/u);
   assert.match(release, /steward-run-arc-preflight\.mjs/u);
   assert.match(release, /arc-controller-identity\.mjs/u);
+  assert.match(release, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));
+  assert.match(release, /schemaVersion:3/u);
+  assert.match(release, /workflowRepository:\$workflow_repository/u);
+  assert.match(release, /workflowCommit:\$workflow_commit/u);
+  assert.match(release, /actionCommit:\$action_commit/u);
   assert.match(release, /docs\/release-notes-v\$VERSION\.md/u);
   assert.match(release, /cp "docs\/release-notes-v\$VERSION\.md" "\$RUNNER_TEMP\/release-notes\.md"/u);
   assert.doesNotMatch(release, /provenance: false|sbom: false/u);

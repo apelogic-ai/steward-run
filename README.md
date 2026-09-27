@@ -20,7 +20,8 @@ multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.0` and the
 application chart in
 `oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.0`. The
 attached `oss-release-manifest.json` records both immutable OCI digests, the
-pinned ARC compatibility version, release-asset checksums, SLSA provenance,
+pinned reusable-workflow and action commits, workflow repository, ARC
+compatibility version, release-asset checksums, SLSA provenance,
 SPDX SBOM evidence, and keyless signature bundles.
 
 The client implements Steward's six-operation `/v1/tasks` lifecycle documented in

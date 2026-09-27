@@ -4,6 +4,9 @@ This is the v0.7.0 installation contract. The
 [v0.5.0 guide](installation-v0.5.0.md) remains immutable historical evidence.
 Use a tagged release that includes this document; never combine a workflow,
 chart, action, and runner image from different releases.
+The signed `oss-release-manifest.json` is schema 3 and supplies the exact
+`workflowRepository`, `workflowCommit`, `actionCommit`, image, and chart fields
+that release/integration packaging projects into its installation BOM.
 
 ## Prerequisites
 
