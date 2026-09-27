@@ -4,7 +4,7 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-The [v0.6.0 installation and integration guide](docs/installation.md)
+The [v0.7.0 installation and integration guide](docs/installation.md)
 describes the current release contract. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
 authoritative guide for v0.5.0, which predates authentication discovery and
 requires the explicit Identity exchange inputs.
@@ -15,12 +15,13 @@ The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. Release `v0.6.0` publishes the standalone
-multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.6.0` and the
+long-running Steward API service. Release `v0.7.0` publishes the standalone
+multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.0` and the
 application chart in
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.6.0`. The
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.0`. The
 attached `oss-release-manifest.json` records both immutable OCI digests, the
-pinned ARC compatibility version, release-asset checksums, SLSA provenance,
+pinned reusable-workflow and action commits, workflow repository, ARC
+compatibility version, release-asset checksums, SLSA provenance,
 SPDX SBOM evidence, and keyless signature bundles.
 
 The client implements Steward's six-operation `/v1/tasks` lifecycle documented in
@@ -107,7 +108,9 @@ the manifest from the Identity-ratified repository and exact commit.
 Direct action use remains available when another workflow owns the artifact steps. All action paths
 are relative to `GITHUB_WORKSPACE`. Exactly one Task source is selected: `invocation-path` for the
 direct-package v2 flow or `workflow` for the existing versioned Workflow flow. `agent-runtime`
-applies only to the latter.
+applies only to the latter. Either Task source may also supply `envelope-digest` as an exact
+`steward:sha256:<64 lowercase hex>` selector. Steward resolves it only among the caller's active
+envelopes. Omitting it remains valid only when that owner has exactly one active envelope.
 
 When the server-snapshotted diagnostics mode is `full`, successful outputs may include the two
 reserved `.steward/diagnostics/*.log` streams. The action validates the reserved paths and 4 MiB

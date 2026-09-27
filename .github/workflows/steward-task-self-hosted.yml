@@ -12,6 +12,11 @@ on:
         required: false
         type: string
         default: ""
+      envelope-digest:
+        description: Optional exact active User Envelope selector for either Task source
+        required: false
+        type: string
+        default: ""
       invocation-path:
         description: Repository-relative direct-package invocation manifest path; mutually exclusive with workflow
         required: false
@@ -82,9 +87,10 @@ jobs:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: apelogic-ai/steward-run@5ef90e86d5e87946372bd3283154a3998eda45f7
+        uses: apelogic-ai/steward-run@96cee6a1cfe53fbc2f7bb2cd38a8b360fd9a2ad8
         with:
           workflow: ${{ inputs.workflow }}
+          envelope-digest: ${{ inputs.envelope-digest }}
           invocation-path: ${{ inputs.invocation-path }}
           inputs: in
           outputs: out

@@ -22,6 +22,9 @@ permissions:
   contents: write
   packages: write
 
+env:
+  ACTION_COMMIT: 96cee6a1cfe53fbc2f7bb2cd38a8b360fd9a2ad8
+
 concurrency:
   group: portable-release-${{ inputs.version }}
   cancel-in-progress: false
@@ -54,6 +57,10 @@ jobs:
           [[ "$(sed -n 's/^version: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
           [[ "$(sed -n 's/^appVersion: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
           [[ -f "docs/release-notes-v$VERSION.md" ]]
+          [[ "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ && "$ACTION_COMMIT" != "$GITHUB_SHA" ]]
+          gh api "repos/$GITHUB_REPOSITORY/commits/$ACTION_COMMIT" --silent
+          grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task.yml
+          grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task-self-hosted.yml
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             printf 'release v%s already exists\n' "$VERSION" >&2
             exit 1
@@ -250,14 +257,19 @@ jobs:
           preflight_sha256="$(sha256sum "$RUNNER_TEMP/steward-run-arc-preflight.mjs" | cut -d ' ' -f 1)"
           attestation_sha256="$(sha256sum "$RUNNER_TEMP/release-attestation-summary.json" | cut -d ' ' -f 1)"
           jq -n --arg version "$VERSION" --arg commit "$GITHUB_SHA" \
+            --arg workflow_repository "$GITHUB_REPOSITORY" \
+            --arg workflow_commit "$GITHUB_SHA" --arg action_commit "$ACTION_COMMIT" \
             --arg image "$IMAGE@$IMAGE_DIGEST" --arg chart "$CHART@$CHART_DIGEST" \
             --arg chart_package "$chart_package" --arg chart_sha256 "$chart_sha256" \
             --arg identity_sha256 "$identity_sha256" --arg preflight_sha256 "$preflight_sha256" \
             --arg attestation_sha256 "$attestation_sha256" \
             '{
-              schemaVersion:2,
+              schemaVersion:3,
               version:$version,
               commit:$commit,
+              workflowRepository:$workflow_repository,
+              workflowCommit:$workflow_commit,
+              actionCommit:$action_commit,
               image:$image,
               chart:$chart,
               platforms:["linux/amd64","linux/arm64"],

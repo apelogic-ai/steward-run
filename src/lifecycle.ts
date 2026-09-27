@@ -326,9 +326,11 @@ export async function runWorkflow(
         ? {
             contractVersion: "steward.task/v2",
             invocationPath: config.invocationPath,
+            ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
           }
         : {
             workflow: config.workflow,
+            ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
             ...(config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}),
           },
       createIdempotencyKey(dependencies.environment),

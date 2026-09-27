@@ -5,8 +5,8 @@ interface CommonWorkflowConfig {
 }
 
 export type WorkflowConfig = CommonWorkflowConfig & (
-  | { workflow: string; invocationPath?: never; agentRuntime?: string }
-  | { invocationPath: string; workflow?: never; agentRuntime?: never }
+  | { workflow: string; invocationPath?: never; agentRuntime?: string; envelopeDigest?: string }
+  | { invocationPath: string; workflow?: never; agentRuntime?: never; envelopeDigest?: string }
 );
 
 export type ActionAuthentication =
@@ -40,6 +40,7 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
   const workflow = environment.STEWARD_RUN_WORKFLOW;
   const invocationPath = environment.STEWARD_RUN_INVOCATION_PATH;
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
+  const envelopeDigest = environment.STEWARD_RUN_ENVELOPE_DIGEST?.trim();
   const identityExchangeUrl = environment.STEWARD_RUN_IDENTITY_EXCHANGE_URL?.trim();
   const identityExchangeAudience = environment.STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE?.trim();
   const oidcAudience = environment.STEWARD_RUN_OIDC_AUDIENCE?.trim();
@@ -52,6 +53,9 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
   }
   if (invocationPath && agentRuntime) {
     throw new Error("agent-runtime cannot be selected for a direct package invocation");
+  }
+  if (envelopeDigest && !/^steward:sha256:[0-9a-f]{64}$/u.test(envelopeDigest)) {
+    throw new Error("envelope-digest must use steward:sha256:<64 lowercase hex>");
   }
   if (identityExchangeAudience && !identityExchangeUrl) {
     throw new Error("identity-exchange-audience requires identity-exchange-url");
@@ -97,10 +101,11 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
     ...(caCertificateFile ? { caCertificateFile } : {}),
   };
   return invocationPath
-    ? { ...common, invocationPath }
+    ? { ...common, invocationPath, ...(envelopeDigest ? { envelopeDigest } : {}) }
     : {
         ...common,
         workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
+        ...(envelopeDigest ? { envelopeDigest } : {}),
         ...(agentRuntime ? { agentRuntime } : {}),
       };
 }

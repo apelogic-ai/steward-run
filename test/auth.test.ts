@@ -136,6 +136,26 @@ test("the Workflow reference is preserved byte-for-byte and runtime selection is
   assert.equal("codingAgentRuntime" in config, false);
 });
 
+test("every Task source accepts only the typed public Envelope digest selector", () => {
+  const digest = `steward:sha256:${"a".repeat(64)}`;
+  const selected = readActionConfig({
+    ...baseEnvironment,
+    STEWARD_RUN_ENVELOPE_DIGEST: digest,
+  });
+  assert.equal(selected.envelopeDigest, digest);
+  assert.throws(
+    () => readActionConfig({ ...baseEnvironment, STEWARD_RUN_ENVELOPE_DIGEST: "sha256:bad" }),
+    /envelope-digest must use steward:sha256/,
+  );
+  const direct = readActionConfig({
+    ...baseEnvironment,
+    STEWARD_RUN_WORKFLOW: undefined,
+    STEWARD_RUN_INVOCATION_PATH: ".steward/tasks/release-summary.json",
+    STEWARD_RUN_ENVELOPE_DIGEST: digest,
+  });
+  assert.equal(direct.envelopeDigest, digest);
+});
+
 test("direct-package configuration selects one canonical invocation path without package bytes", () => {
   const direct = readActionConfig({
     ...baseEnvironment,

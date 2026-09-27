@@ -65,11 +65,12 @@ class FakeClient implements TaskClient {
   finalizingTasks: Task[] = [];
   finalizationStarted = false;
   ignoreBindingCancellation = false;
+  taskProjection: Partial<Task> = {};
 
   async submitTask(request: TaskSubmissionRequest): Promise<Task> {
     this.calls.push("create");
     this.requests.push(request);
-    return { ...this.submittedTask, runtimeOwnership: this.ownership };
+    return { ...this.submittedTask, ...this.taskProjection, runtimeOwnership: this.ownership };
   }
   async uploadTaskInputs(_uid: string, createArchive: () => Promise<Readable>): Promise<void> {
     this.calls.push("upload");
@@ -79,19 +80,20 @@ class FakeClient implements TaskClient {
   }
   async executeTask(): Promise<Task> {
     this.calls.push("execute");
-    return { ...this.executingTask, runtimeOwnership: this.ownership };
+    return { ...this.executingTask, ...this.taskProjection, runtimeOwnership: this.ownership };
   }
   async getTask(): Promise<Task> {
     this.calls.push("poll");
     if (this.finalizationStarted) {
       const finalizingTask = this.finalizingTasks.shift();
-      if (finalizingTask) return { ...finalizingTask, runtimeOwnership: this.ownership };
+      if (finalizingTask) return { ...finalizingTask, ...this.taskProjection, runtimeOwnership: this.ownership };
     }
     if (this.ignoreBindingCancellation) return new Promise<Task>(() => undefined);
     const bindingTask = this.bindingTasks.shift();
-    if (bindingTask) return { ...bindingTask, runtimeOwnership: this.ownership };
+    if (bindingTask) return { ...bindingTask, ...this.taskProjection, runtimeOwnership: this.ownership };
     return {
       ...baseTask,
+      ...this.taskProjection,
       phase: this.phases.shift() ?? "succeeded",
       runtimeOwnership: this.ownership,
       ...(this.failureReason === undefined ? {} : { failureReason: this.failureReason }),
@@ -106,8 +108,8 @@ class FakeClient implements TaskClient {
     if (this.finalizeError) throw this.finalizeError;
     this.finalizationStarted = true;
     const finalizingTask = this.finalizingTasks.shift();
-    if (finalizingTask) return { ...finalizingTask, runtimeOwnership: this.ownership };
-    return { ...baseTask, phase: "cancelled", runtimeOwnership: this.ownership, finalized: true };
+    if (finalizingTask) return { ...finalizingTask, ...this.taskProjection, runtimeOwnership: this.ownership };
+    return { ...baseTask, ...this.taskProjection, phase: "cancelled", runtimeOwnership: this.ownership, finalized: true };
   }
 }
 
@@ -147,6 +149,59 @@ test("a provisioned Task round-trips files, reports identities, and finalizes", 
     });
     assert.deepEqual(client.requests, [{ workflow: "repository-review@1" }]);
     assert.deepEqual(client.calls, ["create", "upload", "execute", "poll", "poll", "download", "finalize"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a versioned Workflow forwards its exact Envelope digest selector", async () => {
+  const root = await fixture();
+  const client = new FakeClient();
+  try {
+    await runWorkflow(
+      { ...config, envelopeDigest: `steward:sha256:${"a".repeat(64)}` },
+      root,
+      dependencies(client, {}),
+    );
+    assert.deepEqual(client.requests, [
+      {
+        workflow: "repository-review@1",
+        envelopeDigest: `steward:sha256:${"a".repeat(64)}`,
+      },
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a direct package preserves its exact Envelope digest selector", async () => {
+  const root = await fixture();
+  const client = new FakeClient();
+  client.taskProjection = {
+    contractVersion: "steward.task/v2",
+    diagnostics: { executionLog: "off" },
+  };
+  try {
+    await mkdir(join(root, ".steward", "tasks"), { recursive: true });
+    await writeFile(join(root, ".steward", "tasks", "release-summary.json"), "{}");
+    await runWorkflow(
+      {
+        invocationPath: ".steward/tasks/release-summary.json",
+        envelopeDigest: `steward:sha256:${"b".repeat(64)}`,
+        inputPaths: config.inputPaths,
+        outputPaths: config.outputPaths,
+        apiUrl: config.apiUrl,
+      },
+      root,
+      dependencies(client, {}),
+    );
+    assert.deepEqual(client.requests, [
+      {
+        contractVersion: "steward.task/v2",
+        invocationPath: ".steward/tasks/release-summary.json",
+        envelopeDigest: `steward:sha256:${"b".repeat(64)}`,
+      },
+    ]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

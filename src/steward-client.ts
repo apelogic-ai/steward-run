@@ -80,8 +80,8 @@ export interface DirectTaskEvidence {
 }
 
 export type TaskSubmissionRequest =
-  | { workflow: string; agentRuntimeUid?: string }
-  | { contractVersion: "steward.task/v2"; invocationPath: string };
+  | { workflow: string; envelopeDigest?: string; agentRuntimeUid?: string }
+  | { contractVersion: "steward.task/v2"; invocationPath: string; envelopeDigest?: string };
 
 interface ClientOptions {
   baseUrl: string;

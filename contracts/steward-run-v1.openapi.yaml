@@ -141,12 +141,31 @@ components:
     NotFound: { description: Task not found for this identity }
   schemas:
     TaskSubmissionRequest:
+      oneOf:
+        - $ref: '#/components/schemas/WorkflowTaskSubmissionRequest'
+        - $ref: '#/components/schemas/DirectTaskSubmissionRequest'
+    WorkflowTaskSubmissionRequest:
       type: object
       additionalProperties: false
       required: [workflow]
       properties:
         workflow: { type: string, minLength: 1 }
+        envelopeDigest:
+          type: string
+          pattern: '^steward:sha256:[0-9a-f]{64}$'
+          description: Exact active User Envelope content selector scoped to the authenticated canonical owner.
         agentRuntimeUid: { type: string, minLength: 1 }
+    DirectTaskSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, invocationPath]
+      properties:
+        contractVersion: { type: string, const: steward.task/v2 }
+        invocationPath: { type: string, minLength: 1 }
+        envelopeDigest:
+          type: string
+          pattern: '^steward:sha256:[0-9a-f]{64}$'
+          description: Exact active User Envelope content selector scoped to the authenticated canonical owner.
     TaskPhase:
       type: string
       enum: [submitted, parked, queued, running, succeeded, failed, cancelled]
