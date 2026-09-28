@@ -67,7 +67,7 @@ this library as a dependency and pass only its runner-image contract under
 # Chart.yaml
 dependencies:
   - name: steward-run
-    version: 0.1.0
+    version: 0.1.1
     repository: oci://registry.customer.example/charts
 ```
 

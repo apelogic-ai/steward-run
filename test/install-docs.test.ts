@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
 
-test("the v0.7.2 guide is one self-contained operator runbook", async () => {
+test("the v0.7.3 guide is one self-contained operator runbook", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const guide = await readFile(new URL("../docs/installation.md", import.meta.url), "utf8");
   const historical = await readFile(new URL("../docs/installation-v0.5.0.md", import.meta.url), "utf8");
@@ -16,8 +16,8 @@ test("the v0.7.2 guide is one self-contained operator runbook", async () => {
     await readFile(new URL("../charts/steward-run/Chart.yaml", import.meta.url), "utf8"),
   ) as { kubeVersion?: string };
 
-  assert.match(readme, /v0\.7\.2 installation, setup, and integration guide/u);
-  assert.match(arcReadme, /v0\.7\.2/u);
+  assert.match(readme, /v0\.7\.3 installation, setup, and integration guide/u);
+  assert.match(arcReadme, /v0\.7\.3/u);
   assert.match(historical, /Historical release guide/u);
   assert.equal(applicationChart.kubeVersion, ">=1.32.0-0 <1.37.0-0");
   assert.equal(libraryChart.kubeVersion, applicationChart.kubeVersion);
@@ -64,6 +64,10 @@ test("the v0.7.2 guide is one self-contained operator runbook", async () => {
   assert.match(guide, /manifest remains schema 3[\s\S]*?`image`[\s\S]*?ARC runner and governed job-container/u);
   assert.match(guide, /governedJobContainerImage/u);
   assert.match(guide, /refs\/heads\/main/u);
+  assert.match(
+    guide,
+    /RELEASE_IDENTITY="https:\/\/github\.com\/\$RELEASE_REPOSITORY\/\.github\/workflows\/portable-release\.yml@refs\/tags\/\$RELEASE_TAG"/u,
+  );
   assert.match(guide, /embedded BuildKit SLSA provenance/u);
   assert.match(guide, /not GitHub artifact attestations/u);
   assert.match(guide, /Pod Security Admission/u);
@@ -136,7 +140,7 @@ test("current authentication, timeout, links, and examples cannot drift", async 
     readFile(new URL("../action.yml", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run-arc/README.md", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run/README.md", import.meta.url), "utf8"),
-    readFile(new URL("../docs/release-notes-v0.7.2.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/release-notes-v0.7.3.md", import.meta.url), "utf8"),
   ]);
   const action = parse(actionSource) as { inputs: Record<string, { required?: boolean; default?: string }> };
   const compatibility = [
@@ -190,7 +194,7 @@ test("current authentication, timeout, links, and examples cannot drift", async 
     [new URL("../README.md", import.meta.url), readme],
     [new URL("../docs/installation.md", import.meta.url), guide],
     [new URL("../docs/steward-run-spec.md", import.meta.url), specification],
-    [new URL("../docs/release-notes-v0.7.2.md", import.meta.url), releaseNotes],
+    [new URL("../docs/release-notes-v0.7.3.md", import.meta.url), releaseNotes],
     [new URL("../charts/steward-run-arc/README.md", import.meta.url), arcReadme],
     [new URL("../charts/steward-run/README.md", import.meta.url), libraryReadme],
   ] as const;

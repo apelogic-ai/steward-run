@@ -7,10 +7,12 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-28
+
 ### Added
 
 - Added bounded action outputs for overall outcome, failure category, and HTTP
-  status; the self-checkout customer workflow exposes the same fields.
+  status; every supported reusable workflow exposes the same fields.
 - Added Artifact Hub repository publication and organization-level chart
   metadata.
 - Added tag-triggered release publication from reviewed `main` commits so
@@ -196,7 +198,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/apelogic-ai/steward-run/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/apelogic-ai/steward-run/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/apelogic-ai/steward-run/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/apelogic-ai/steward-run/compare/v0.6.0...v0.7.0

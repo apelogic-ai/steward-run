@@ -26,7 +26,7 @@ permissions:
   packages: write
 
 env:
-  ACTION_COMMIT: e377593aabc574e2ab7d0ef35843a8a8bb1cf4b3
+  ACTION_COMMIT: d5e3021a0aae21f5d847daa053e84868c458477d
 
 concurrency:
   group: portable-release-${{ github.ref }}
@@ -70,6 +70,9 @@ jobs:
           [[ "$(sed -n 's/^version: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
           [[ "$(sed -n 's/^appVersion: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
           [[ -f "docs/release-notes-v$VERSION.md" ]]
+          # The installation example must retain these two literal variable names.
+          # shellcheck disable=SC2016
+          grep -Fq 'RELEASE_IDENTITY="https://github.com/$RELEASE_REPOSITORY/.github/workflows/portable-release.yml@refs/tags/$RELEASE_TAG"' docs/installation.md
           [[ "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ && "$ACTION_COMMIT" != "$GITHUB_SHA" ]]
           gh api "repos/$GITHUB_REPOSITORY/commits/$ACTION_COMMIT" --silent
           [[ "$(gh api "repos/$GITHUB_REPOSITORY/compare/$ACTION_COMMIT...$GITHUB_SHA" --jq .status)" == ahead ]]
