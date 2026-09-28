@@ -17,7 +17,10 @@ test("the customer workflow executes only its own immutable action with GitHub O
   assert.equal(job?.permissions?.["id-token"], "write");
   assert.equal(job?.["runs-on"], "${{ inputs.runner-label }}");
   assert.equal(job?.["timeout-minutes"], "${{ inputs.job-timeout-minutes }}");
-  assert.deepEqual(Object.keys(workflow.on.workflow_call.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
+  assert.deepEqual(
+    Object.keys(workflow.on.workflow_call.outputs).sort(),
+    ["failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
+  );
   assert.deepEqual(Object.keys(workflow.on.workflow_call.inputs).sort(), Object.keys(existing.on.workflow_call.inputs).sort());
   for (const required of ["runner-label", "input-artifact", "output-artifact", "steward-api-url"]) {
     assert.equal(workflow.on.workflow_call.inputs[required]?.required, true, required);
@@ -72,7 +75,7 @@ test("the customer workflow executes only its own immutable action with GitHub O
   assert.ok(steps.indexOf(selfCheckout ?? {}) < steps.indexOf(task ?? {}));
 });
 
-test("the current handoff documents the fork workflow and published OSS artifacts", async () => {
+test("the current handoff documents the public workflow and published OSS artifacts", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const guide = await readFile(new URL("../docs/installation.md", import.meta.url), "utf8");
   const rebuild = await readFile(new URL("../docs/customer-rebuild.md", import.meta.url), "utf8");
@@ -87,6 +90,8 @@ test("the current handoff documents the fork workflow and published OSS artifact
   assert.match(guide, /oauth-protected-resource/u);
   assert.match(guide, /Direct consumption of the public upstream reusable workflow is supported/u);
   assert.match(guide, /different private fork is not supported/u);
-  assert.match(guide, /job_workflow_ref=apelogic-ai\/steward-run/u);
-  assert.match(guide, /Exact matching is byte-for-byte/u);
+  assert.match(guide, /no workflow-ref or workflow-SHA selector/u);
+  assert.match(guide, /numeric GitHub owner and repository IDs/u);
+  assert.doesNotMatch(guide, /job_workflow_ref=apelogic-ai\/steward-run/u);
+  assert.match(rebuild, /does not define or support a customer-fork build/u);
 });

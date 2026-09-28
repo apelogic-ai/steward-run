@@ -5,10 +5,27 @@ type: application
 version: 0.7.2
 appVersion: 0.7.2
 kubeVersion: ">=1.32.0-0 <1.37.0-0"
+home: https://github.com/apelogic-ai/steward-run
+icon: https://hypershell.ai/favicon.png
+keywords:
+  - ai-agents
+  - arc
+  - github-actions
+  - steward
+maintainers:
+  - name: HyperShell
+    url: https://hypershell.ai
 sources:
+  - https://github.com/apelogic-ai/steward-run
   - https://github.com/actions/actions-runner-controller
 annotations:
   licenses: MIT
+  artifacthub.io/license: MIT
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://github.com/apelogic-ai/steward-run/blob/main/docs/installation.md
+    - name: Support
+      url: https://github.com/apelogic-ai/steward-run/issues
 dependencies:
   - name: gha-runner-scale-set
     version: 0.14.2

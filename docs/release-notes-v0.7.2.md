@@ -1,12 +1,19 @@
 # steward-run v0.7.2
 
+> **v0.7.3 correction:** github-oidc-exchange policy versions 5 and 6 do
+> not have `job_workflow_ref` or workflow-SHA selectors. The workflow commit
+> remains an exact caller supply-chain pin, but it is not an Identity allowlist
+> field. Identity v6 binds numeric owner/repository IDs plus its configured
+> subject, event, and ref selectors. See the current installation guide and
+> [github-oidc-exchange #82](https://github.com/apelogic-ai/github-oidc-exchange/issues/82).
+
 This release completes the standalone OSS operator handoff without changing
 the schema-3 release manifest. Its signed `image` remains the immutable public
 image for both the ARC runner and governed job-container roles.
 
 ## Installation hardening
 
-- The application chart supports Kubernetes 1.32 through 1.36 inclusive and
+- **Breaking:** the application chart supports Kubernetes 1.32 through 1.36 inclusive and
   tests every supported minor plus both rejected boundaries.
 - Helm schema validation rejects runner list overlays that omit
   `/home/runner/run.sh`, the image pull policy, the no-privilege security
@@ -35,10 +42,11 @@ customer workflow directly at the exact manifest `workflowCommit`.
 
 Cross-repository use of a different private fork is explicitly unsupported
 because the caller's `GITHUB_TOKEN` cannot be assumed to read that repository
-and the workflow has no PAT/token input. Identity policy must match the exact
-byte-for-byte `job_workflow_ref` for the selected workflow repository, path,
-and 40-character commit.
+and the workflow has no PAT/token input. Keep the selected workflow repository,
+path, and 40-character commit exact in the caller. Current Identity policy
+does not select that workflow claim.
 
-Upgrade the reusable-workflow commit, action commit, image digest, chart
-package, and Identity allowlist as one verified v0.7.2 handoff. Roll back by
-restoring the complete v0.7.1 handoff.
+Upgrade the reusable-workflow commit, action commit, image digest, and chart
+package as one verified v0.7.2 handoff. Roll back by restoring the complete
+v0.7.1 handoff. Change Identity only when a supported numeric-ID,
+subject/event/ref, or audience policy field actually changes.

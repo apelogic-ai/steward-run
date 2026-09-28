@@ -18,11 +18,15 @@ runner registration API are external prerequisites; this is not a separate
 long-running Steward API service. Release `v0.7.2` publishes the standalone
 multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.2` and the
 application chart in
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.2`. The
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.2`; the
+[Artifact Hub package](https://artifacthub.io/packages/helm/steward-run/steward-run-arc)
+indexes the same OCI repository. The
 attached `oss-release-manifest.json` records both immutable OCI digests, the
 pinned reusable-workflow and action commits, workflow repository, ARC
-compatibility version, release-asset checksums, SLSA provenance,
-SPDX SBOM evidence, and keyless signature bundles. The manifest's schema-3
+compatibility version, release-asset checksums, embedded BuildKit SLSA
+provenance and SPDX SBOM evidence, and keyless signature bundles.
+These embedded OCI attestations are not GitHub artifact attestations and are
+not consumed by `gh attestation verify`. The manifest's schema-3
 `image` field identifies the same signed public image for both the ARC runner
 and governed job-container roles, as detailed in the installation guide.
 
@@ -37,6 +41,14 @@ category, and an independent finalization category. Raw Steward reasons, respons
 stdout/stderr, headers, tokens, assertions, credentials, and Secret values are never copied into
 GitHub metadata or the terminal error. Unknown details map to `unknown`; successful runs do not
 publish failure metadata.
+
+The action and self-checkout customer workflow in this source tree also emit
+bounded `outcome`, `failure-category`, and `http-status` step outputs.
+`outcome` is exactly `success` or `failure`; the other two are empty when not
+applicable. Existing `status`, `task-uid`, and `runtime-uid` retain their
+meanings. A calling job that needs to inspect failure outputs must give the
+action step `continue-on-error: true` and branch on those bounded values; no
+response body or credential is exposed.
 
 When a Steward API request itself fails, the existing failure contract is accompanied by
 `steward-run.request-failure/v1`. That bounded signal identifies the request stage and category,
@@ -103,7 +115,33 @@ different repository cannot assume its `GITHUB_TOKEN` can read a private fork;
 that topology is unsupported because the workflow deliberately accepts no
 PAT or checkout-token input. Use the public upstream workflow, the same
 private repository, or a reviewed vendored copy. See the installation guide
-for the exact caller and Identity `job_workflow_ref` pins.
+for the exact caller pin and the Identity policy fields that actually exist.
+Identity v6 binds numeric owner/repository IDs plus its configured subject,
+event, and ref selectors; it does not yet enforce `job_workflow_ref` or the
+workflow SHA.
+
+Direct use on a GitHub-hosted runner needs no preinstalled Node 24. The
+composite action uses an existing Node 24 runtime when present and otherwise
+installs its pinned Node 24 fallback before executing the bundle. The signed
+runner image therefore executes its attested runtime without a download:
+
+```yaml
+jobs:
+  governed:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - id: task
+        uses: apelogic-ai/steward-run@REVIEWED_40_HEX_ACTION_COMMIT
+        with:
+          workflow: CUSTOMER_WORKFLOW_REFERENCE
+          inputs: in
+          outputs: out
+          steward-api-url: https://steward.customer.example
+```
 
 The caller checks the invocation manifest into its repository, then uploads `request`; the reusable
 job checks out the exact triggered commit for local validation without persisting Git credentials,
@@ -140,7 +178,7 @@ non-root, no-privilege runner Pods without a Kubernetes API token. The old
 [`steward-run` library chart](charts/steward-run/) remains an internal helper,
 not the customer installation path. The public runner and chart are published
 at the GHCR coordinates above; the [guide](docs/installation.md)
-shows how to resolve their immutable digests or publish fork-owned artifacts.
+shows how to resolve and verify their immutable digests.
 The supported runner artifact is one multi-platform OCI index containing
 `linux/amd64` and `linux/arm64`; the chart remains architecture-neutral and
 pins the index digest so Kubernetes selects the matching image.
@@ -152,10 +190,12 @@ roll out its new digest within that window; pinned images do not self-update.
 For a dedicated self-hosted runner that must not pull the ARC job container, use the separately
 pinned `steward-task-self-hosted.yml` reusable workflow. It has the same artifact, immutable
 Action, output, and `id-token: write` contract, so GitHub emits an exact `job_workflow_ref`; it
-does not declare a container. The runner operator is responsible for a vetted Node 24, Bash,
-Git, and tar installation and must restrict the runner label to that local environment. This is a
-separate workflow identity and must be authorized explicitly by the identity policy; it is not a
-caller switch on the ARC workflow.
+does not declare a container. The runner operator is responsible for vetted Bash,
+Git, and tar installations and must restrict the runner label to that local environment. The
+action uses the image's Node 24 runtime and installs a pinned fallback only
+when Node 24 is absent. This is a
+separate workflow provenance record, but current Identity v6 cannot select a
+workflow ref or SHA; it is not a caller switch on the ARC workflow.
 
 System/process trust is the default for Steward discovery, Identity discovery,
 the exchange, and Steward API calls. `identity-exchange-url`,
@@ -195,13 +235,14 @@ The minimal local invocation contract is:
   bookkeeping values used for idempotency and results;
 - pre-create every declared input path. Steward-run creates only declared output paths recovered
   from the Task archive;
-- read successful `status`, `task-uid`, and `runtime-uid` values from `GITHUB_OUTPUT`; on failure,
-  read only the versioned bounded annotations/summary described above.
+- read successful `outcome`, `status`, `task-uid`, and `runtime-uid` values from
+  `GITHUB_OUTPUT`; on failure, read only `outcome`, `failure-category`, optional
+  `http-status`, and the versioned bounded annotations/summary described above.
 
 The token file itself is never a result artifact. Harnesses must mount it outside the declared
 input/output paths and remove it with the disposable cluster.
 
 `portable-release.yml` publishes the public GHCR image, OCI chart, release
-manifest, checksums, verified provenance/SBOM summary, signatures, chart
+manifest, checksums, verified embedded provenance/SBOM summary, tag-bound signatures, chart
 archive, and read-only ARC preflight without cloud-specific infrastructure
 inputs.

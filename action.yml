@@ -47,6 +47,15 @@ inputs:
     required: false
     default: "10"
 outputs:
+  outcome:
+    description: Action result, exactly success or failure
+    value: ${{ steps.steward-run.outputs.outcome }}
+  failure-category:
+    description: Bounded steward-run failure category; empty on success
+    value: ${{ steps.steward-run.outputs.failure-category }}
+  http-status:
+    description: HTTP status for a classified Steward request failure; empty otherwise
+    value: ${{ steps.steward-run.outputs.http-status }}
   status:
     description: Terminal Steward Task phase
     value: ${{ steps.steward-run.outputs.status }}
@@ -60,6 +69,22 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Detect Node.js 24
+      id: node24
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v node >/dev/null 2>&1 && node --version 2>/dev/null | grep -Eq '^v24\.'; then
+          printf 'available=true\n' >> "$GITHUB_OUTPUT"
+        else
+          printf 'available=false\n' >> "$GITHUB_OUTPUT"
+        fi
+    - name: Set up Node.js 24
+      if: steps.node24.outputs.available != 'true'
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24.21.0
+        package-manager-cache: false
     - id: steward-run
       shell: bash
       env:

@@ -5,6 +5,11 @@ tagged release as a unit: reusable workflow, action commit, runner image, and
 Helm chart must all come from its signed `oss-release-manifest.json`. Do not
 mix artifacts from different releases.
 
+The upstream repository protects creation, update, and deletion of `v*` tags
+with an active ruleset restricted to organization administrators. The portable
+release preflight also requires the tagged commit to be reachable from
+`refs/heads/main` before it publishes artifacts.
+
 The manifest remains schema 3. Its `image` field is the signed public
 multi-platform image used for both the ARC runner and governed job-container
 roles. Steward's
@@ -57,7 +62,7 @@ set -euo pipefail
 RELEASE_VERSION=0.7.2
 RELEASE_TAG="v$RELEASE_VERSION"
 RELEASE_REPOSITORY=apelogic-ai/steward-run
-RELEASE_IDENTITY="https://github.com/apelogic-ai/steward-run/.github/workflows/portable-release.yml@refs/heads/main"
+RELEASE_IDENTITY="https://github.com/$RELEASE_REPOSITORY/.github/workflows/portable-release.yml@refs/heads/main"
 
 gh release download "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --dir .
 sha256sum -c SHA256SUMS
@@ -81,8 +86,8 @@ IMAGE_REFERENCE="$(jq -er '.image' oss-release-manifest.json)"
 CHART_REFERENCE="$(jq -er '.chart' oss-release-manifest.json)"
 WORKFLOW_COMMIT="$(jq -er '.workflowCommit' oss-release-manifest.json)"
 ACTION_COMMIT="$(jq -er '.actionCommit' oss-release-manifest.json)"
-printf '%s\n' "$IMAGE_REFERENCE" | grep -Eq '^ghcr\.io/apelogic-ai/steward-run@sha256:[0-9a-f]{64}$'
-printf '%s\n' "$CHART_REFERENCE" | grep -Eq '^ghcr\.io/apelogic-ai/charts/steward-run-arc@sha256:[0-9a-f]{64}$'
+printf '%s\n' "$IMAGE_REFERENCE" | grep -Eq '^ghcr\.io/[a-z0-9._-]+/steward-run@sha256:[0-9a-f]{64}$'
+printf '%s\n' "$CHART_REFERENCE" | grep -Eq '^ghcr\.io/[a-z0-9._-]+/charts/steward-run-arc@sha256:[0-9a-f]{64}$'
 printf '%s\n' "$WORKFLOW_COMMIT" "$ACTION_COMMIT" | grep -Ec '^[0-9a-f]{40}$' | grep -Fx 2
 
 cosign verify --experimental-oci11=true \
@@ -94,7 +99,7 @@ cosign verify --experimental-oci11=true \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "$CHART_REFERENCE"
 
-CHART_OCI=oci://ghcr.io/apelogic-ai/charts/steward-run-arc
+CHART_OCI="oci://${CHART_REFERENCE%@*}"
 CHART_DIGEST="${CHART_REFERENCE##*@}"
 HELM_PULL_OUTPUT="$(helm pull "$CHART_OCI" --version "$RELEASE_VERSION" 2>&1)"
 printf '%s\n' "$HELM_PULL_OUTPUT"
@@ -105,8 +110,16 @@ test -f "$CHART_PACKAGE"
 
 Retain the manifest, checksum inventory, signature bundles, chart package,
 and `release-attestation-summary.json` with the deployment record. The summary
-binds verified SLSA provenance and SPDX SBOM attestations to each runnable
-child manifest of the multi-platform OCI index.
+binds verified embedded BuildKit SLSA provenance and SPDX SBOM predicates to
+each runnable child manifest of the multi-platform OCI index. These are OCI
+image attestations, not GitHub artifact attestations; `gh attestation verify`
+is therefore not the verification command for this handoff. The Cosign
+commands above verify the image, chart, manifest, and checksum inventory
+against the exact release-workflow identity. `RELEASE_REPOSITORY` keeps that
+repository binding explicit; this maintained path sets it to the public
+upstream. An independent fork distribution needs its own complete release
+policy and verification guide and must not reuse the upstream manifest or
+certificate identity.
 
 ### 2. Select the cluster and verify ARC 0.14.2
 
@@ -178,8 +191,12 @@ is only for runner registration; it is not a Steward bearer credential.
 Helm replaces lists instead of merging them. Keep the entire runner container
 entry below when changing the image or adding mounts. The chart schema rejects
 an entry that drops the run command, pull policy, no-privilege security
-context, or CPU/memory requests and limits. It also requires pod-level
-`runAsNonRoot: true` and rejects any container `capabilities.add` entry.
+context, or CPU/memory requests and limits. The runner Pod spec is a closed
+allowlist: it accepts only the documented hardened pod context, pull-secret
+references, one runner container, and optional ConfigMap trust volumes. It
+pins `RuntimeDefault` seccomp, requires non-root UID/GID and supplemental
+groups, disables ServiceAccount-token automounting, permits only read-only
+ConfigMap mounts, and rejects every other pod or container field.
 
 ```sh
 cat > customer-values.yaml <<YAML
@@ -215,6 +232,9 @@ gha-runner-scale-set:
           command: ["/home/runner/run.sh"]
           securityContext:
             allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
             capabilities:
               drop: [ALL]
             privileged: false
@@ -237,6 +257,26 @@ read-only at `/etc/steward-run/trust`, and set
 entry. The tested shape is in
 [`test/fixtures/arc-ca-values.yaml`](../test/fixtures/arc-ca-values.yaml).
 Never place inline PEM or a private key in values.
+
+Use Kubernetes Pod Security Admission as a second, cluster-enforced boundary.
+Before installation, create the dedicated runner namespace and label it for
+the `restricted` policy. Pin `PSS_VERSION` to a supported Kubernetes minor and
+advance it deliberately during cluster upgrades:
+
+```sh
+PSS_VERSION=v1.32
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
+  create namespace "$RUNNER_NAMESPACE" --dry-run=client -o yaml |
+  kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" apply -f -
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
+  label namespace "$RUNNER_NAMESPACE" --overwrite \
+  pod-security.kubernetes.io/enforce=restricted \
+  pod-security.kubernetes.io/enforce-version="$PSS_VERSION" \
+  pod-security.kubernetes.io/audit=restricted \
+  pod-security.kubernetes.io/audit-version="$PSS_VERSION" \
+  pod-security.kubernetes.io/warn=restricted \
+  pod-security.kubernetes.io/warn-version="$PSS_VERSION"
+```
 
 ### 5. Render, install, and verify linkage
 
@@ -367,19 +407,19 @@ design.
 
 ### Identity policy
 
-Identity must admit the exact reusable-workflow claim at the reviewed commit.
-For the upstream example, configure an exact string match for:
+Do not configure a `job_workflow_ref` allowlist: github-oidc-exchange policy
+versions 5 and 6 have no workflow-ref or workflow-SHA selector. Version 6
+binds the numeric GitHub owner and repository IDs and applies its configured
+subject, event, and ref selectors. The reusable-workflow ref is retained in
+issued provenance, but it is not currently an admission input.
 
-```text
-job_workflow_ref=apelogic-ai/steward-run/.github/workflows/steward-task-customer.yml@REVIEWED_40_HEX_COMMIT
-```
-
-A fork or vendored copy has a different `job_workflow_ref` and needs its own
-exact allowlist entry. Do not authorize a branch, tag, repository-wide
-wildcard, or the upstream string for a fork. Exact matching is byte-for-byte:
-case, repository, path, separator, and 40-character commit must all match the
-claim GitHub emits. Continue to validate the caller repository, event, actor,
-and selected OIDC audience according to the operator's Identity policy.
+Configure only fields present in the installed exchange policy schema, using
+the caller repository's numeric IDs and exact subject/event/ref values. Keep
+the literal 40-character `workflowCommit` in the caller as a separate supply-
+chain pin. Do not mistake that source pin for an Identity policy control.
+[github-oidc-exchange issue #82](https://github.com/apelogic-ai/github-oidc-exchange/issues/82)
+tracks workflow-ref and workflow-SHA selectors. If that feature lands, follow
+the exchange release's migration guidance before adding either selector.
 
 ### Task source and timeout inputs
 
@@ -427,7 +467,8 @@ Dispatch the pinned caller workflow and verify:
 
 - the ARC listener creates a runner from the digest-pinned image;
 - the action discovers Steward and Identity once each;
-- Identity accepts the exact `job_workflow_ref` and audience;
+- Identity accepts the configured numeric repository/owner IDs and exact
+  subject, event, ref, and audience policy;
 - `status`, `task-uid`, and `runtime-uid` are populated;
 - the `result` artifact contains only declared outputs; and
 - Steward finalization is `confirmed`.
@@ -446,17 +487,25 @@ Release acceptance is:
 - `helm lint` and `helm template` pass with the complete values file;
 - Kubernetes 1.32, 1.33, 1.34, 1.35, and 1.36 render; 1.31 and 1.37 fail;
 - an incomplete runner container overlay fails schema validation; and
-- one live governed task completes and finalizes under the exact Identity
-  workflow allowlist.
+- one live governed task completes and finalizes under the documented Identity
+  repository/subject/event/ref policy.
 
 ## Upgrade
+
+For an installation older than v0.6.0, migrate authentication discovery in
+this order: publish Steward's protected-resource metadata and Identity's
+authorization-server metadata first; upgrade while retaining the explicit
+`identity-exchange-url`, `identity-exchange-audience`, and any CA-file input;
+verify one governed task through that explicit path; then remove the
+compatibility inputs and verify discovery. Do not remove the explicit path
+before both metadata endpoints are live and exact-string compatible.
 
 1. Download and verify the new release in a new directory.
 2. Compare release notes, supported Kubernetes/ARC versions, manifest
    `workflowCommit`, `actionCommit`, image digest, and chart digest.
 3. Replace `IMAGE_REFERENCE` in the complete values file.
-4. Update the caller's literal workflow commit and the exact Identity
-   `job_workflow_ref` entry together.
+4. Update the caller's literal workflow commit. Identity v5/v6 has no
+   workflow-ref selector, so there is no corresponding allowlist entry.
 5. Lint, render, run controller preflight, then upgrade:
 
 ```sh
@@ -476,7 +525,8 @@ must rebuild, verify, and roll out replacement digests within that window.
 ## Rollback
 
 Restore the previous release as one coherent unit: previous chart package,
-image digest, reusable-workflow commit, and exact Identity allowlist entry.
+image digest, and reusable-workflow commit. Restore Identity policy only when
+the release migration actually changed a supported policy field.
 Do not roll back only the image or only the workflow.
 
 ```sh

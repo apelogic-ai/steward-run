@@ -58,6 +58,11 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     assert.equal(pod.affinity, undefined);
     assert.equal(pod.automountServiceAccountToken, false);
     assert.equal(pod.securityContext.runAsNonRoot, true);
+    assert.equal(pod.securityContext.runAsUser, 1001);
+    assert.equal(pod.securityContext.runAsGroup, 1001);
+    assert.equal(pod.securityContext.fsGroup, 1001);
+    assert.equal(pod.securityContext.fsGroupChangePolicy, "OnRootMismatch");
+    assert.deepEqual(pod.securityContext.seccompProfile, { type: "RuntimeDefault" });
     assert.match(pod.containers[0].image, /^registry\.example\/steward-run@sha256:[a-f0-9]{64}$/u);
     assert.equal(pod.containers[0].securityContext.allowPrivilegeEscalation, false);
     assert.deepEqual(pod.containers[0].securityContext.capabilities.drop, ["ALL"]);
@@ -114,6 +119,18 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       /runAsUser|minimum/u,
     );
     assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.securityContext.runAsGroup=0"),
+      /runAsGroup|minimum/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.securityContext.fsGroup=0"),
+      /fsGroup|minimum/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.securityContext.supplementalGroups[0]=0"),
+      /supplementalGroups|minimum/u,
+    );
+    assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.runAsNonRoot=false"),
       /runAsNonRoot|Must validate/u,
     );
@@ -122,9 +139,105 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       /runAsUser|minimum/u,
     );
     assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.runAsGroup=0"),
+      /runAsGroup|minimum/u,
+    );
+    assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.capabilities.add[0]=NET_ADMIN"),
       /capabilities|Must not validate/u,
     );
+    assert.throws(
+      () => template(
+        "steward-run",
+        chart,
+        "--namespace",
+        "arc-runners",
+        "--values",
+        fixture,
+        "--set-string",
+        "gha-runner-scale-set.template.metadata.annotations.container\\.apparmor\\.security\\.beta\\.kubernetes\\.io/runner=unconfined",
+      ),
+      /metadata|Additional property/u,
+    );
+    assert.throws(
+      () => template(
+        "steward-run",
+        chart,
+        "--namespace",
+        "arc-runners",
+        "--values",
+        fixture,
+        "--set",
+        "gha-runner-scale-set.listenerTemplate.spec.hostNetwork=true",
+        "--set",
+        "gha-runner-scale-set.listenerTemplate.spec.containers[0].name=listener",
+        "--set",
+        "gha-runner-scale-set.listenerTemplate.spec.containers[0].securityContext.privileged=true",
+        "--set",
+        "gha-runner-scale-set.listenerTemplate.spec.volumes[0].name=host-root",
+        "--set",
+        "gha-runner-scale-set.listenerTemplate.spec.volumes[0].hostPath.path=/",
+      ),
+      /listenerTemplate|Additional property/u,
+    );
+    assert.throws(
+      () => template(
+        "steward-run",
+        chart,
+        "--namespace",
+        "arc-runners",
+        "--values",
+        fixture,
+        "--set",
+        "gha-runner-scale-set.namespaceOverride=kube-system",
+      ),
+      /namespaceOverride|Additional property/u,
+    );
+    for (const overrides of [
+      ["initContainers[0].name=privileged-init"],
+      ["ephemeralContainers[0].name=debugger"],
+      ["hostNetwork=true"],
+      ["hostPID=true"],
+      ["hostIPC=true"],
+      ["shareProcessNamespace=true"],
+      ["nodeName=worker-1"],
+      ["serviceAccountName=runner-admin"],
+      ["automountServiceAccountToken=true"],
+      ["securityContext.seccompProfile.type=Unconfined"],
+      [
+        "volumes[0].name=host-root",
+        "volumes[0].hostPath.path=/",
+      ],
+      [
+        "volumes[0].name=service-account-token",
+        "volumes[0].projected.sources[0].serviceAccountToken.path=token",
+      ],
+      [
+        "containers[0].ports[0].containerPort=8080",
+        "containers[0].ports[0].hostPort=80",
+      ],
+      ["containers[0].securityContext.seccompProfile.type=Unconfined"],
+      ["containers[0].securityContext.procMount=Unmasked"],
+      ["containers[0].securityContext.appArmorProfile.type=Unconfined"],
+      ["containers[0].securityContext.seLinuxOptions.type=spc_t"],
+    ] as const) {
+      const setArguments = overrides.flatMap((override) => [
+        "--set",
+        `gha-runner-scale-set.template.spec.${override}`,
+      ]);
+      assert.throws(
+        () => template(
+          "steward-run",
+          chart,
+          "--namespace",
+          "arc-runners",
+          "--values",
+          fixture,
+          ...setArguments,
+        ),
+        /values don't meet the specifications of the schema/u,
+      );
+    }
     assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", caFixture, "--set", "gha-runner-scale-set.template.spec.volumes[0].configMap.name="),
       /configMap\.name|valid non-empty ConfigMap name/u,
@@ -156,9 +269,18 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     }]);
     const metadata = readFileSync(join(chart, "Chart.yaml"), "utf8");
     const schema = readFileSync(join(chart, "values.schema.json"), "utf8");
+    const artifactHubRepository = readFileSync(join(chart, "artifacthub-repo.yml"), "utf8");
     assert.match(metadata, /type: application/u);
     assert.match(metadata, /version: 0\.14\.2/u);
-    assert.doesNotMatch(metadata, /apelogic-ai\/steward-run/u);
+    assert.match(metadata, /home: https:\/\/github\.com\/apelogic-ai\/steward-run/u);
+    assert.match(metadata, /name: HyperShell[\s\S]*?url: https:\/\/hypershell\.ai/u);
+    assert.match(metadata, /artifacthub\.io\/license: MIT/u);
+    assert.match(metadata, /artifacthub\.io\/links/u);
+    assert.match(metadata, /icon: https:\/\/hypershell\.ai\/favicon\.png/u);
+    assert.match(
+      artifactHubRepository,
+      /repositoryID: b580a641-1bdf-4ff1-ad22-8a64a6cc696a/u,
+    );
     for (const field of ["configMap", "items", "env", "volumeMounts", "mountPath", "readOnly"]) {
       assert.ok(schema.includes(`\"${field}\"`), `trust-bundle schema: ${field}`);
     }

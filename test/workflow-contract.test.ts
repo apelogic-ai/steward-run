@@ -508,6 +508,16 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   );
   assert.match(release, /resume_image_digest:/u);
   assert.match(release, /resume_chart_digest:/u);
+  assert.match(release, /push:[\s\S]*?tags:[\s\S]*?v\[0-9\]\+/u);
+  assert.match(release, /refs\/tags\/v\[0-9\]\+/u);
+  assert.doesNotMatch(release, /\[\[ "\$GITHUB_REF" == refs\/heads\/main \]\]/u);
+  assert.match(release, /compare\/\$GITHUB_SHA\.\.\.refs\/heads\/main/u);
+  assert.match(release, /"\$main_status" == "identical"[\s\S]*?"\$main_status" == "ahead"/u);
+  assert.match(release, /identity="https:\/\/github\.com\/\$GITHUB_REPOSITORY\/\.github\/workflows\/portable-release\.yml@\$GITHUB_REF"/u);
+  assert.equal(
+    release.match(/VERSION=\$\{\{ needs\.preflight\.outputs\.version \}\}/gu)?.length,
+    2,
+  );
   assert.match(release, /helm pull "oci:\/\/\$CHART"/u);
   assert.match(release, /"\$image_digest" == "\$RESUME_IMAGE_DIGEST"/u);
   assert.match(release, /"\$chart_digest" == "\$RESUME_CHART_DIGEST"/u);
@@ -518,14 +528,26 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /SHA256SUMS/u);
   assert.match(release, /steward-run-arc-preflight\.mjs/u);
   assert.match(release, /arc-controller-identity\.mjs/u);
+  assert.match(release, /artifacthub-repo\.yml:application\/vnd\.cncf\.artifacthub\.repository-metadata\.layer\.v1\.yaml/u);
+  assert.match(release, /oras manifest fetch --descriptor "\$CHART:artifacthub\.io"/u);
   assert.match(release, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));
   assert.match(release, /compare\/\$ACTION_COMMIT\.\.\.\$GITHUB_SHA[\s\S]*?== ahead/u);
+  assert.match(release, /contents\/action\.yml\?ref=\$ACTION_COMMIT/u);
+  assert.match(release, /grep -Fq "failure-category:" <<<"\$action_metadata"/u);
+  assert.match(release, /grep -Fq "actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020" <<<"\$action_metadata"/u);
+  assert.match(release, /grep -Fq "if: steps\.node24\.outputs\.available != 'true'" <<<"\$action_metadata"/u);
+  assert.match(release, /grep -Fq "package-manager-cache: false" <<<"\$action_metadata"/u);
+  assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task\.yml/u);
+  assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task-self-hosted\.yml/u);
   assert.match(release, /schemaVersion:3/u);
   assert.match(release, /workflowRepository:\$workflow_repository/u);
   assert.match(release, /workflowCommit:\$workflow_commit/u);
   assert.match(release, /actionCommit:\$action_commit/u);
   assert.match(release, /image:\$image/u);
   assert.doesNotMatch(release, /governedJobContainerImage/u);
+  assert.match(release, /format:"buildkit-embedded-oci"/u);
+  assert.match(release, /githubArtifactAttestations:false/u);
+  assert.match(release, /embedded OCI attestations, not[\s\S]*?GitHub artifact attestations/u);
   assert.match(release, /docs\/release-notes-v\$VERSION\.md/u);
   assert.match(release, /cp "docs\/release-notes-v\$VERSION\.md" "\$RUNNER_TEMP\/release-notes\.md"/u);
   assert.doesNotMatch(release, /provenance: false|sbom: false/u);

@@ -7,7 +7,36 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+
+- Added bounded action outputs for overall outcome, failure category, and HTTP
+  status; the self-checkout customer workflow exposes the same fields.
+- Added Artifact Hub repository publication and organization-level chart
+  metadata.
+- Added tag-triggered release publication from reviewed `main` commits so
+  keyless signatures bind the exact release tag.
+
+### Changed
+
+- The composite action uses an existing Node 24 runtime when present and
+  otherwise installs a pinned Node 24 fallback, avoiding downloads in the
+  signed runner image while remaining self-contained on hosted runners.
+- Clarified that BuildKit provenance/SPDX predicates are embedded OCI
+  attestations rather than GitHub artifact attestations, and parameterized
+  Cosign verification for the selected release repository.
+- Corrected Identity guidance to its actual numeric repository/owner and
+  subject/event/ref selectors, removed the stale fork-publication claim, and
+  documented the pre-v0.6 discovery migration order.
+- Aligned the internal library chart with the application chart's breaking
+  Kubernetes 1.32–1.36 support window.
+
+### Fixed
+
+- Closed application-chart runner-pod values to the documented hardened pod,
+  template, container, pull-secret, and ConfigMap-volume fields; rejected
+  listener-pod and namespace overrides, pinned seccomp, disabled
+  ServiceAccount-token automounting, required non-root groups, and documented
+  Pod Security Admission `restricted` as a second boundary.
 
 ## [0.7.2] - 2026-09-28
 
@@ -17,14 +46,18 @@ No unreleased changes.
   timeouts bounded from 1 through 360 while preserving the existing 15-minute
   and 10-minute defaults.
 - Added a complete current installation, verification, integration, upgrade,
-  rollback, and uninstall runbook, including exact upstream/private-fork and
-  Identity `job_workflow_ref` contracts.
+  rollback, and uninstall runbook. The v0.7.3 correction removes its inaccurate
+  private-fork and Identity `job_workflow_ref` policy claims.
 - Enabled GitHub private vulnerability reporting and linked the advisory
   channel from the security policy.
 
+### Changed
+
+- **Breaking:** raised the supported Kubernetes window to 1.32–1.36 with
+  boundary tests.
+
 ### Fixed
 
-- Expanded the supported Kubernetes window to 1.32–1.36 with boundary tests.
 - Rejected Helm list overlays that silently remove the runner command,
   security hardening, or resource bounds; pod-level `runAsNonRoot: true` is
   required and container `capabilities.add` is forbidden.

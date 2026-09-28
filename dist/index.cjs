@@ -4641,7 +4641,8 @@ function safeFailure(error) {
   return new StewardRunFailure(metadata);
 }
 async function reportActionFailure(failure) {
-  await publishFailureMetadata(failure.metadata, {
+  const safe = sanitizeFailureMetadata(failure.metadata);
+  await publishFailureMetadata(safe, {
     writeAnnotation: async (value) => {
       process.stdout.write(`::error title=Steward governed Task failed::${value}
 `);
@@ -4655,6 +4656,12 @@ async function reportActionFailure(failure) {
       }
     }
   });
+  try {
+    await setActionOutput("outcome", "failure");
+    await setActionOutput("failure-category", safe.failureCategory);
+    await setActionOutput("http-status", safe.httpStatus?.toString() ?? "");
+  } catch {
+  }
 }
 async function main() {
   const controller = new AbortController();
@@ -4707,6 +4714,9 @@ async function main() {
       signal: controller.signal,
       runtimeBindingTimeoutMilliseconds: config.runtimeBindingTimeoutMilliseconds
     });
+    await setActionOutput("outcome", "success");
+    await setActionOutput("failure-category", "");
+    await setActionOutput("http-status", "");
   } catch (error) {
     const failure = safeFailure(error);
     await reportActionFailure(failure);

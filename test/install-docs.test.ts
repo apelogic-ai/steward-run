@@ -9,10 +9,18 @@ test("the v0.7.2 guide is one self-contained operator runbook", async () => {
   const guide = await readFile(new URL("../docs/installation.md", import.meta.url), "utf8");
   const historical = await readFile(new URL("../docs/installation-v0.5.0.md", import.meta.url), "utf8");
   const arcReadme = await readFile(new URL("../charts/steward-run-arc/README.md", import.meta.url), "utf8");
+  const applicationChart = parse(
+    await readFile(new URL("../charts/steward-run-arc/Chart.yaml", import.meta.url), "utf8"),
+  ) as { kubeVersion?: string };
+  const libraryChart = parse(
+    await readFile(new URL("../charts/steward-run/Chart.yaml", import.meta.url), "utf8"),
+  ) as { kubeVersion?: string };
 
   assert.match(readme, /v0\.7\.2 installation, setup, and integration guide/u);
   assert.match(arcReadme, /v0\.7\.2/u);
   assert.match(historical, /Historical release guide/u);
+  assert.equal(applicationChart.kubeVersion, ">=1.32.0-0 <1.37.0-0");
+  assert.equal(libraryChart.kubeVersion, applicationChart.kubeVersion);
   for (const section of [
     "Prerequisites",
     "Installation",
@@ -55,6 +63,12 @@ test("the v0.7.2 guide is one self-contained operator runbook", async () => {
   assert.match(guide, /schema 3/u);
   assert.match(guide, /manifest remains schema 3[\s\S]*?`image`[\s\S]*?ARC runner and governed job-container/u);
   assert.match(guide, /governedJobContainerImage/u);
+  assert.match(guide, /refs\/heads\/main/u);
+  assert.match(guide, /embedded BuildKit SLSA provenance/u);
+  assert.match(guide, /not GitHub artifact attestations/u);
+  assert.match(guide, /Pod Security Admission/u);
+  assert.match(guide, /pod-security\.kubernetes\.io\/enforce=restricted/u);
+  assert.match(guide, /runner Pod spec is a closed\s+allowlist/u);
   assert.match(guide, /does not create or alter GitHub App credentials/u);
   assert.doesNotMatch(guide, /kubectl[^\n]*create secret|--from-file=github_app/iu);
   assert.match(guide, /Uninstalling steward-run does not remove[\s\S]*?shared ARC controller/u);
@@ -63,11 +77,19 @@ test("the v0.7.2 guide is one self-contained operator runbook", async () => {
   assert.ok(values, "complete customer-values heredoc");
   const parsed = parse(values) as Record<string, any>;
   const scaleSet = parsed["gha-runner-scale-set"];
-  const runner = scaleSet?.template?.spec?.containers?.[0];
+  const pod = scaleSet?.template?.spec;
+  const runner = pod?.containers?.[0];
   assert.equal(scaleSet?.githubConfigSecret, "$GITHUB_APP_SECRET");
   assert.equal(scaleSet?.controllerServiceAccount?.name, "arc-gha-rs-controller");
+  assert.equal(pod?.automountServiceAccountToken, false);
+  assert.equal(pod?.securityContext?.fsGroup, 1001);
+  assert.equal(pod?.securityContext?.fsGroupChangePolicy, "OnRootMismatch");
+  assert.deepEqual(pod?.securityContext?.seccompProfile, { type: "RuntimeDefault" });
   assert.deepEqual(runner?.command, ["/home/runner/run.sh"]);
   assert.equal(runner?.securityContext?.allowPrivilegeEscalation, false);
+  assert.equal(runner?.securityContext?.runAsNonRoot, true);
+  assert.equal(runner?.securityContext?.runAsUser, 1001);
+  assert.equal(runner?.securityContext?.runAsGroup, 1001);
   assert.deepEqual(runner?.securityContext?.capabilities?.drop, ["ALL"]);
   assert.ok(runner?.resources?.requests?.cpu);
   assert.ok(runner?.resources?.requests?.memory);
@@ -92,9 +114,10 @@ test("the public upstream and private-fork integration boundaries are explicit",
     assert.match(document, /no PAT|accepts no\s+PAT/u);
     assert.match(document, /job_workflow_ref/u);
   }
-  assert.match(guide, /job_workflow_ref=apelogic-ai\/steward-run\/\.github\/workflows\/steward-task-customer\.yml@REVIEWED_40_HEX_COMMIT/u);
-  assert.match(guide, /Exact matching is byte-for-byte/u);
-  assert.match(guide, /Do not authorize a branch, tag, repository-wide\s+wildcard/u);
+  assert.match(guide, /no workflow-ref or workflow-SHA selector/u);
+  assert.match(guide, /numeric GitHub owner and repository IDs/u);
+  assert.match(guide, /github-oidc-exchange\/issues\/82/u);
+  assert.doesNotMatch(guide, /job_workflow_ref=apelogic-ai\/steward-run/u);
   for (const forbidden of ["token", "pat", "checkout-token", "action-ref", "container-image"]) {
     assert.equal(workflow.on.workflow_call.inputs[forbidden], undefined, forbidden);
   }
