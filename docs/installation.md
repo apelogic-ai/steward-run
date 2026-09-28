@@ -5,6 +5,11 @@ tagged release as a unit: reusable workflow, action commit, runner image, and
 Helm chart must all come from its signed `oss-release-manifest.json`. Do not
 mix artifacts from different releases.
 
+The upstream repository protects creation, update, and deletion of `v*` tags
+with an active ruleset restricted to organization administrators. The portable
+release preflight also requires the tagged commit to be reachable from
+`refs/heads/main` before it publishes artifacts.
+
 The manifest remains schema 3. Its `image` field is the signed public
 multi-platform image used for both the ARC runner and governed job-container
 roles. Steward's

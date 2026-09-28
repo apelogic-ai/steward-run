@@ -33,9 +33,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Closed application-chart runner-pod values to the documented hardened pod,
-  container, pull-secret, and ConfigMap-volume fields; pinned seccomp,
-  disabled ServiceAccount-token automounting, required non-root groups, and
-  documented Pod Security Admission `restricted` as a second boundary.
+  template, container, pull-secret, and ConfigMap-volume fields; rejected
+  listener-pod and namespace overrides, pinned seccomp, disabled
+  ServiceAccount-token automounting, required non-root groups, and documented
+  Pod Security Admission `restricted` as a second boundary.
 
 ## [0.7.2] - 2026-09-28
 

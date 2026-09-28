@@ -64,7 +64,7 @@ jobs:
             [[ -z "$INPUT_VERSION" ]]
           fi
           main_status="$(gh api \
-            "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...main" --jq .status)"
+            "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...refs/heads/main" --jq .status)"
           [[ "$main_status" == "identical" || "$main_status" == "ahead" ]]
           [[ "$(node -p 'require("./package.json").version')" == "$VERSION" ]]
           [[ "$(sed -n 's/^version: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
@@ -78,6 +78,7 @@ jobs:
           grep -Fq "failure-category:" <<<"$action_metadata"
           grep -Fq "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020" <<<"$action_metadata"
           grep -Fq "if: steps.node24.outputs.available != 'true'" <<<"$action_metadata"
+          grep -Fq "package-manager-cache: false" <<<"$action_metadata"
           grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task.yml
           grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task-self-hosted.yml
           grep -Fq "failure-category:" .github/workflows/steward-task.yml

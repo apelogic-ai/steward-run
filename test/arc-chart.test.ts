@@ -146,6 +146,53 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.capabilities.add[0]=NET_ADMIN"),
       /capabilities|Must not validate/u,
     );
+    assert.throws(
+      () => template(
+        "steward-run",
+        chart,
+        "--namespace",
+        "arc-runners",
+        "--values",
+        fixture,
+        "--set-string",
+        "gha-runner-scale-set.template.metadata.annotations.container\\.apparmor\\.security\\.beta\\.kubernetes\\.io/runner=unconfined",
+      ),
+      /metadata|Additional property/u,
+    );
+    assert.throws(
+      () => template(
+        "steward-run",
+        chart,
+        "--namespace",
+        "arc-runners",
+        "--values",
+        fixture,
+        "--set",
+        "gha-runner-scale-set.listenerTemplate.spec.hostNetwork=true",
+        "--set",
+        "gha-runner-scale-set.listenerTemplate.spec.containers[0].name=listener",
+        "--set",
+        "gha-runner-scale-set.listenerTemplate.spec.containers[0].securityContext.privileged=true",
+        "--set",
+        "gha-runner-scale-set.listenerTemplate.spec.volumes[0].name=host-root",
+        "--set",
+        "gha-runner-scale-set.listenerTemplate.spec.volumes[0].hostPath.path=/",
+      ),
+      /listenerTemplate|Additional property/u,
+    );
+    assert.throws(
+      () => template(
+        "steward-run",
+        chart,
+        "--namespace",
+        "arc-runners",
+        "--values",
+        fixture,
+        "--set",
+        "gha-runner-scale-set.namespaceOverride=kube-system",
+      ),
+      /namespaceOverride|Additional property/u,
+    );
     for (const overrides of [
       ["initContainers[0].name=privileged-init"],
       ["ephemeralContainers[0].name=debugger"],

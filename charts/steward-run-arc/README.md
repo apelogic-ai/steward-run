@@ -45,9 +45,12 @@ no added capabilities, `RuntimeDefault` seccomp, no init or ephemeral
 containers, no host access, and no mounted Kubernetes API token. The values
 schema closes the runner Pod spec to the documented pod context, pull-secret
 references, one runner container, and optional ConfigMap trust volumes; every
-other pod or container field is rejected. Enforce the Kubernetes Pod Security
-Admission `restricted` policy on the dedicated runner namespace as a second
-boundary. If the image registry is private, reference an
+other pod or container field is rejected. Runner-template metadata, listener
+pod customization, and namespace overrides are also rejected, keeping the
+scale set in the selected restricted namespace without annotation-based
+profile overrides. Enforce the Kubernetes Pod Security Admission `restricted`
+policy on the dedicated runner namespace as a second boundary. If the image
+registry is private, reference an
 existing pull Secret in `template.spec.imagePullSecrets`. Publicly trusted
 Steward and Identity endpoints require no CA values or mounts.
 

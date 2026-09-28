@@ -64,6 +64,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
   assert.equal(setupNode?.if, "steps.node24.outputs.available != 'true'");
   assert.equal(setupNode?.uses, "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
   assert.equal(setupNode?.with?.["node-version"], "24.21.0");
+  assert.equal(setupNode?.with?.["package-manager-cache"], false);
   assert.match(action.runs.steps.find((step) => step.id === "steward-run")?.run ?? "", /dist\/index\.cjs/);
 });
 
