@@ -9,6 +9,22 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 No unreleased changes.
 
+## [0.7.1] - 2026-09-27
+
+### Added
+
+- Added weekly Dependabot checks for Docker base-image updates.
+
+### Fixed
+
+- Updated the runner base to GitHub Actions Runner 2.337.0 and documented the
+  30-day rebuild and rollout obligation for fork and mirror operators.
+- Corrected installation examples to use Steward's origin URL and Identity's
+  exact issuer without a trailing slash, matching the endpoints the services
+  publish.
+- Documented Steward's existing projection from the schema-3 release
+  manifest's signed `image` field to `governedJobContainerImage`.
+
 ## [0.7.0] - 2026-09-26
 
 ### Added
@@ -125,7 +141,8 @@ No unreleased changes.
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/apelogic-ai/steward-run/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/apelogic-ai/steward-run/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/apelogic-ai/steward-run/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/apelogic-ai/steward-run/compare/v0.4.2...v0.5.0

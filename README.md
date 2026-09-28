@@ -4,7 +4,7 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-The [v0.7.0 installation and integration guide](docs/installation.md)
+The [v0.7.1 installation and integration guide](docs/installation.md)
 describes the current release contract. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
 authoritative guide for v0.5.0, which predates authentication discovery and
 requires the explicit Identity exchange inputs.
@@ -15,14 +15,16 @@ The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. Release `v0.7.0` publishes the standalone
-multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.0` and the
+long-running Steward API service. Release `v0.7.1` publishes the standalone
+multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.1` and the
 application chart in
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.0`. The
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.1`. The
 attached `oss-release-manifest.json` records both immutable OCI digests, the
 pinned reusable-workflow and action commits, workflow repository, ARC
 compatibility version, release-asset checksums, SLSA provenance,
-SPDX SBOM evidence, and keyless signature bundles.
+SPDX SBOM evidence, and keyless signature bundles. The manifest's schema-3
+`image` field identifies the same signed public image for both the ARC runner
+and governed job-container roles, as detailed in the installation guide.
 
 The client implements Steward's six-operation `/v1/tasks` lifecycle documented in
 `contracts/steward-run-v1.openapi.yaml`. It submits, uploads a workspace-relative tar archive,
@@ -134,9 +136,10 @@ shows how to resolve their immutable digests or publish fork-owned artifacts.
 The supported runner artifact is one multi-platform OCI index containing
 `linux/amd64` and `linux/arm64`; the chart remains architecture-neutral and
 pins the index digest so Kubernetes selects the matching image.
-This support applies to the fork-owned customer workflow. The legacy internal
-`steward-task.yml` remains amd64-only because it pins a separate amd64 governed
-job-container image.
+GitHub requires self-hosted runners to be upgraded within 30 days of a new
+runner release. This repository checks Docker base images weekly, but fork and
+mirror operators must merge the update, rebuild and publish the image, and
+roll out its new digest within that window; pinned images do not self-update.
 
 For a dedicated self-hosted runner that must not pull the ARC job container, use the separately
 pinned `steward-task-self-hosted.yml` reusable workflow. It has the same artifact, immutable
@@ -190,8 +193,7 @@ The minimal local invocation contract is:
 The token file itself is never a result artifact. Harnesses must mount it outside the declared
 input/output paths and remove it with the disposable cluster.
 
-The current `release.yml` remains the ApeLogic-internal ECR handoff.
 `portable-release.yml` publishes the public GHCR image, OCI chart, release
 manifest, checksums, verified provenance/SBOM summary, signatures, chart
-archive, and read-only ARC preflight without AWS or ApeLogic infrastructure
+archive, and read-only ARC preflight without cloud-specific infrastructure
 inputs.

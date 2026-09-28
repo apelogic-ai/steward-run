@@ -1,12 +1,17 @@
 # steward-run installation and integration
 
-This is the v0.7.0 installation contract. The
+This is the v0.7.1 installation contract. The
 [v0.5.0 guide](installation-v0.5.0.md) remains immutable historical evidence.
 Use a tagged release that includes this document; never combine a workflow,
 chart, action, and runner image from different releases.
 The signed `oss-release-manifest.json` is schema 3 and supplies the exact
 `workflowRepository`, `workflowCommit`, `actionCommit`, image, and chart fields
-that release/integration packaging projects into its installation BOM.
+that release/integration packaging projects into its installation BOM. The
+manifest's `image` is the signed public multi-platform image for both the ARC
+runner and governed job-container roles. Steward's
+[v0.3.0 mapping table](https://github.com/apelogic-ai/steward/blob/v0.3.0/docs/installation/governed-platform-compatibility.md#installation-bom)
+projects that exact `image` value to `governedJobContainerImage`; no duplicate
+field or schema change is required.
 
 ## Prerequisites
 
@@ -25,14 +30,23 @@ that release/integration packaging projects into its installation BOM.
 The action, reusable workflows, image, and chart contain no Steward token,
 GitHub App key, registry credential, CA certificate content, or private key.
 
+### Runner update obligation for forks and mirrors
+
+GitHub requires self-hosted runner applications to be updated within 30 days
+of a new runner release. The released image is immutable and does not
+self-update. Fork and mirror operators must therefore rebuild and publish the
+image, verify the replacement digest, and roll it out within that 30-day
+window. The weekly Docker entry in `.github/dependabot.yml` proposes base-image
+updates; it does not merge, publish, or deploy them for an operator.
+
 ## Authentication discovery contract
 
 The only production topology input is `steward-api-url`. Given the canonical
-resource `https://steward.customer.example/api`, the action performs at most
+resource `https://steward.customer.example`, the action performs at most
 these two unauthenticated metadata requests:
 
 ```text
-GET https://steward.customer.example/.well-known/oauth-protected-resource/api
+GET https://steward.customer.example/.well-known/oauth-protected-resource
 GET https://identity.customer.example/.well-known/oauth-authorization-server
 ```
 
@@ -41,8 +55,8 @@ and list exactly one authorization server:
 
 ```json
 {
-  "resource": "https://steward.customer.example/api",
-  "authorization_servers": ["https://identity.customer.example/"]
+  "resource": "https://steward.customer.example",
+  "authorization_servers": ["https://identity.customer.example"]
 }
 ```
 
@@ -50,11 +64,15 @@ The second response must repeat the exact issuer and advertise the exchange:
 
 ```json
 {
-  "issuer": "https://identity.customer.example/",
+  "issuer": "https://identity.customer.example",
   "token_endpoint": "https://identity.customer.example/v1/exchange",
   "github_oidc_audience": "customer-steward-github-exchange"
 }
 ```
+
+Discovery compares raw strings: `steward-api-url` must equal Steward's
+`taskIdentity.resource` exactly, and the issuer Steward advertises must equal
+Identity's `issuer` exactly.
 
 `github_oidc_audience` is optional. If omitted, the exact canonical issuer URL
 is the GitHub OIDC audience. No other audience fallback exists. Path-bearing
@@ -103,7 +121,7 @@ jobs:
       envelope-digest: steward:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       input-artifact: request
       output-artifact: result
-      steward-api-url: https://steward.customer.example/api
+      steward-api-url: https://steward.customer.example
 ```
 
 `envelope-digest` is optional. Use the same input with `invocation-path` when
@@ -144,7 +162,7 @@ warning containing only its input name, never its value or certificate data.
       workflow: CUSTOMER_WORKFLOW_REFERENCE
       input-artifact: request
       output-artifact: result
-      steward-api-url: https://steward.customer.example/api
+      steward-api-url: https://steward.customer.example
       identity-exchange-url: https://identity.customer.example/v1/exchange
       identity-exchange-audience: customer-steward-github-exchange
       steward-ca-certificate-file: /etc/steward-run/trust/ca.crt
@@ -263,6 +281,6 @@ it.
 | This installation/integration guide | Canonical copy-ready discovered and compatibility examples. |
 | `docs/steward-run-spec.md` | Exact metadata, bounds, precedence, and token contract. |
 | Application and library chart READMEs/values/schema | Public-trust default and ConfigMap-backed bundle documented and tested. |
-| `CHANGELOG.md` and v0.7.0 release notes | Upgrade and rollback behavior recorded. |
+| `CHANGELOG.md` and v0.7.1 release notes | Upgrade and rollback behavior recorded. |
 | `docs/installation-v0.5.0.md` | Historical; marked superseded and otherwise unchanged. |
 | ARC preflight and vulnerability/security documents | Unaffected: they do not define task authentication or trust values. |

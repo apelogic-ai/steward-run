@@ -7,8 +7,8 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
   "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
-const actionCommit = "96cee6a1cfe53fbc2f7bb2cd38a8b360fd9a2ad8";
-const directPackageActionCommit = "96cee6a1cfe53fbc2f7bb2cd38a8b360fd9a2ad8";
+const actionCommit = "018d9eb20d036b26060c5cb3d979a84d42bcc051";
+const directPackageActionCommit = actionCommit;
 const buildkitImage =
   "docker.io/moby/buildkit@" +
   "sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8";
@@ -344,7 +344,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.ok(checkout >= 0 && checkout < download && download < action && action < upload);
 });
 
-test("the self-hosted reusable workflow preserves GitHub OIDC provenance without an ECR job container", async () => {
+test("the self-hosted reusable workflow preserves GitHub OIDC provenance without a job container", async () => {
   const source = await readFile(
     new URL("../.github/workflows/steward-task-self-hosted.yml", import.meta.url),
     "utf8",
@@ -465,10 +465,13 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /steward-run-arc-preflight\.mjs/u);
   assert.match(release, /arc-controller-identity\.mjs/u);
   assert.match(release, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));
+  assert.match(release, /compare\/\$ACTION_COMMIT\.\.\.\$GITHUB_SHA[\s\S]*?== ahead/u);
   assert.match(release, /schemaVersion:3/u);
   assert.match(release, /workflowRepository:\$workflow_repository/u);
   assert.match(release, /workflowCommit:\$workflow_commit/u);
   assert.match(release, /actionCommit:\$action_commit/u);
+  assert.match(release, /image:\$image/u);
+  assert.doesNotMatch(release, /governedJobContainerImage/u);
   assert.match(release, /docs\/release-notes-v\$VERSION\.md/u);
   assert.match(release, /cp "docs\/release-notes-v\$VERSION\.md" "\$RUNNER_TEMP\/release-notes\.md"/u);
   assert.doesNotMatch(release, /provenance: false|sbom: false/u);
@@ -502,6 +505,7 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
   assert.doesNotMatch(readme, /uses:\s*apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml/u);
   assert.doesNotMatch(readme, /action-commit:/u);
   assert.match(releaseWorkflow, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));
+  assert.match(releaseWorkflow, /compare\/\$ACTION_COMMIT\.\.\.\$GITHUB_SHA[\s\S]*?== ahead/u);
   for (const workflow of ["steward-task.yml", "steward-task-self-hosted.yml"]) {
     assert.ok(
       releaseWorkflow.includes(

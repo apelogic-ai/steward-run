@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
 
-test("README leads to the v0.7.0 guide while v0.5.0 evidence stays historical", async () => {
+test("README leads to the v0.7.1 guide while v0.5.0 evidence stays historical", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const current = await readFile(new URL("../docs/installation.md", import.meta.url), "utf8");
   const guide = await readFile(new URL("../docs/installation-v0.5.0.md", import.meta.url), "utf8");
@@ -35,9 +35,9 @@ test("README leads to the v0.7.0 guide while v0.5.0 evidence stays historical", 
   assert.match(guide, /^# steward-run v0\.5\.0 installation guide$/mu);
   assert.match(guide, /Historical release guide/u);
   assert.match(guide, /current installation guide/u);
-  assert.match(readme, /v0\.7\.0 installation and integration guide/u);
+  assert.match(readme, /v0\.7\.1 installation and integration guide/u);
   assert.match(readme, /v0\.5\.0[\s\S]*?predates authentication discovery/u);
-  assert.match(arcReadme, /v0\.7\.0[\s\S]*?Envelope selector/u);
+  assert.match(arcReadme, /v0\.7\.1[\s\S]*?Envelope selector/u);
   assert.match(arcReadme, /historical v0\.5\.0 guide/u);
   assert.match(guide, /steward-run-arc-preflight\.mjs/u);
   assert.match(guide, /controllerServiceAccount/u);
@@ -99,7 +99,7 @@ test("current authentication docs and interfaces cannot drift", async () => {
     readFile(new URL("../action.yml", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run-arc/README.md", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run/README.md", import.meta.url), "utf8"),
-    readFile(new URL("../docs/release-notes-v0.7.0.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/release-notes-v0.7.1.md", import.meta.url), "utf8"),
     readFile(new URL("fixtures/arc-ca-values.yaml", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run/values.yaml", import.meta.url), "utf8"),
   ]);
@@ -128,12 +128,23 @@ test("current authentication docs and interfaces cannot drift", async () => {
   assert.match(guide, /64 KiB/u);
   assert.match(guide, /five-second timeout/u);
   assert.match(guide, /ten-second budget/u);
+  assert.match(guide, /schema 3/u);
+  assert.match(guide, /governedJobContainerImage/u);
+  assert.match(guide, /manifest's `image`[\s\S]*?ARC\s+runner[\s\S]*?governed job-container/u);
+  assert.match(guide, /steward\/blob\/v0\.3\.0\/docs\/installation\/governed-platform-compatibility\.md#installation-bom/u);
+  assert.match(guide, /within that 30-day[\s\S]*?window/u);
+  assert.match(guide, /GET https:\/\/steward\.customer\.example\/\.well-known\/oauth-protected-resource/u);
+  assert.match(guide, /"resource": "https:\/\/steward\.customer\.example"/u);
+  assert.match(guide, /"issuer": "https:\/\/identity\.customer\.example"/u);
+  assert.match(guide, /Discovery compares raw strings[\s\S]*?taskIdentity\.resource[\s\S]*?Identity's `issuer` exactly/u);
+  assert.doesNotMatch(guide, /https:\/\/steward\.customer\.example\/api\b/u);
+  assert.doesNotMatch(guide, /"https:\/\/identity\.customer\.example\/"/u);
 
   const documents = [
     [new URL("../README.md", import.meta.url), readme],
     [new URL("../docs/installation.md", import.meta.url), guide],
     [new URL("../docs/steward-run-spec.md", import.meta.url), specification],
-    [new URL("../docs/release-notes-v0.7.0.md", import.meta.url), releaseNotes],
+    [new URL("../docs/release-notes-v0.7.1.md", import.meta.url), releaseNotes],
     [new URL("../charts/steward-run-arc/README.md", import.meta.url), arcReadme],
     [new URL("../charts/steward-run/README.md", import.meta.url), libraryReadme],
   ] as const;
