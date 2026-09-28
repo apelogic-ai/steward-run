@@ -109,6 +109,7 @@ export async function main(): Promise<void> {
       environment: process.env,
       setOutput: setActionOutput,
       signal: controller.signal,
+      runtimeBindingTimeoutMilliseconds: config.runtimeBindingTimeoutMilliseconds,
     });
   } catch (error) {
     const failure = safeFailure(error);

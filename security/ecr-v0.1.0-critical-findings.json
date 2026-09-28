@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "source": {
-    "registry": "663383948333.dkr.ecr.us-east-1.amazonaws.com",
+    "registry": "redacted-historical-registry",
     "repository": "steward-run",
     "tag": "0.1.0",
     "indexDigest": "sha256:1d0ff5bd773a407bcdefa65741efab8e76584d0526bfe685e1c7d045c340ac30",

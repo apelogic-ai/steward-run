@@ -11,8 +11,8 @@ follow.
 contains no secrets; operators supply external registration and endpoint
 configuration. `main` is branch-protected.
 
-**Purpose.** The thin runner shell + the `steward-run` action — i.e. **the translator** from the
-DEV plan §2.1: discover the trusted task issuer → exchange the job's GitHub OIDC token →
+**Purpose.** The thin runner shell + the `steward-run` action is **the translator**:
+discover the trusted task issuer → exchange the job's GitHub OIDC token →
 call Steward's REST API with the returned short-lived task token → materialise
 inputs into the sandbox and collect outputs back via the workspace. It is a product: source +
 tests + image + action, released **by version**, and **environment-agnostic**.
@@ -33,7 +33,7 @@ tests + image + action, released **by version**, and **environment-agnostic**.
 - The operator's org, cluster, namespace, registration credential values,
   endpoint values, and production capacity choices. The chart exposes these
   inputs without owning them.
-- Cloud resources — **`infra`**.
+- Operator-owned cloud and cluster infrastructure.
 - Any secret value. The action receives config via inputs/env at runtime; it holds nothing.
 - The Steward control-plane itself, and the `Principal::Service` arm it depends on — that's the
   `steward` repo (a hard dependency, §7).
@@ -59,7 +59,7 @@ tests + image + action, released **by version**, and **environment-agnostic**.
 
 ---
 
-## 3. What the action does (the two responsibilities, from plan §2.1)
+## 3. What the action does
 
 The action runs inside the ARC runner job and does exactly two categories of thing:
 
@@ -82,8 +82,8 @@ The action runs inside the ARC runner job and does exactly two categories of thi
    `runtimeUid: null` while the cancelled Task reaches `finalized: true`; the action confirms that
    cleanup without inventing or publishing a runtime UID.
 
-The controller-binding wait is bounded by both 60 attempts and a ten-minute wall-clock deadline.
-Cancellation and that deadline propagate through binding sleeps, token acquisition, and the
+The controller-binding wait has a configurable wall-clock deadline of 1–360 minutes and defaults
+to ten minutes. Cancellation and that deadline propagate through binding sleeps, token acquisition, and the
 in-flight Task-status request; a stalled credential provider or HTTP fetch cannot extend the wait.
 
 Direct-package flow: exact trigger checkout for local validation without persisted credentials →
@@ -129,6 +129,7 @@ the resumed invocation (a new job, new token).
 | `oidc-audience` *(test authentication choice)* | Direct GitHub OIDC audience; allowed only with a loopback Steward API |
 | `bearer-token-file` *(authentication choice)* | Filesystem path to a rotating JWT with a maximum one-hour lifetime |
 | `agent-runtime` *(optional)* | Adopt an existing `AgentRuntime` id for the existing Workflow path only (D2) |
+| `runtime-binding-timeout-minutes` *(optional)* | Whole-minute controller-binding deadline from 1 through 360; default `10` |
 
 Exactly one of `invocation-path` and `workflow` is required. The v2 reusable-workflow path uses
 `invocation-path`; the legacy input remains additive compatibility for direct action and existing

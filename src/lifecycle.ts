@@ -54,7 +54,6 @@ interface LifecycleDependencies {
 }
 
 const terminalPhases = new Set<Task["phase"]>(["succeeded", "failed", "cancelled"]);
-const runtimeBindingPollAttempts = 60;
 const runtimeBindingTimeoutMilliseconds = 10 * 60 * 1_000;
 
 type BoundTask = Task & { runtimeUid: string };
@@ -139,7 +138,7 @@ async function pollUntilRuntimeBound(
   if (signal?.aborted) controller.abort();
   try {
     let interval = 250;
-    for (let attempt = 0; attempt < runtimeBindingPollAttempts; attempt += 1) {
+    while (true) {
       if (controller.signal.aborted) {
         if (signal?.aborted) throw abortError();
         throw timeoutError();
@@ -164,7 +163,6 @@ async function pollUntilRuntimeBound(
       if (currentBound) return assertPreExecutionTask(currentBound);
       interval = Math.min(interval * 2, 10_000);
     }
-    throw timeoutError();
   } catch (error) {
     if (controller.signal.aborted) {
       if (signal?.aborted) throw abortError();

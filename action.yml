@@ -42,6 +42,10 @@ inputs:
   agent-runtime:
     description: Existing AgentRuntime UID to adopt for the existing Workflow path only
     required: false
+  runtime-binding-timeout-minutes:
+    description: Maximum wait for Steward to bind a runtime, as an integer from 1 through 360
+    required: false
+    default: "10"
 outputs:
   status:
     description: Terminal Steward Task phase
@@ -71,4 +75,5 @@ runs:
         STEWARD_RUN_OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
         STEWARD_RUN_BEARER_TOKEN_FILE: ${{ inputs.bearer-token-file }}
         STEWARD_RUN_AGENT_RUNTIME: ${{ inputs.agent-runtime }}
+        STEWARD_RUN_RUNTIME_BINDING_TIMEOUT_MINUTES: ${{ inputs.runtime-binding-timeout-minutes }}
       run: exec node "$GITHUB_ACTION_PATH/dist/index.cjs"

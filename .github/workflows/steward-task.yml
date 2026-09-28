@@ -70,7 +70,7 @@ jobs:
     runs-on: ${{ inputs.runner-label }}
     timeout-minutes: 15
     container:
-      image: 663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61
+      image: ghcr.io/apelogic-ai/steward-run@sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4
     permissions:
       contents: read
       id-token: write

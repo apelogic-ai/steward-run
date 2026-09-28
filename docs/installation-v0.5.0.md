@@ -68,7 +68,7 @@ kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" cluster-info
 
 Run the procedures in one shell because later commands reuse these variables.
 
-Never substitute a local ApeLogic `stable` or `main` lane kubeconfig. Keep
+Use only the intended target-cluster kubeconfig. Keep
 credential files outside the repository, mode `0600`, and never print Secret
 data, private keys, OIDC tokens, or Task response bodies as evidence.
 

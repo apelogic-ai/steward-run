@@ -125,6 +125,26 @@ test("the trusted CA input is an optional trimmed filesystem path", () => {
   );
 });
 
+test("runtime binding timeout defaults to ten minutes and accepts bounded whole minutes", () => {
+  assert.equal(readActionConfig(baseEnvironment).runtimeBindingTimeoutMilliseconds, 600_000);
+  assert.equal(
+    readActionConfig({
+      ...baseEnvironment,
+      STEWARD_RUN_RUNTIME_BINDING_TIMEOUT_MINUTES: " 42 ",
+    }).runtimeBindingTimeoutMilliseconds,
+    2_520_000,
+  );
+  for (const value of ["0", "1.5", "-1", "361", "infinite"]) {
+    assert.throws(
+      () => readActionConfig({
+        ...baseEnvironment,
+        STEWARD_RUN_RUNTIME_BINDING_TIMEOUT_MINUTES: value,
+      }),
+      /runtime-binding-timeout-minutes must be an integer from 1 through 360/u,
+    );
+  }
+});
+
 test("the Workflow reference is preserved byte-for-byte and runtime selection is ignored", () => {
   const config = readActionConfig({
     ...baseEnvironment,

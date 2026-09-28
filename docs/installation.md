@@ -21,7 +21,7 @@ field or schema change is required.
 - An Identity issuer that publishes RFC 8414 authorization-server metadata
   and accepts GitHub OIDC assertions at its advertised `token_endpoint`.
 - Node.js 24 in the runner, or the released multi-platform runner image.
-- For ARC: Kubernetes 1.30–1.34, Helm 3.17+, upstream ARC 0.14.2, an
+- For ARC: Kubernetes 1.32–1.36, Helm 3.17+, upstream ARC 0.14.2, an
   operator-owned GitHub registration Secret, and a runner image pinned by OCI
   digest. Follow the complete ARC registration, artifact verification, and
   release-selection procedure in the historical guide, substituting one

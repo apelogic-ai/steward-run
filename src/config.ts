@@ -18,7 +18,24 @@ export type ActionAuthentication =
 export type ActionConfig = WorkflowConfig & {
   authentication: ActionAuthentication;
   caCertificateFile?: string;
+  runtimeBindingTimeoutMilliseconds: number;
 };
+
+const defaultRuntimeBindingTimeoutMinutes = 10;
+const maximumRuntimeBindingTimeoutMinutes = 360;
+
+function runtimeBindingTimeoutMilliseconds(environment: NodeJS.ProcessEnv): number {
+  const raw = environment.STEWARD_RUN_RUNTIME_BINDING_TIMEOUT_MINUTES?.trim();
+  if (!raw) return defaultRuntimeBindingTimeoutMinutes * 60 * 1_000;
+  if (!/^[1-9][0-9]*$/u.test(raw)) {
+    throw new Error("runtime-binding-timeout-minutes must be an integer from 1 through 360");
+  }
+  const minutes = Number(raw);
+  if (!Number.isSafeInteger(minutes) || minutes > maximumRuntimeBindingTimeoutMinutes) {
+    throw new Error("runtime-binding-timeout-minutes must be an integer from 1 through 360");
+  }
+  return minutes * 60 * 1_000;
+}
 
 function required(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name]?.trim();
@@ -98,6 +115,7 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
     apiUrl,
     authentication,
+    runtimeBindingTimeoutMilliseconds: runtimeBindingTimeoutMilliseconds(environment),
     ...(caCertificateFile ? { caCertificateFile } : {}),
   };
   return invocationPath

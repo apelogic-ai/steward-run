@@ -115,7 +115,7 @@ jobs:
         if: ${{ matrix.architecture == 'amd64' }}
         run: >-
           docker run --rm --entrypoint /bin/bash -v "${{ github.workspace }}:/workspace:ro"
-          663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61
+          ghcr.io/apelogic-ai/steward-run@sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4
           -c 'test "$(id -un)" = runner && command -v node && command -v git && command -v tar && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
       - name: Build and publish native candidate child
         run: |
@@ -232,7 +232,7 @@ jobs:
         run: >-
           node scripts/write-release-manifest.mjs release-metadata.json release-manifest.json "$VERSION"
           "$ACTION_COMMIT" "$GITHUB_SHA" "$IMAGE_REPOSITORY"
-          "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61"
+          "ghcr.io/apelogic-ai/steward-run@sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4"
       - name: Prepare resumable release draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -368,7 +368,7 @@ jobs:
             echo "- Action commit: \`$ACTION_COMMIT\`"
             echo "- Reusable workflow: \`$GITHUB_REPOSITORY/.github/workflows/steward-task.yml@$GITHUB_SHA\`"
             echo "- ARC runner image: \`$IMAGE_REPOSITORY@$IMAGE_DIGEST\`"
-            echo "- Governed job-container image: \`663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61\`"
+            echo "- Governed job-container image: \`ghcr.io/apelogic-ai/steward-run@sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ always() && hashFiles('release-metadata.json') != '' }}

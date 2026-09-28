@@ -329,18 +329,24 @@ test("runtime binding timeout is bounded, classified, and does not expose runtim
   const root = await fixture();
   const client = new FakeClient();
   client.submittedTask = { ...baseTask, runtimeUid: null };
-  client.bindingTasks = Array.from({ length: 60 }, () => ({
+  client.bindingTasks = [{
     ...baseTask,
     runtimeUid: null,
     phase: "queued",
-  }));
+  }];
   client.finalizingTasks = [
     { ...baseTask, runtimeUid: null, phase: "cancelled" },
     { ...baseTask, runtimeUid: null, phase: "cancelled", finalized: true },
   ];
   const outputs: Record<string, string> = {};
   try {
-    await assert.rejects(runWorkflow(config, root, dependencies(client, outputs)), (error) => {
+    await assert.rejects(runWorkflow(config, root, {
+      ...dependencies(client, outputs),
+      runtimeBindingTimeoutMilliseconds: 5,
+      sleep: async (_milliseconds: number, signal?: AbortSignal) => {
+        if (signal) await new Promise((resolve) => setTimeout(resolve, 25));
+      },
+    }), (error) => {
       assert.ok(error instanceof StewardRunFailure);
       assert.deepEqual(error.metadata, {
         version: "steward-run.failure/v1",
@@ -353,7 +359,7 @@ test("runtime binding timeout is bounded, classified, and does not expose runtim
       return true;
     });
     const finalizeIndex = client.calls.indexOf("finalize");
-    assert.equal(client.calls.slice(0, finalizeIndex).filter((call) => call === "poll").length, 60);
+    assert.equal(client.calls.slice(0, finalizeIndex).filter((call) => call === "poll").length, 0);
     assert.deepEqual(client.calls.slice(finalizeIndex), ["finalize", "poll"]);
     assert.equal(outputs["runtime-uid"], undefined);
     assert.equal(client.calls.includes("upload"), false);

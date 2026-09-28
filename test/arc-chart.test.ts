@@ -27,8 +27,14 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     helm("dependency", "build", chart);
     helm("lint", chart, "--strict", "--values", fixture);
     const rendered = template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture);
-    for (const version of ["1.30.0", "1.34.0"]) {
+    for (const version of ["1.32.0", "1.33.0", "1.34.0", "1.35.0", "1.36.0"]) {
       assert.match(helm("template", "steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--kube-version", version), /kind: AutoscalingRunnerSet/u);
+    }
+    for (const version of ["1.31.0", "1.37.0"]) {
+      assert.throws(
+        () => helm("template", "steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--kube-version", version),
+        /kubeVersion|incompatible/u,
+      );
     }
     const objects = parseAllDocuments(rendered).map((doc) => doc.toJSON()).filter(Boolean) as Record<string, any>[];
     const scaleSet = objects.find((object) => object.kind === "AutoscalingRunnerSet");
@@ -70,6 +76,12 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     assert.ok(!objects.some((object) => object.kind === "Deployment" || object.kind === "CustomResourceDefinition"));
     assert.ok(!objects.some((object) => object.kind === "Secret" && object.data?.github_app_private_key));
     assert.throws(() => template("steward-run", chart, "--namespace", "arc-runners"), /githubConfigUrl|image|githubConfigSecret/u);
+    const unsafeOverlay = join(work, "unsafe-overlay.yaml");
+    writeFileSync(unsafeOverlay, `gha-runner-scale-set:\n  githubConfigUrl: https://github.com/customer/example\n  githubConfigSecret: steward-run-github-app\n  controllerServiceAccount:\n    namespace: arc-system\n    name: arc-gha-rs-controller\n  template:\n    spec:\n      containers:\n        - name: runner\n          image: registry.example/steward-run@sha256:${"b".repeat(64)}\n`);
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", unsafeOverlay),
+      /command|securityContext|resources|imagePullPolicy/u,
+    );
     assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].image=registry.example/steward-run:latest"),
       /sha256|digest/u,
