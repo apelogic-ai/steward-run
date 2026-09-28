@@ -151,7 +151,7 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
           "--set",
           `gha-runner-scale-set.template.spec.${path}=${value}`,
         ),
-        /template\.spec[\s\S]*Must not validate/u,
+        /template[./]spec[\s\S]*(?:Must not validate|'not' failed)/u,
       );
     }
     assert.throws(
