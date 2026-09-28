@@ -4,7 +4,7 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-The [v0.7.2 installation, setup, and integration guide](docs/installation.md)
+The [v0.7.3 installation, setup, and integration guide](docs/installation.md)
 describes the current release contract. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
 authoritative guide for v0.5.0, which predates authentication discovery and
 requires the explicit Identity exchange inputs.
@@ -15,10 +15,10 @@ The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. Release `v0.7.2` publishes the standalone
-multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.2` and the
+long-running Steward API service. Release `v0.7.3` publishes the standalone
+multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.3` and the
 application chart in
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.2`; the
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.3`; the
 [Artifact Hub package](https://artifacthub.io/packages/helm/steward-run/steward-run-arc)
 indexes the same OCI repository. The
 attached `oss-release-manifest.json` records both immutable OCI digests, the
@@ -42,7 +42,7 @@ stdout/stderr, headers, tokens, assertions, credentials, and Secret values are n
 GitHub metadata or the terminal error. Unknown details map to `unknown`; successful runs do not
 publish failure metadata.
 
-The action and self-checkout customer workflow in this source tree also emit
+The action and all three reusable workflows in this source tree also emit
 bounded `outcome`, `failure-category`, and `http-status` step outputs.
 `outcome` is exactly `success` or `failure`; the other two are empty when not
 applicable. Existing `status`, `task-uid`, and `runtime-uid` retain their

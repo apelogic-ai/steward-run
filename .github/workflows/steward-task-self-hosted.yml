@@ -65,6 +65,15 @@ on:
         type: string
         default: ""
     outputs:
+      outcome:
+        description: Action result, exactly success or failure
+        value: ${{ jobs.governed.outputs.outcome }}
+      failure-category:
+        description: Bounded steward-run failure category; empty on success
+        value: ${{ jobs.governed.outputs.failure-category }}
+      http-status:
+        description: HTTP status for a classified Steward request failure; empty otherwise
+        value: ${{ jobs.governed.outputs.http-status }}
       status:
         description: Terminal Steward Task phase
         value: ${{ jobs.governed.outputs.status }}
@@ -83,6 +92,9 @@ jobs:
       contents: read
       id-token: write
     outputs:
+      outcome: ${{ steps.task.outputs.outcome }}
+      failure-category: ${{ steps.task.outputs.failure-category }}
+      http-status: ${{ steps.task.outputs.http-status }}
       status: ${{ steps.task.outputs.status }}
       task-uid: ${{ steps.task.outputs.task-uid }}
       runtime-uid: ${{ steps.task.outputs.runtime-uid }}
@@ -108,7 +120,7 @@ jobs:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: apelogic-ai/steward-run@e377593aabc574e2ab7d0ef35843a8a8bb1cf4b3
+        uses: apelogic-ai/steward-run@d5e3021a0aae21f5d847daa053e84868c458477d
         with:
           workflow: ${{ inputs.workflow }}
           envelope-digest: ${{ inputs.envelope-digest }}

@@ -8,7 +8,7 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "ghcr.io/apelogic-ai/steward-run@" +
   "sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4";
-const actionCommit = "e377593aabc574e2ab7d0ef35843a8a8bb1cf4b3";
+const actionCommit = "d5e3021a0aae21f5d847daa053e84868c458477d";
 const directPackageActionCommit = actionCommit;
 const buildkitImage =
   "docker.io/moby/buildkit@" +
@@ -288,6 +288,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
         permissions?: Record<string, string>;
         "runs-on"?: string;
         "timeout-minutes"?: string;
+        outputs?: Record<string, string>;
       }
     >;
   };
@@ -340,10 +341,13 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.deepEqual(
     Object.keys(workflow.on.workflow_call.outputs).sort(),
-    ["runtime-uid", "status", "task-uid"],
+    ["failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
   );
 
   const job = workflow.jobs.governed;
+  assert.equal(job?.outputs?.outcome, "${{ steps.task.outputs.outcome }}");
+  assert.equal(job?.outputs?.["failure-category"], "${{ steps.task.outputs.failure-category }}");
+  assert.equal(job?.outputs?.["http-status"], "${{ steps.task.outputs.http-status }}");
   assert.equal(job?.permissions?.contents, "read");
   assert.equal(job?.permissions?.["id-token"], "write");
   assert.equal(job?.["runs-on"], "${{ inputs.runner-label }}");
@@ -407,11 +411,17 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
         outputs: Record<string, unknown>;
       };
     };
-    jobs: Record<string, { container?: unknown; permissions?: Record<string, string>; "runs-on"?: string; "timeout-minutes"?: string }>;
+    jobs: Record<string, { container?: unknown; permissions?: Record<string, string>; "runs-on"?: string; "timeout-minutes"?: string; outputs?: Record<string, string> }>;
   };
 
   assert.ok(workflow.on.workflow_call);
-  assert.deepEqual(Object.keys(workflow.on.workflow_call.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
+  assert.deepEqual(
+    Object.keys(workflow.on.workflow_call.outputs).sort(),
+    ["failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
+  );
+  assert.equal(workflow.jobs.governed?.outputs?.outcome, "${{ steps.task.outputs.outcome }}");
+  assert.equal(workflow.jobs.governed?.outputs?.["failure-category"], "${{ steps.task.outputs.failure-category }}");
+  assert.equal(workflow.jobs.governed?.outputs?.["http-status"], "${{ steps.task.outputs.http-status }}");
   assert.equal(workflow.jobs.governed?.["runs-on"], "${{ inputs.runner-label }}");
   assert.equal(workflow.jobs.governed?.["timeout-minutes"], "${{ inputs.job-timeout-minutes }}");
   assert.equal(workflow.on.workflow_call.inputs["job-timeout-minutes"]?.default, 15);
@@ -537,6 +547,7 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /grep -Fq "actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020" <<<"\$action_metadata"/u);
   assert.match(release, /grep -Fq "if: steps\.node24\.outputs\.available != 'true'" <<<"\$action_metadata"/u);
   assert.match(release, /grep -Fq "package-manager-cache: false" <<<"\$action_metadata"/u);
+  assert.match(release, /RELEASE_IDENTITY=.*refs\/tags\/\$RELEASE_TAG/u);
   assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task\.yml/u);
   assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task-self-hosted\.yml/u);
   assert.match(release, /schemaVersion:3/u);
