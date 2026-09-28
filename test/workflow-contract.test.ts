@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parse } from "yaml";
@@ -7,7 +8,7 @@ const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.y
 const governedJobContainer =
   "ghcr.io/apelogic-ai/steward-run@" +
   "sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4";
-const actionCommit = "018d9eb20d036b26060c5cb3d979a84d42bcc051";
+const actionCommit = "e377593aabc574e2ab7d0ef35843a8a8bb1cf4b3";
 const directPackageActionCommit = actionCommit;
 const buildkitImage =
   "docker.io/moby/buildkit@" +
@@ -15,6 +16,38 @@ const buildkitImage =
 const sbomGeneratorImage =
   "docker.io/docker/buildkit-syft-scanner@" +
   "sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9";
+
+test("reusable workflow job timeouts are configurable and bounded", async () => {
+  for (const file of ["steward-task.yml", "steward-task-self-hosted.yml", "steward-task-customer.yml"]) {
+    const source = await readFile(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8");
+    const workflow = parse(source) as {
+      on: { workflow_call: { inputs: Record<string, { default?: number; description?: string; type?: string }> } };
+      jobs: { governed: { "timeout-minutes"?: string; steps?: Array<Record<string, any>> } };
+    };
+    const input = workflow.on.workflow_call.inputs["job-timeout-minutes"];
+    assert.equal(input?.type, "number", file);
+    assert.equal(input?.default, 15, file);
+    assert.match(input?.description ?? "", /whole minutes \(1-360\)/u, file);
+    assert.equal(workflow.jobs.governed["timeout-minutes"], "${{ inputs.job-timeout-minutes }}", file);
+
+    const validation = workflow.jobs.governed.steps?.find((step) => step.name === "Validate job timeout");
+    assert.ok(validation, file);
+    assert.equal(validation.env?.JOB_TIMEOUT_MINUTES, "${{ inputs.job-timeout-minutes }}", file);
+    assert.match(validation.run ?? "", /job-timeout-minutes must be an integer from 1 through 360/u, file);
+    for (const value of ["1", "15", "360"]) {
+      assert.doesNotThrow(
+        () => execFileSync("bash", ["-c", validation.run], { env: { ...process.env, JOB_TIMEOUT_MINUTES: value } }),
+        `${file}: ${value}`,
+      );
+    }
+    for (const value of ["0", "361", "1.5", "-1", "not-a-number"]) {
+      assert.throws(
+        () => execFileSync("bash", ["-c", validation.run], { env: { ...process.env, JOB_TIMEOUT_MINUTES: value } }),
+        `${file}: ${value}`,
+      );
+    }
+  }
+});
 
 test("all external workflow actions are pinned to immutable commits", async () => {
   for (const file of workflowFiles) {
@@ -244,7 +277,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   const workflow = parse(source) as {
     on: {
       workflow_call: {
-        inputs: Record<string, { required?: boolean; type?: string; default?: string }>;
+        inputs: Record<string, { required?: boolean; type?: string; default?: string | number }>;
         outputs: Record<string, unknown>;
       };
     };
@@ -254,7 +287,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
         container?: { image?: string; credentials?: unknown };
         permissions?: Record<string, string>;
         "runs-on"?: string;
-        "timeout-minutes"?: number;
+        "timeout-minutes"?: string;
       }
     >;
   };
@@ -269,8 +302,10 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
       "identity-exchange-url",
       "input-artifact",
       "invocation-path",
+      "job-timeout-minutes",
       "output-artifact",
       "runner-label",
+      "runtime-binding-timeout-minutes",
       "steward-api-url",
       "steward-ca-certificate-file",
       "workflow",
@@ -297,6 +332,10 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
     assert.equal(workflow.on.workflow_call.inputs[name]?.default, "", name);
   }
   assert.equal(workflow.on.workflow_call.inputs["runner-label"]?.required, true);
+  assert.equal(workflow.on.workflow_call.inputs["job-timeout-minutes"]?.type, "number");
+  assert.equal(workflow.on.workflow_call.inputs["job-timeout-minutes"]?.default, 15);
+  assert.equal(workflow.on.workflow_call.inputs["runtime-binding-timeout-minutes"]?.type, "number");
+  assert.equal(workflow.on.workflow_call.inputs["runtime-binding-timeout-minutes"]?.default, 10);
   assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.deepEqual(
@@ -308,7 +347,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.equal(job?.permissions?.contents, "read");
   assert.equal(job?.permissions?.["id-token"], "write");
   assert.equal(job?.["runs-on"], "${{ inputs.runner-label }}");
-  assert.equal(job?.["timeout-minutes"], 15);
+  assert.equal(job?.["timeout-minutes"], "${{ inputs.job-timeout-minutes }}");
   const containerImage = job?.container?.image ?? "";
   assert.equal(containerImage, governedJobContainer);
   assert.equal(job?.container?.credentials, undefined);
@@ -342,6 +381,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.match(source, /outputs:\s*out/);
   assert.match(source, /invocation-path:\s*\$\{\{ inputs\.invocation-path \}\}/u);
   assert.match(source, /workflow:\s*\$\{\{ inputs\.workflow \}\}/u);
+  assert.match(source, /runtime-binding-timeout-minutes:\s*\$\{\{ inputs\.runtime-binding-timeout-minutes \}\}/u);
   assert.doesNotMatch(source, /coding-agent-runtime|codingAgentRuntime/u);
   assert.match(source, /actions\/upload-artifact@/);
   assert.match(source, /name:\s*\$\{\{ inputs\.output-artifact \}\}/);
@@ -363,17 +403,19 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   const workflow = parse(source) as {
     on: {
       workflow_call: {
-        inputs: Record<string, { required?: boolean }>;
+        inputs: Record<string, { required?: boolean; default?: string | number; type?: string }>;
         outputs: Record<string, unknown>;
       };
     };
-    jobs: Record<string, { container?: unknown; permissions?: Record<string, string>; "runs-on"?: string; "timeout-minutes"?: number }>;
+    jobs: Record<string, { container?: unknown; permissions?: Record<string, string>; "runs-on"?: string; "timeout-minutes"?: string }>;
   };
 
   assert.ok(workflow.on.workflow_call);
   assert.deepEqual(Object.keys(workflow.on.workflow_call.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
   assert.equal(workflow.jobs.governed?.["runs-on"], "${{ inputs.runner-label }}");
-  assert.equal(workflow.jobs.governed?.["timeout-minutes"], 15);
+  assert.equal(workflow.jobs.governed?.["timeout-minutes"], "${{ inputs.job-timeout-minutes }}");
+  assert.equal(workflow.on.workflow_call.inputs["job-timeout-minutes"]?.default, 15);
+  assert.equal(workflow.on.workflow_call.inputs["runtime-binding-timeout-minutes"]?.default, 10);
   assert.equal(workflow.jobs.governed?.permissions?.contents, "read");
   assert.equal(workflow.jobs.governed?.permissions?.["id-token"], "write");
   assert.equal(workflow.jobs.governed?.container, undefined);
@@ -401,6 +443,7 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
     /identity-exchange-audience:\s*\$\{\{ inputs\.identity-exchange-audience \}\}/u,
   );
   assert.match(source, /invocation-path:\s*\$\{\{ inputs\.invocation-path \}\}/u);
+  assert.match(source, /runtime-binding-timeout-minutes:\s*\$\{\{ inputs\.runtime-binding-timeout-minutes \}\}/u);
   assert.doesNotMatch(source, /amazonaws\.com|container:|bearer-token|identity\.dev|cluster|secret/iu);
 });
 

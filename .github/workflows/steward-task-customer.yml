@@ -7,6 +7,16 @@ on:
         description: Dedicated ARC scale-set runner label for the governed job
         required: true
         type: string
+      job-timeout-minutes:
+        description: Maximum governed-job duration in whole minutes (1-360)
+        required: false
+        type: number
+        default: 15
+      runtime-binding-timeout-minutes:
+        description: Maximum Steward runtime-binding wait in minutes (1-360)
+        required: false
+        type: number
+        default: 10
       workflow:
         description: Existing governed Workflow reference; mutually exclusive with invocation-path
         required: false
@@ -68,7 +78,7 @@ on:
 jobs:
   governed:
     runs-on: ${{ inputs.runner-label }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.job-timeout-minutes }}
     permissions:
       contents: read
       id-token: write
@@ -77,6 +87,17 @@ jobs:
       task-uid: ${{ steps.task.outputs.task-uid }}
       runtime-uid: ${{ steps.task.outputs.runtime-uid }}
     steps:
+      - name: Validate job timeout
+        shell: bash
+        env:
+          JOB_TIMEOUT_MINUTES: ${{ inputs.job-timeout-minutes }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$JOB_TIMEOUT_MINUTES" =~ ^[0-9]+$ ]] ||
+             (( JOB_TIMEOUT_MINUTES < 1 || JOB_TIMEOUT_MINUTES > 360 )); then
+            echo "::error::job-timeout-minutes must be an integer from 1 through 360"
+            exit 1
+          fi
       - id: caller-source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: inputs.invocation-path != ''
@@ -110,6 +131,7 @@ jobs:
           identity-exchange-audience: ${{ inputs.identity-exchange-audience }}
           steward-ca-certificate-file: ${{ inputs.steward-ca-certificate-file }}
           agent-runtime: ${{ inputs.agent-runtime }}
+          runtime-binding-timeout-minutes: ${{ inputs.runtime-binding-timeout-minutes }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.output-artifact }}

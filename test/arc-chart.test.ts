@@ -57,8 +57,11 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     assert.equal(pod.nodeSelector, undefined);
     assert.equal(pod.affinity, undefined);
     assert.equal(pod.automountServiceAccountToken, false);
+    assert.equal(pod.securityContext.runAsNonRoot, true);
     assert.match(pod.containers[0].image, /^registry\.example\/steward-run@sha256:[a-f0-9]{64}$/u);
     assert.equal(pod.containers[0].securityContext.allowPrivilegeEscalation, false);
+    assert.deepEqual(pod.containers[0].securityContext.capabilities.drop, ["ALL"]);
+    assert.equal(pod.containers[0].securityContext.capabilities.add, undefined);
     assert.deepEqual(pod.imagePullSecrets, [{ name: "customer-registry" }]);
     const caRendered = template("steward-run", chart, "--namespace", "arc-runners", "--values", caFixture);
     const caObjects = parseAllDocuments(caRendered).map((doc) => doc.toJSON()).filter(Boolean) as Record<string, any>[];
@@ -101,6 +104,26 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.controllerServiceAccount.name="),
       /controllerServiceAccount\.name/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.securityContext.runAsNonRoot=false"),
+      /runAsNonRoot|Must validate/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.securityContext.runAsUser=0"),
+      /runAsUser|minimum/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.runAsNonRoot=false"),
+      /runAsNonRoot|Must validate/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.runAsUser=0"),
+      /runAsUser|minimum/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.capabilities.add[0]=NET_ADMIN"),
+      /capabilities|Must not validate/u,
     );
     assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", caFixture, "--set", "gha-runner-scale-set.template.spec.volumes[0].configMap.name="),

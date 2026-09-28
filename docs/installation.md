@@ -1,57 +1,280 @@
-# steward-run installation and integration
+# steward-run v0.7.2 installation, setup, and integration
 
-This is the v0.7.1 installation contract. The
-[v0.5.0 guide](installation-v0.5.0.md) remains immutable historical evidence.
-Use a tagged release that includes this document; never combine a workflow,
-chart, action, and runner image from different releases.
-The signed `oss-release-manifest.json` is schema 3 and supplies the exact
-`workflowRepository`, `workflowCommit`, `actionCommit`, image, and chart fields
-that release/integration packaging projects into its installation BOM. The
-manifest's `image` is the signed public multi-platform image for both the ARC
-runner and governed job-container roles. Steward's
-[v0.3.0 mapping table](https://github.com/apelogic-ai/steward/blob/v0.3.0/docs/installation/governed-platform-compatibility.md#installation-bom)
-projects that exact `image` value to `governedJobContainerImage`; no duplicate
-field or schema change is required.
+This is the complete operator runbook for the standalone OSS release. Use one
+tagged release as a unit: reusable workflow, action commit, runner image, and
+Helm chart must all come from its signed `oss-release-manifest.json`. Do not
+mix artifacts from different releases.
+
+The manifest remains schema 3. Its `image` field is the signed public
+multi-platform image used for both the ARC runner and governed job-container
+roles. Steward's
+[installation mapping](https://github.com/apelogic-ai/steward/blob/v0.3.0/docs/installation/governed-platform-compatibility.md#installation-bom)
+projects that exact value to `governedJobContainerImage`; no additional
+manifest field is required.
+
+The [v0.5.0 guide](installation-v0.5.0.md) is historical and applies only to
+that release. Do not use its versions, paths, or explicit-authentication
+defaults for v0.7.2.
 
 ## Prerequisites
 
-- GitHub.com Actions with `id-token: write` and an exact 40-character commit
-  pin for the reusable workflow.
-- A Steward Task API that publishes RFC 9728 protected-resource metadata.
-- An Identity issuer that publishes RFC 8414 authorization-server metadata
-  and accepts GitHub OIDC assertions at its advertised `token_endpoint`.
-- Node.js 24 in the runner, or the released multi-platform runner image.
-- For ARC: Kubernetes 1.32–1.36, Helm 3.17+, upstream ARC 0.14.2, an
-  operator-owned GitHub registration Secret, and a runner image pinned by OCI
-  digest. Follow the complete ARC registration, artifact verification, and
-  release-selection procedure in the historical guide, substituting one
-  coherent newer release.
+Hard requirements:
 
-The action, reusable workflows, image, and chart contain no Steward token,
-GitHub App key, registry credential, CA certificate content, or private key.
+- GitHub.com Actions. GitHub Enterprise Server is not covered because the
+  self-pinned workflow uses `job.workflow_repository` and `job.workflow_sha`.
+- A GitHub App already configured for ARC runner registration and an existing
+  Kubernetes `Opaque` Secret with keys `github_app_id`,
+  `github_app_installation_id`, and `github_app_private_key`. This chart only
+  references that Secret; it never creates or rotates registration credentials.
+- Kubernetes 1.32 through 1.36 inclusive, with `linux/amd64` or `linux/arm64`
+  schedulable nodes.
+- Helm 3.17+, `kubectl`, GitHub CLI (`gh`), `jq`, `sha256sum`, Node.js 24,
+  and Cosign 3.1+ on the operator workstation.
+- The upstream `gha-runner-scale-set-controller` chart at exactly 0.14.2,
+  installed separately. The `steward-run-arc` chart does not own the shared
+  controller or its CRDs.
+- A reachable Steward HTTPS Task API that implements the checked-in
+  [`/v1/tasks` contract](../contracts/steward-run-v1.openapi.yaml), publishes
+  RFC 9728 metadata, and points to an Identity issuer publishing RFC 8414
+  metadata.
+- DNS, TLS, and runner egress to GitHub, GHCR, Steward, and Identity.
 
-### Runner update obligation for forks and mirrors
+The release contains no GitHub App key, registry credential, Steward token,
+CA private key, or customer configuration. Public GHCR pulls require no
+registry Secret. Keep all operator-owned credential handling outside this
+runbook and outside Helm values.
 
-GitHub requires self-hosted runner applications to be updated within 30 days
-of a new runner release. The released image is immutable and does not
-self-update. Fork and mirror operators must therefore rebuild and publish the
-image, verify the replacement digest, and roll it out within that 30-day
-window. The weekly Docker entry in `.github/dependabot.yml` proposes base-image
-updates; it does not merge, publish, or deploy them for an operator.
+## Installation
+
+### 1. Download and verify one release
+
+Run these commands in an empty directory. A version tag is used only to find
+the release; deployment uses immutable digests and 40-character commits from
+the signed manifest.
+
+```sh
+set -euo pipefail
+RELEASE_VERSION=0.7.2
+RELEASE_TAG="v$RELEASE_VERSION"
+RELEASE_REPOSITORY=apelogic-ai/steward-run
+RELEASE_IDENTITY="https://github.com/apelogic-ai/steward-run/.github/workflows/portable-release.yml@refs/heads/main"
+
+gh release download "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --dir .
+sha256sum -c SHA256SUMS
+
+cosign verify-blob --bundle oss-release-manifest.sigstore.json \
+  --certificate-identity "$RELEASE_IDENTITY" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  oss-release-manifest.json
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity "$RELEASE_IDENTITY" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  SHA256SUMS
+
+test "$(jq -er '.schemaVersion' oss-release-manifest.json)" = 3
+test "$(jq -er '.version' oss-release-manifest.json)" = "$RELEASE_VERSION"
+test "$(jq -er '.workflowRepository' oss-release-manifest.json)" = "$RELEASE_REPOSITORY"
+test "$(jq -cer '.platforms' oss-release-manifest.json)" = '["linux/amd64","linux/arm64"]'
+test "$(jq -er '.arcControllerVersion' oss-release-manifest.json)" = 0.14.2
+
+IMAGE_REFERENCE="$(jq -er '.image' oss-release-manifest.json)"
+CHART_REFERENCE="$(jq -er '.chart' oss-release-manifest.json)"
+WORKFLOW_COMMIT="$(jq -er '.workflowCommit' oss-release-manifest.json)"
+ACTION_COMMIT="$(jq -er '.actionCommit' oss-release-manifest.json)"
+printf '%s\n' "$IMAGE_REFERENCE" | grep -Eq '^ghcr\.io/apelogic-ai/steward-run@sha256:[0-9a-f]{64}$'
+printf '%s\n' "$CHART_REFERENCE" | grep -Eq '^ghcr\.io/apelogic-ai/charts/steward-run-arc@sha256:[0-9a-f]{64}$'
+printf '%s\n' "$WORKFLOW_COMMIT" "$ACTION_COMMIT" | grep -Ec '^[0-9a-f]{40}$' | grep -Fx 2
+
+cosign verify --experimental-oci11=true \
+  --certificate-identity "$RELEASE_IDENTITY" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$IMAGE_REFERENCE"
+cosign verify --experimental-oci11=true \
+  --certificate-identity "$RELEASE_IDENTITY" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$CHART_REFERENCE"
+
+CHART_OCI=oci://ghcr.io/apelogic-ai/charts/steward-run-arc
+CHART_DIGEST="${CHART_REFERENCE##*@}"
+HELM_PULL_OUTPUT="$(helm pull "$CHART_OCI" --version "$RELEASE_VERSION" 2>&1)"
+printf '%s\n' "$HELM_PULL_OUTPUT"
+printf '%s\n' "$HELM_PULL_OUTPUT" | grep -Fx "Digest: $CHART_DIGEST"
+CHART_PACKAGE="$PWD/steward-run-arc-$RELEASE_VERSION.tgz"
+test -f "$CHART_PACKAGE"
+```
+
+Retain the manifest, checksum inventory, signature bundles, chart package,
+and `release-attestation-summary.json` with the deployment record. The summary
+binds verified SLSA provenance and SPDX SBOM attestations to each runnable
+child manifest of the multi-platform OCI index.
+
+### 2. Select the cluster and verify ARC 0.14.2
+
+Use an explicit kubeconfig and context for every mutation. The example assumes
+the standard ARC release `arc` in namespace `arc-system`.
+
+```sh
+KUBECONFIG_FILE=/absolute/path/to/cluster-kubeconfig
+KUBE_CONTEXT=production-cluster
+ARC_CONTROLLER_NAMESPACE=arc-system
+ARC_CONTROLLER_RELEASE=arc
+RUNNER_NAMESPACE=arc-runners
+RUNNER_RELEASE=steward-run
+RUNNER_SCALE_SET=steward-run
+
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" cluster-info
+```
+
+If the shared controller is not already installed, an authorized cluster
+operator can install the pinned upstream release:
+
+```sh
+helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
+  upgrade --install "$ARC_CONTROLLER_RELEASE" \
+  oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller \
+  --version 0.14.2 --namespace "$ARC_CONTROLLER_NAMESPACE" --create-namespace \
+  --wait --timeout 10m
+```
+
+Run the released read-only preflight. It reads no Secrets and prints no token
+or credential data:
+
+```sh
+node ./steward-run-arc-preflight.mjs \
+  --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
+  --namespace "$ARC_CONTROLLER_NAMESPACE" \
+  --release-name "$ARC_CONTROLLER_RELEASE"
+```
+
+For the standard release, the emitted identity is
+`arc-system/arc-gha-rs-controller`. Pass `--service-account-name` when the
+controller installation explicitly overrides its ServiceAccount.
+
+### 3. Verify the existing registration reference
+
+This procedure does not create or alter GitHub App credentials. Set the name
+of the operator-owned Secret and verify only its type and key inventory:
+
+```sh
+GITHUB_CONFIG_URL=https://github.com/CUSTOMER_ORG/CUSTOMER_REPOSITORY
+GITHUB_APP_SECRET=steward-run-github-app
+
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
+  --namespace "$RUNNER_NAMESPACE" get secret "$GITHUB_APP_SECRET" -o json |
+  jq -e '
+    .type == "Opaque" and
+    (.data | has("github_app_id")) and
+    (.data | has("github_app_installation_id")) and
+    (.data | has("github_app_private_key"))
+  ' >/dev/null
+```
+
+The App must be installed for the organization or repository in
+`GITHUB_CONFIG_URL` and have the permissions required by upstream ARC. The App
+is only for runner registration; it is not a Steward bearer credential.
+
+### 4. Create the complete hardened values file
+
+Helm replaces lists instead of merging them. Keep the entire runner container
+entry below when changing the image or adding mounts. The chart schema rejects
+an entry that drops the run command, pull policy, no-privilege security
+context, or CPU/memory requests and limits. It also requires pod-level
+`runAsNonRoot: true` and rejects any container `capabilities.add` entry.
+
+```sh
+cat > customer-values.yaml <<YAML
+gha-runner-scale-set:
+  githubConfigUrl: $GITHUB_CONFIG_URL
+  githubConfigSecret: $GITHUB_APP_SECRET
+  controllerServiceAccount:
+    namespace: $ARC_CONTROLLER_NAMESPACE
+    name: arc-gha-rs-controller
+  runnerScaleSetName: $RUNNER_SCALE_SET
+  scaleSetLabels:
+    - steward-run
+  minRunners: 0
+  maxRunners: 5
+  containerMode:
+    type: ""
+  template:
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets: []
+      containers:
+        - name: runner
+          image: $IMAGE_REFERENCE
+          imagePullPolicy: IfNotPresent
+          command: ["/home/runner/run.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            privileged: false
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+YAML
+```
+
+Publicly trusted Steward and Identity endpoints need no CA configuration. For
+private PKI, reference an existing ConfigMap containing only public CA
+certificates. Add exactly one `steward-run-trust-bundle` volume, mount it
+read-only at `/etc/steward-run/trust`, and set
+`NODE_EXTRA_CA_CERTS=/etc/steward-run/trust/ca.crt` on the complete runner
+entry. The tested shape is in
+[`test/fixtures/arc-ca-values.yaml`](../test/fixtures/arc-ca-values.yaml).
+Never place inline PEM or a private key in values.
+
+### 5. Render, install, and verify linkage
+
+```sh
+helm lint "$CHART_PACKAGE" --strict --values customer-values.yaml
+helm template "$RUNNER_RELEASE" "$CHART_PACKAGE" \
+  --namespace "$RUNNER_NAMESPACE" --values customer-values.yaml \
+  --kube-version 1.36.0 > rendered-scale-set.yaml
+
+helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
+  upgrade --install "$RUNNER_RELEASE" "$CHART_PACKAGE" \
+  --namespace "$RUNNER_NAMESPACE" --create-namespace \
+  --values customer-values.yaml --wait --timeout 10m
+
+node ./steward-run-arc-preflight.mjs \
+  --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
+  --namespace "$ARC_CONTROLLER_NAMESPACE" \
+  --release-name "$ARC_CONTROLLER_RELEASE" \
+  --runner-namespace "$RUNNER_NAMESPACE" \
+  --runner-scale-set-name "$RUNNER_SCALE_SET" --output json |
+  jq -e '.status == "ok" and .runnerLinkage == "verified"' >/dev/null
+```
+
+The default is zero idle runners, so an empty runner Pod list before dispatch
+is expected. The listener and `AutoscalingRunnerSet` must exist.
 
 ## Authentication discovery contract
 
-The only production topology input is `steward-api-url`. Given the canonical
-resource `https://steward.customer.example`, the action performs at most
-these two unauthenticated metadata requests:
+Production configuration supplies only `steward-api-url`. For
+`https://steward.customer.example`, the action performs these two metadata
+requests:
 
 ```text
 GET https://steward.customer.example/.well-known/oauth-protected-resource
 GET https://identity.customer.example/.well-known/oauth-authorization-server
 ```
 
-The first response must be `application/json`, identify the exact resource,
-and list exactly one authorization server:
+The first JSON document must identify the exact resource and one issuer:
 
 ```json
 {
@@ -60,7 +283,7 @@ and list exactly one authorization server:
 }
 ```
 
-The second response must repeat the exact issuer and advertise the exchange:
+The second must repeat the exact issuer and advertise the exchange:
 
 ```json
 {
@@ -70,29 +293,33 @@ The second response must repeat the exact issuer and advertise the exchange:
 }
 ```
 
-Discovery compares raw strings: `steward-api-url` must equal Steward's
-`taskIdentity.resource` exactly, and the issuer Steward advertises must equal
-Identity's `issuer` exactly.
+Discovery compares raw strings. `steward-api-url` must equal Steward's
+`taskIdentity.resource` exactly, and the advertised authorization server must
+equal Identity's `issuer` exactly. A trailing slash is a different string.
 
-`github_oidc_audience` is optional. If omitted, the exact canonical issuer URL
-is the GitHub OIDC audience. No other audience fallback exists. Path-bearing
-resource and issuer URLs use the RFC 9728 and RFC 8414 insertion rules; the
-action never guesses a sibling hostname or endpoint path.
+`github_oidc_audience` is optional; when absent, the exact issuer URL is used.
+URLs are limited to 2,048 characters and require HTTPS except for loopback
+tests. Redirects, credentials, fragments, mismatches, ambiguous issuers, and
+oversized metadata are rejected. Each response is capped at 64 KiB, each
+request has a five-second timeout, and both requests share a ten-second
+budget. Metadata responses must be exactly HTTP 200.
 
-Each URL is limited to 2,048 characters and must use HTTPS, except for explicit
-loopback tests. Credentials and fragments are rejected; issuer URLs also
-reject queries. Metadata redirects are rejected, each response is limited to
-64 KiB, each request has a five-second timeout, and the complete two-request
-discovery has a ten-second budget. A successful result is cached for the
-action process; a failed result is not. The action then requests GitHub OIDC
-for the exact selected audience, POSTs that assertion to `token_endpoint`,
-and accepts only the existing short-lived `steward-task-api` token contract.
-Every Task request still targets the original `steward-api-url`.
+## Integration and object inventory
 
-## Minimal reusable-workflow integration
+| Purpose | Object or claim | Owner |
+| --- | --- | --- |
+| ARC registration | Existing `Opaque` Secret in `arc-runners` with `github_app_id`, `github_app_installation_id`, and `github_app_private_key` | GitHub App / cluster operator |
+| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.7.2 release |
+| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.7.2 release |
+| Steward authentication | Job-scoped GitHub OIDC token from `id-token: write`; no static token Secret | GitHub / Identity |
+| Optional public CA | Existing ConfigMap key `ca.crt`, mounted at `/etc/steward-run/trust/ca.crt` | PKI / cluster operator |
+| ARC controller | Separate 0.14.2 controller and CRDs | Cluster platform operator |
 
-This is the preferred caller. Replace the placeholders and pin `uses` to the
-exact release or reviewed fork commit containing this contract:
+### Supported upstream caller
+
+Direct consumption of the public upstream reusable workflow is supported for
+GitHub.com callers. Replace `REVIEWED_40_HEX_COMMIT` with the manifest's exact
+`workflowCommit`; GitHub does not allow an expression in `jobs.<job>.uses`.
 
 ```yaml
 name: Governed Steward task
@@ -114,173 +341,162 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: CUSTOMER_ORG/steward-run/.github/workflows/steward-task-customer.yml@REVIEWED_40_HEX_COMMIT
+    uses: apelogic-ai/steward-run/.github/workflows/steward-task-customer.yml@REVIEWED_40_HEX_COMMIT
     with:
       runner-label: steward-run
       workflow: CUSTOMER_WORKFLOW_REFERENCE
-      envelope-digest: steward:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       input-artifact: request
       output-artifact: result
       steward-api-url: https://steward.customer.example
+      job-timeout-minutes: 15
+      runtime-binding-timeout-minutes: 10
 ```
 
-`envelope-digest` is optional. Use the same input with `invocation-path` when
-calling a direct package. Sending it requires Steward 0.3.0 or newer; older
-servers require callers to omit it. It must be `steward:sha256:` followed by 64
-lowercase hexadecimal characters. Steward scopes lookup to the authenticated
-canonical owner. Omit it only when that owner has exactly one active Envelope; multiple
-active Envelopes require an explicit digest.
+The reusable workflow checks out its action from the immutable
+`job.workflow_repository` and `job.workflow_sha` supplied by GitHub. It accepts
+no PAT or checkout-token input, and it does not accept an action repository,
+action ref, container image, or job-container image from the caller.
 
-The supported `steward-task.yml`, `steward-task-self-hosted.yml`, and
-`steward-task-customer.yml` workflows all declare the three compatibility
-inputs below as optional strings with `default: ""`. Direct OIDC and bearer-
-file inputs are not exposed by these public production workflows.
-The customer workflow checks out its own action from the exact
-`job.workflow_repository` and `job.workflow_sha` supplied by GitHub, so callers
-cannot select executable code. GitHub Enterprise Server is not covered because
-those reusable-workflow job context fields are not available there.
+Cross-repository consumption from a different private fork is not supported:
+the caller's `GITHUB_TOKEN` cannot be assumed to read that private workflow
+repository, and this workflow intentionally has no credential input. Either
+consume the public upstream workflow, call the workflow from the same private
+repository, or vendor the reviewed workflow and action bundle into the caller
+repository. Do not add a PAT without a separately reviewed authentication
+design.
+
+### Identity policy
+
+Identity must admit the exact reusable-workflow claim at the reviewed commit.
+For the upstream example, configure an exact string match for:
+
+```text
+job_workflow_ref=apelogic-ai/steward-run/.github/workflows/steward-task-customer.yml@REVIEWED_40_HEX_COMMIT
+```
+
+A fork or vendored copy has a different `job_workflow_ref` and needs its own
+exact allowlist entry. Do not authorize a branch, tag, repository-wide
+wildcard, or the upstream string for a fork. Exact matching is byte-for-byte:
+case, repository, path, separator, and 40-character commit must all match the
+claim GitHub emits. Continue to validate the caller repository, event, actor,
+and selected OIDC audience according to the operator's Identity policy.
+
+### Task source and timeout inputs
+
+Supply exactly one Task source:
+
+- `workflow`: an existing governed Workflow reference; or
+- `invocation-path`: a canonical checked-in direct-package manifest path.
+
+`envelope-digest` is optional and must be
+`steward:sha256:<64 lowercase hex>`. Omit it only when the authenticated owner
+has exactly one active Envelope.
+
+`job-timeout-minutes` controls the GitHub job, accepts whole minutes from 1
+through 360, and defaults to 15.
+`runtime-binding-timeout-minutes` controls the wait for Steward to bind a
+runtime, accepts whole minutes from 1 through 360, and defaults to 10. Increase
+both when expected approval or capacity waits exceed the defaults.
 
 ## Deprecated compatibility inputs
 
-Existing callers do not have to change during upgrade. An explicit exchange
-URL bypasses discovery and preserves the prior behavior; an explicit audience
-selects the exact GitHub OIDC audience for that endpoint. An audience without
-an explicit URL is rejected. If the URL is supplied while the audience remains
-empty, the historical `apelogic-github-identity-exchange` audience is retained.
-A CA file extends system trust for Steward,
-metadata, and exchange requests. Each supplied compatibility input emits a
-warning containing only its input name, never its value or certificate data.
+The three production compatibility inputs remain optional with `default: ""`:
 
-```yaml
-  governed:
-    permissions:
-      contents: read
-      id-token: write
-    uses: CUSTOMER_ORG/steward-run/.github/workflows/steward-task-customer.yml@REVIEWED_40_HEX_COMMIT
-    with:
-      runner-label: steward-run
-      workflow: CUSTOMER_WORKFLOW_REFERENCE
-      input-artifact: request
-      output-artifact: result
-      steward-api-url: https://steward.customer.example
-      identity-exchange-url: https://identity.customer.example/v1/exchange
-      identity-exchange-audience: customer-steward-github-exchange
-      steward-ca-certificate-file: /etc/steward-run/trust/ca.crt
-```
-
-These inputs cannot be removed without a separately reviewed major-version
-contract and migration plan:
-
-| Input | Default | Precedence |
-| --- | --- | --- |
-| `identity-exchange-url` | `""` | Non-empty selects explicit exchange and skips discovery. |
-| `identity-exchange-audience` | `""` | Used only with a non-empty explicit exchange URL; empty retains the historical audience. |
-| `steward-ca-certificate-file` | `""` | Non-empty extends process trust; empty uses normal system trust. |
-
-## ARC installation and optional public CA bundle
-
-Publicly trusted Steward and Identity endpoints require no CA values, volumes,
-or environment variables. For a private PKI, create an operator-owned
-ConfigMap containing only public CA certificates:
-
-```sh
-kubectl -n arc-runners create configmap steward-run-ca \
-  --from-file=ca.crt=./public/customer-ca.crt
-```
-
-In the `steward-run-arc` values overlay, add this exact shape to the complete
-runner Pod template. The chart validates the reference, one-key projection,
-read-only mount, and Node trust path at render time:
-
-```yaml
-gha-runner-scale-set:
-  template:
-    spec:
-      volumes:
-        - name: steward-run-trust-bundle
-          configMap:
-            name: steward-run-ca
-            items:
-              - key: ca.crt
-                path: ca.crt
-      containers:
-        - name: runner
-          # Preserve the complete released image, command, security, and resources block.
-          image: registry.customer.example/steward-run@sha256:RELEASED_64_HEX_DIGEST
-          env:
-            - name: NODE_EXTRA_CA_CERTS
-              value: /etc/steward-run/trust/ca.crt
-          volumeMounts:
-            - name: steward-run-trust-bundle
-              mountPath: /etc/steward-run/trust
-              readOnly: true
-```
-
-`NODE_EXTRA_CA_CERTS` adds this bundle to Node's normal system roots before the
-action starts. Do not put PEM contents or a private key in values. The complete
-tested overlay is [the ARC CA fixture](../test/fixtures/arc-ca-values.yaml).
-
-Custom wrappers using the `steward-run` library chart can instead set:
-
-```yaml
-stewardRun:
-  trustBundle:
-    configMapName: steward-run-ca
-    key: ca.crt
-```
-
-Render before applying:
-
-```sh
-helm lint steward-run-arc-RELEASE.tgz --strict --values customer-values.yaml
-helm template steward-run steward-run-arc-RELEASE.tgz \
-  --namespace arc-runners --values customer-values.yaml > rendered-scale-set.yaml
-```
-
-## Upgrade and rollback
-
-Upgrade order is behavior-preserving:
-
-1. Deploy Steward and Identity metadata that passes the contract above.
-2. Upgrade the runner image, chart, and reusable-workflow commit as one release.
-3. Leave existing explicit inputs in place and run one governed task; it must
-   use the compatibility path without a discovery request.
-4. Remove the three compatibility inputs in a reviewed workflow change and
-   run another task; it must discover once and complete against the same
-   original Steward resource.
-5. Retain the prior workflow commit, image digest, chart package, and values.
-
-If discovery fails, restore the explicit endpoint/audience inputs; no server or
-data rollback is required. To roll back the runner release, restore the prior
-workflow commit and verified image/chart together. If the trust-bundle shape
-was added, either keep it (older releases still accept the explicit CA-file
-path) or restore the prior Pod template and explicit path together. Do not
-remove the operator-owned ConfigMap until no running or rollback runner uses
-it.
-
-## Verification
-
-- `helm lint` and `helm template` pass with no trust volume for public PKI.
-- The private-PKI render contains exactly one ConfigMap volume, one read-only
-  mount, and one `NODE_EXTRA_CA_CERTS` entry; an empty/invalid name fails.
-- The minimal workflow emits no compatibility warning and performs exactly one
-  protected-resource and one Identity discovery request per action process.
-- The compatibility workflow emits only fixed input-name warnings and makes no
-  discovery request.
-- Wrong resource/issuer, multiple issuers, redirect, non-loopback HTTP,
-  malformed/oversized metadata, wrong OIDC audience, wrong token audience,
-  expired token, untrusted CA, and hostname mismatch all fail before a Task is
-  successfully submitted.
-
-## Documentation inventory
-
-| Current surface | Status |
+| Input | Behavior |
 | --- | --- |
-| Root README and action input reference | Updated for discovery, precedence, deprecation, and system trust. |
-| Three supported reusable workflows | Optional empty defaults; internal direct-token modes remain absent. |
-| This installation/integration guide | Canonical copy-ready discovered and compatibility examples. |
-| `docs/steward-run-spec.md` | Exact metadata, bounds, precedence, and token contract. |
-| Application and library chart READMEs/values/schema | Public-trust default and ConfigMap-backed bundle documented and tested. |
-| `CHANGELOG.md` and v0.7.1 release notes | Upgrade and rollback behavior recorded. |
-| `docs/installation-v0.5.0.md` | Historical; marked superseded and otherwise unchanged. |
-| ARC preflight and vulnerability/security documents | Unaffected: they do not define task authentication or trust values. |
+| `identity-exchange-url` | Non-empty bypasses discovery and selects the explicit exchange endpoint. |
+| `identity-exchange-audience` | Valid only with an explicit exchange URL; empty retains the historical explicit-path audience. |
+| `steward-ca-certificate-file` | Non-empty extends system trust with the named public CA file. |
+
+Each supplied compatibility input emits a warning containing only its name.
+An audience without an explicit URL is rejected. These inputs cannot be
+removed without a separately reviewed major-version migration.
+
+## Post-install
+
+Before the first production workload:
+
+```sh
+helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
+  status "$RUNNER_RELEASE" --namespace "$RUNNER_NAMESPACE"
+kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
+  --namespace "$RUNNER_NAMESPACE" get autoscalingrunnersets,rolebindings,serviceaccounts
+```
+
+Dispatch the pinned caller workflow and verify:
+
+- the ARC listener creates a runner from the digest-pinned image;
+- the action discovers Steward and Identity once each;
+- Identity accepts the exact `job_workflow_ref` and audience;
+- `status`, `task-uid`, and `runtime-uid` are populated;
+- the `result` artifact contains only declared outputs; and
+- Steward finalization is `confirmed`.
+
+The mock round trip in CI proves protocol routing, not the operator's deployed
+Steward, Identity, GitHub App registration, or sandbox runtime.
+
+## Delivery tests
+
+Release acceptance is:
+
+- `sha256sum -c SHA256SUMS` and both blob signature verifications succeed;
+- Cosign verifies the exact image and chart digests;
+- the manifest lists only `linux/amd64` and `linux/arm64` runnable platforms;
+- the controller preflight reports ARC 0.14.2 and exact ServiceAccount linkage;
+- `helm lint` and `helm template` pass with the complete values file;
+- Kubernetes 1.32, 1.33, 1.34, 1.35, and 1.36 render; 1.31 and 1.37 fail;
+- an incomplete runner container overlay fails schema validation; and
+- one live governed task completes and finalizes under the exact Identity
+  workflow allowlist.
+
+## Upgrade
+
+1. Download and verify the new release in a new directory.
+2. Compare release notes, supported Kubernetes/ARC versions, manifest
+   `workflowCommit`, `actionCommit`, image digest, and chart digest.
+3. Replace `IMAGE_REFERENCE` in the complete values file.
+4. Update the caller's literal workflow commit and the exact Identity
+   `job_workflow_ref` entry together.
+5. Lint, render, run controller preflight, then upgrade:
+
+```sh
+helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
+  upgrade "$RUNNER_RELEASE" "$CHART_PACKAGE" \
+  --namespace "$RUNNER_NAMESPACE" --values customer-values.yaml \
+  --wait --timeout 10m
+```
+
+6. Repeat runner-linkage preflight and the live delivery test. Keep the prior
+   manifest, chart package, values, commit, and Helm revision for rollback.
+
+GitHub requires self-hosted runners to be updated within 30 days of a new
+runner release. Immutable images do not self-update; fork and mirror operators
+must rebuild, verify, and roll out replacement digests within that window.
+
+## Rollback
+
+Restore the previous release as one coherent unit: previous chart package,
+image digest, reusable-workflow commit, and exact Identity allowlist entry.
+Do not roll back only the image or only the workflow.
+
+```sh
+helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
+  history "$RUNNER_RELEASE" --namespace "$RUNNER_NAMESPACE"
+helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
+  rollback "$RUNNER_RELEASE" PREVIOUS_REVISION \
+  --namespace "$RUNNER_NAMESPACE" --wait --timeout 10m
+```
+
+Re-run the linkage preflight and delivery test after restoring the caller pin
+and Identity policy. Preserve any CA ConfigMap until no running or rollback
+revision references it.
+
+To uninstall only steward-run:
+
+```sh
+helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \
+  uninstall steward-run --namespace "$RUNNER_NAMESPACE" --wait
+```
+
+Uninstalling steward-run does not remove the shared ARC controller, its CRDs,
+the operator-owned GitHub App Secret, or an operator-owned CA ConfigMap.

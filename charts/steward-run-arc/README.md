@@ -55,16 +55,16 @@ mount, and one environment entry. It fails incomplete or altered shapes. The
 environment variable adds the bundle to Node's normal system roots before the
 action starts. Never place PEM content or a private key in values.
 
-The v0.7.1 chart and runner include the optional exact User Envelope selector,
+The v0.7.2 chart and runner include the optional exact User Envelope selector,
 authentication discovery, and system trust by default. Follow the
 [current installation guide](../../docs/installation.md)
 and pull the chart from the public repository with:
 
 ```sh
-helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.7.1
+helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.7.2
 ```
 
-The matching runner tag is `ghcr.io/apelogic-ai/steward-run:0.7.1`. Tags are
+The matching runner tag is `ghcr.io/apelogic-ai/steward-run:0.7.2`. Tags are
 for discovery only: resolve and pin the image digest from the release's
 `oss-release-manifest.json`.
 
@@ -74,5 +74,6 @@ current guide covers discovery, compatibility inputs, trust, upgrade,
 rollback, and operator checks. Helm replaces lists when overlaying values. The
 chart schema therefore rejects a replacement runner entry that omits the run
 command, image pull policy, no-privilege security context, or CPU/memory
-requests and limits; preserve the complete entry when changing its image or
-adding mounts.
+requests and limits. It also requires pod-level `runAsNonRoot: true` and
+rejects any runner `capabilities.add` entry. Preserve the complete entry when
+changing its image or adding mounts.

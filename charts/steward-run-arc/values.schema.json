@@ -30,8 +30,16 @@
           "type": "object", "required": ["spec"],
           "properties": {
             "spec": {
-              "type": "object", "required": ["containers"],
+              "type": "object", "required": ["securityContext", "containers"],
               "properties": {
+                "securityContext": {
+                  "type": "object",
+                  "required": ["runAsNonRoot"],
+                  "properties": {
+                    "runAsNonRoot": {"const": true},
+                    "runAsUser": {"type": "integer", "minimum": 1}
+                  }
+                },
                 "volumes": {
                   "type": "array",
                   "items": {
@@ -81,9 +89,12 @@
                         "required": ["allowPrivilegeEscalation", "capabilities", "privileged", "readOnlyRootFilesystem"],
                         "properties": {
                           "allowPrivilegeEscalation": {"const": false},
+                          "runAsNonRoot": {"const": true},
+                          "runAsUser": {"type": "integer", "minimum": 1},
                           "capabilities": {
                             "type": "object",
                             "required": ["drop"],
+                            "not": {"required": ["add"]},
                             "properties": {"drop": {"const": ["ALL"]}}
                           },
                           "privileged": {"const": false},
