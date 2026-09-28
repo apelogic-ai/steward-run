@@ -23,7 +23,7 @@ permissions:
   packages: write
 
 env:
-  ACTION_COMMIT: 018d9eb20d036b26060c5cb3d979a84d42bcc051
+  ACTION_COMMIT: e377593aabc574e2ab7d0ef35843a8a8bb1cf4b3
 
 concurrency:
   group: portable-release-${{ inputs.version }}

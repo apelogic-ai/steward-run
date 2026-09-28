@@ -7,8 +7,8 @@ test("the customer workflow executes only its own immutable action with GitHub O
   const source = await readFile(new URL("../.github/workflows/steward-task-customer.yml", import.meta.url), "utf8");
   const existingSource = await readFile(new URL("../.github/workflows/steward-task-self-hosted.yml", import.meta.url), "utf8");
   const workflow = parse(source) as {
-    on: { workflow_call: { inputs: Record<string, { required?: boolean }>; outputs: Record<string, unknown> } };
-    jobs: Record<string, { container?: unknown; permissions?: Record<string, string>; "runs-on"?: string; steps?: Array<Record<string, unknown>> }>;
+    on: { workflow_call: { inputs: Record<string, { required?: boolean; default?: string | number; type?: string }>; outputs: Record<string, unknown> } };
+    jobs: Record<string, { container?: unknown; permissions?: Record<string, string>; "runs-on"?: string; "timeout-minutes"?: string; steps?: Array<Record<string, unknown>> }>;
   };
   const existing = parse(existingSource) as typeof workflow;
   const job = workflow.jobs.governed;
@@ -16,6 +16,7 @@ test("the customer workflow executes only its own immutable action with GitHub O
   assert.equal(job?.permissions?.contents, "read");
   assert.equal(job?.permissions?.["id-token"], "write");
   assert.equal(job?.["runs-on"], "${{ inputs.runner-label }}");
+  assert.equal(job?.["timeout-minutes"], "${{ inputs.job-timeout-minutes }}");
   assert.deepEqual(Object.keys(workflow.on.workflow_call.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
   assert.deepEqual(Object.keys(workflow.on.workflow_call.inputs).sort(), Object.keys(existing.on.workflow_call.inputs).sort());
   for (const required of ["runner-label", "input-artifact", "output-artifact", "steward-api-url"]) {
@@ -25,6 +26,10 @@ test("the customer workflow executes only its own immutable action with GitHub O
     assert.notEqual(workflow.on.workflow_call.inputs[optional]?.required, true, optional);
     assert.equal((workflow.on.workflow_call.inputs[optional] as { default?: string })?.default, "", optional);
   }
+  assert.equal(workflow.on.workflow_call.inputs["job-timeout-minutes"]?.type, "number");
+  assert.equal(workflow.on.workflow_call.inputs["job-timeout-minutes"]?.default, 15);
+  assert.equal(workflow.on.workflow_call.inputs["runtime-binding-timeout-minutes"]?.type, "number");
+  assert.equal(workflow.on.workflow_call.inputs["runtime-binding-timeout-minutes"]?.default, 10);
   for (const forbidden of ["action-repository", "action-ref", "action-commit", "container-image", "job-container-image"]) {
     assert.equal(workflow.on.workflow_call.inputs[forbidden], undefined, forbidden);
   }
@@ -56,6 +61,7 @@ test("the customer workflow executes only its own immutable action with GitHub O
     "identity-exchange-audience": "${{ inputs.identity-exchange-audience }}",
     "steward-ca-certificate-file": "${{ inputs.steward-ca-certificate-file }}",
     "agent-runtime": "${{ inputs.agent-runtime }}",
+    "runtime-binding-timeout-minutes": "${{ inputs.runtime-binding-timeout-minutes }}",
   });
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /actions\/upload-artifact@/);
@@ -79,4 +85,8 @@ test("the current handoff documents the fork workflow and published OSS artifact
   assert.match(guide, /job\.workflow_sha/u);
   assert.match(guide, /GitHub Enterprise Server is not covered/u);
   assert.match(guide, /oauth-protected-resource/u);
+  assert.match(guide, /Direct consumption of the public upstream reusable workflow is supported/u);
+  assert.match(guide, /different private fork is not supported/u);
+  assert.match(guide, /job_workflow_ref=apelogic-ai\/steward-run/u);
+  assert.match(guide, /Exact matching is byte-for-byte/u);
 });

@@ -9,6 +9,28 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 No unreleased changes.
 
+## [0.7.2] - 2026-09-28
+
+### Added
+
+- Added configurable, whole-minute GitHub job and Steward runtime-binding
+  timeouts bounded from 1 through 360 while preserving the existing 15-minute
+  and 10-minute defaults.
+- Added a complete current installation, verification, integration, upgrade,
+  rollback, and uninstall runbook, including exact upstream/private-fork and
+  Identity `job_workflow_ref` contracts.
+- Enabled GitHub private vulnerability reporting and linked the advisory
+  channel from the security policy.
+
+### Fixed
+
+- Expanded the supported Kubernetes window to 1.32–1.36 with boundary tests.
+- Rejected Helm list overlays that silently remove the runner command,
+  security hardening, or resource bounds; pod-level `runAsNonRoot: true` is
+  required and container `capabilities.add` is forbidden.
+- Removed private cloud registry and account coordinates from public workflow
+  and historical security surfaces.
+
 ## [0.7.1] - 2026-09-27
 
 ### Added
@@ -141,7 +163,8 @@ No unreleased changes.
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/apelogic-ai/steward-run/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/apelogic-ai/steward-run/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/apelogic-ai/steward-run/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/apelogic-ai/steward-run/compare/v0.5.0...v0.6.0

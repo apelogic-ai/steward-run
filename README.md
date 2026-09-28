@@ -4,7 +4,7 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-The [v0.7.1 installation and integration guide](docs/installation.md)
+The [v0.7.2 installation, setup, and integration guide](docs/installation.md)
 describes the current release contract. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
 authoritative guide for v0.5.0, which predates authentication discovery and
 requires the explicit Identity exchange inputs.
@@ -15,10 +15,10 @@ The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. Release `v0.7.1` publishes the standalone
-multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.1` and the
+long-running Steward API service. Release `v0.7.2` publishes the standalone
+multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.2` and the
 application chart in
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.1`. The
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.2`. The
 attached `oss-release-manifest.json` records both immutable OCI digests, the
 pinned reusable-workflow and action commits, workflow repository, ARC
 compatibility version, release-asset checksums, SLSA provenance,
@@ -96,9 +96,14 @@ publish the discovery contract. `id-token: write` is the GitHub Actions input;
 a static Steward bearer token is not a customer production credential. The
 [customer ARC reusable workflow](.github/workflows/steward-task-customer.yml)
 checks out its own action from the exact reusable-workflow repository and
-commit reported by GitHub, not from a caller-selected action ref. The existing
-ApeLogic-pinned reusable workflows are not the fork installation path. See
-the installation guide for the exact caller pin.
+commit reported by GitHub, not from a caller-selected action ref. GitHub.com
+callers may consume this public upstream workflow directly at the exact
+40-character `workflowCommit` in the signed release manifest. A caller in a
+different repository cannot assume its `GITHUB_TOKEN` can read a private fork;
+that topology is unsupported because the workflow deliberately accepts no
+PAT or checkout-token input. Use the public upstream workflow, the same
+private repository, or a reviewed vendored copy. See the installation guide
+for the exact caller and Identity `job_workflow_ref` pins.
 
 The caller checks the invocation manifest into its repository, then uploads `request`; the reusable
 job checks out the exact triggered commit for local validation without persisting Git credentials,
@@ -113,6 +118,9 @@ direct-package v2 flow or `workflow` for the existing versioned Workflow flow. `
 applies only to the latter. Either Task source may also supply `envelope-digest` as an exact
 `steward:sha256:<64 lowercase hex>` selector. Steward resolves it only among the caller's active
 envelopes. Omitting it remains valid only when that owner has exactly one active envelope.
+Reusable workflows expose `job-timeout-minutes` (default 15) and
+`runtime-binding-timeout-minutes` (default 10). Both accept whole minutes from
+1 through 360; the latter bounds only the controller-binding wait.
 
 When the server-snapshotted diagnostics mode is `full`, successful outputs may include the two
 reserved `.steward/diagnostics/*.log` streams. The action validates the reserved paths and 4 MiB
