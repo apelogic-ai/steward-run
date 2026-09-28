@@ -22,9 +22,9 @@ application chart in
 attached `oss-release-manifest.json` records both immutable OCI digests, the
 pinned reusable-workflow and action commits, workflow repository, ARC
 compatibility version, release-asset checksums, SLSA provenance,
-SPDX SBOM evidence, and keyless signature bundles. Its
-`governedJobContainerImage` object identifies the same signed public image in
-its second supported role as a governed job container.
+SPDX SBOM evidence, and keyless signature bundles. The manifest's schema-3
+`image` field identifies the same signed public image for both the ARC runner
+and governed job-container roles, as detailed in the installation guide.
 
 The client implements Steward's six-operation `/v1/tasks` lifecycle documented in
 `contracts/steward-run-v1.openapi.yaml`. It submits, uploads a workspace-relative tar archive,
@@ -140,9 +140,6 @@ GitHub requires self-hosted runners to be upgraded within 30 days of a new
 runner release. This repository checks Docker base images weekly, but fork and
 mirror operators must merge the update, rebuild and publish the image, and
 roll out its new digest within that window; pinned images do not self-update.
-This support applies to the fork-owned customer workflow. The legacy internal
-`steward-task.yml` remains amd64-only because it pins a separate amd64 governed
-job-container image.
 
 For a dedicated self-hosted runner that must not pull the ARC job container, use the separately
 pinned `steward-task-self-hosted.yml` reusable workflow. It has the same artifact, immutable
@@ -196,8 +193,7 @@ The minimal local invocation contract is:
 The token file itself is never a result artifact. Harnesses must mount it outside the declared
 input/output paths and remove it with the disposable cluster.
 
-The current `release.yml` remains the ApeLogic-internal ECR handoff.
 `portable-release.yml` publishes the public GHCR image, OCI chart, release
 manifest, checksums, verified provenance/SBOM summary, signatures, chart
-archive, and read-only ARC preflight without AWS or ApeLogic infrastructure
+archive, and read-only ARC preflight without cloud-specific infrastructure
 inputs.

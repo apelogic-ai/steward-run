@@ -26,8 +26,7 @@ tests + image + action, released **by version**, and **environment-agnostic**.
 - The **runner image** (Dockerfile): `actions/runner` base + the action's prerequisites. Minimal,
   no baked secrets. Steward's immutable Workflow selects runtime configuration and skills.
 - App CI: build + test. The portable release publishes the image and
-  installable chart to public GHCR OCI; a separate workflow retains the
-  ApeLogic-internal ECR evidence handoff.
+  installable chart to public GHCR OCI.
 - The **thin-shell CI check** (§4) as a first-class test.
 
 **Out of scope.**
@@ -46,7 +45,7 @@ tests + image + action, released **by version**, and **environment-agnostic**.
 1. **Chart/image/action live in-repo; the product owns how it is built.**
 2. **CI publishes by version**: runner images and deployable charts are OCI
    artifacts. The public release uses GHCR; forks may publish to their own
-   registries; ApeLogic's internal handoff remains separate.
+   registries.
 3. **The product never hard-codes a customer environment.** Example names and
    URLs are placeholders; the operator selects cluster, namespace, endpoints,
    runner labels, and capacity in its values and caller workflow.
@@ -95,10 +94,8 @@ surrounding YAML; the workspace is the contract.
 The customer reusable workflow runs directly in the digest-pinned ARC runner
 image and pins its own action checkout to the reusable workflow's exact
 repository and commit. It does not accept a caller-selected executable image
-or action ref. The legacy ApeLogic workflow separately supplies a digest-pinned
-ECR job container and is not the customer installation path. Either execution
-container must provide Bash, Node, Git, and tar for JavaScript actions and the
-composite action.
+or action ref. The execution container must provide Bash, Node, Git, and tar
+for JavaScript actions and the composite action.
 
 ---
 
@@ -243,12 +240,11 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 - **No secrets, minimal packages** (the modern runner image ships lean on purpose; add only what
   the agent needs). Multi-stage build; pinned digests.
 - Published publicly to GHCR as a multi-platform OCI index by version. The
-  public release manifest identifies this signed image both as the ARC runner
-  and as the public governed job-container image. A fork may publish the same
-  source to a customer-owned registry. Environment config pins the ARC runner
-  by digest; the legacy internal governed workflow independently pins its ECR
-  job-container image by digest. Fork and mirror operators must rebuild and
-  roll out base-runner updates within GitHub's 30-day runner update window.
+  public release manifest's schema-3 `image` field identifies this signed image
+  both as the ARC runner and as the public governed job-container image. A fork
+  may publish the same source to an operator-owned registry. Environment config
+  pins the image by digest. Fork and mirror operators must rebuild and roll out
+  base-runner updates within GitHub's 30-day runner update window.
 
 ---
 
@@ -259,11 +255,10 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
   callers use `.github/workflows/steward-task-customer.yml` from a reviewed
   fork commit so GitHub emits an allowlistable `job_workflow_ref`; the workflow
   checks out its action from that same exact repository and commit. The
-  exchange emits a short-lived `steward-task-api` token. ApeLogic's internal
-  workflow retains its separate signed-manifest pins.
+  exchange emits a short-lived `steward-task-api` token.
 - **Consumed by ARC/operator configuration** (the scale set pins the image)
   and **by customer workflows** (the reusable workflow is pinned to an exact
-  fork commit). ApeLogic GitOps and workflows are separate internal consumers.
+  fork commit).
 - **Verified contract:** `contracts/steward-run-v1.openapi.yaml` records Steward's `/v1/tasks`
   submission, input, execute, status, output, and finalization operations. Workspace-relative
   input and output tar archives are limited to 64 MiB each.

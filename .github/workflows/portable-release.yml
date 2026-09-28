@@ -23,7 +23,7 @@ permissions:
   packages: write
 
 env:
-  ACTION_COMMIT: 96cee6a1cfe53fbc2f7bb2cd38a8b360fd9a2ad8
+  ACTION_COMMIT: 018d9eb20d036b26060c5cb3d979a84d42bcc051
 
 concurrency:
   group: portable-release-${{ inputs.version }}
@@ -59,6 +59,7 @@ jobs:
           [[ -f "docs/release-notes-v$VERSION.md" ]]
           [[ "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ && "$ACTION_COMMIT" != "$GITHUB_SHA" ]]
           gh api "repos/$GITHUB_REPOSITORY/commits/$ACTION_COMMIT" --silent
+          [[ "$(gh api "repos/$GITHUB_REPOSITORY/compare/$ACTION_COMMIT...$GITHUB_SHA" --jq .status)" == ahead ]]
           grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task.yml
           grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task-self-hosted.yml
           if gh release view "v$VERSION" >/dev/null 2>&1; then
@@ -260,12 +261,11 @@ jobs:
             --arg workflow_repository "$GITHUB_REPOSITORY" \
             --arg workflow_commit "$GITHUB_SHA" --arg action_commit "$ACTION_COMMIT" \
             --arg image "$IMAGE@$IMAGE_DIGEST" --arg chart "$CHART@$CHART_DIGEST" \
-            --arg job_container_repository "$IMAGE" --arg job_container_digest "$IMAGE_DIGEST" \
             --arg chart_package "$chart_package" --arg chart_sha256 "$chart_sha256" \
             --arg identity_sha256 "$identity_sha256" --arg preflight_sha256 "$preflight_sha256" \
             --arg attestation_sha256 "$attestation_sha256" \
             '{
-              schemaVersion:4,
+              schemaVersion:3,
               version:$version,
               commit:$commit,
               workflowRepository:$workflow_repository,
@@ -273,11 +273,6 @@ jobs:
               actionCommit:$action_commit,
               image:$image,
               chart:$chart,
-              governedJobContainerImage:{
-                repository:$job_container_repository,
-                digest:$job_container_digest,
-                immutableReference:($job_container_repository+"@"+$job_container_digest)
-              },
               platforms:["linux/amd64","linux/arm64"],
               arcControllerVersion:"0.14.2",
               attestations:{provenance:"https://slsa.dev/provenance/v1",sbom:"https://spdx.dev/Document",summaryAsset:"release-attestation-summary.json"},

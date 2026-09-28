@@ -128,12 +128,15 @@ test("current authentication docs and interfaces cannot drift", async () => {
   assert.match(guide, /64 KiB/u);
   assert.match(guide, /five-second timeout/u);
   assert.match(guide, /ten-second budget/u);
-  assert.match(guide, /schema 4/u);
+  assert.match(guide, /schema 3/u);
   assert.match(guide, /governedJobContainerImage/u);
+  assert.match(guide, /manifest's `image`[\s\S]*?ARC\s+runner[\s\S]*?governed job-container/u);
+  assert.match(guide, /steward\/blob\/v0\.3\.0\/docs\/installation\/governed-platform-compatibility\.md#installation-bom/u);
   assert.match(guide, /within that 30-day[\s\S]*?window/u);
   assert.match(guide, /GET https:\/\/steward\.customer\.example\/\.well-known\/oauth-protected-resource/u);
   assert.match(guide, /"resource": "https:\/\/steward\.customer\.example"/u);
   assert.match(guide, /"issuer": "https:\/\/identity\.customer\.example"/u);
+  assert.match(guide, /Discovery compares raw strings[\s\S]*?taskIdentity\.resource[\s\S]*?Identity's `issuer` exactly/u);
   assert.doesNotMatch(guide, /https:\/\/steward\.customer\.example\/api\b/u);
   assert.doesNotMatch(guide, /"https:\/\/identity\.customer\.example\/"/u);
 

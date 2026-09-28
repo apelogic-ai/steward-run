@@ -16,6 +16,5 @@ no shell commands: the earlier library-chart-only path is not the supported
 installation, and maintaining two runbooks caused version and ordering drift.
 
 The source is MIT licensed. `.github/workflows/portable-release.yml` publishes
-the public GHCR image and application chart. `.github/workflows/release.yml`
-is a separate ApeLogic-internal ECR evidence workflow and is not the portable
-fork publication path.
+the public GHCR image and application chart. Fork publication uses that
+portable workflow and fork-owned registry coordinates.

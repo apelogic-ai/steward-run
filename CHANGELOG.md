@@ -13,9 +13,6 @@ No unreleased changes.
 
 ### Added
 
-- Added `governedJobContainerImage` to the signed schema-4 public release
-  manifest. It records the repository, digest, and immutable reference of the
-  signed multi-platform image used for the governed job-container role.
 - Added weekly Dependabot checks for Docker base-image updates.
 
 ### Fixed
@@ -25,6 +22,8 @@ No unreleased changes.
 - Corrected installation examples to use Steward's origin URL and Identity's
   exact issuer without a trailing slash, matching the endpoints the services
   publish.
+- Documented Steward's existing projection from the schema-3 release
+  manifest's signed `image` field to `governedJobContainerImage`.
 
 ## [0.7.0] - 2026-09-26
 

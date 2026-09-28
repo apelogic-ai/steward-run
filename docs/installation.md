@@ -4,12 +4,14 @@ This is the v0.7.1 installation contract. The
 [v0.5.0 guide](installation-v0.5.0.md) remains immutable historical evidence.
 Use a tagged release that includes this document; never combine a workflow,
 chart, action, and runner image from different releases.
-The signed `oss-release-manifest.json` is schema 4 and supplies the exact
+The signed `oss-release-manifest.json` is schema 3 and supplies the exact
 `workflowRepository`, `workflowCommit`, `actionCommit`, image, and chart fields
-that release/integration packaging projects into its installation BOM. Its
-`governedJobContainerImage` object records the public repository, digest, and
-immutable reference for the governed job-container role. In this release, that
-role and the ARC runner role use the same signed multi-platform image.
+that release/integration packaging projects into its installation BOM. The
+manifest's `image` is the signed public multi-platform image for both the ARC
+runner and governed job-container roles. Steward's
+[v0.3.0 mapping table](https://github.com/apelogic-ai/steward/blob/v0.3.0/docs/installation/governed-platform-compatibility.md#installation-bom)
+projects that exact `image` value to `governedJobContainerImage`; no duplicate
+field or schema change is required.
 
 ## Prerequisites
 
@@ -67,6 +69,10 @@ The second response must repeat the exact issuer and advertise the exchange:
   "github_oidc_audience": "customer-steward-github-exchange"
 }
 ```
+
+Discovery compares raw strings: `steward-api-url` must equal Steward's
+`taskIdentity.resource` exactly, and the issuer Steward advertises must equal
+Identity's `issuer` exactly.
 
 `github_oidc_audience` is optional. If omitted, the exact canonical issuer URL
 is the GitHub OIDC audience. No other audience fallback exists. Path-bearing

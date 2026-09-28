@@ -2,10 +2,11 @@
 
 This patch release closes three gaps in the standalone OSS handoff.
 
-The signed `oss-release-manifest.json` is now schema 4 and includes
-`governedJobContainerImage.repository`, `.digest`, and `.immutableReference`.
-The referenced artifact is the same public, signed multi-platform image used
-by the ARC runner. It is smoke-tested for both roles, contains runnable
+The signed `oss-release-manifest.json` remains schema 3. Its existing `image`
+field is the public, signed multi-platform image used for both the ARC runner
+and governed job-container roles. Steward's installation mapping projects that
+exact value to `governedJobContainerImage`; no duplicate manifest field is
+needed. The image is smoke-tested for both roles, contains runnable
 `linux/amd64` and `linux/arm64` manifests, and is pinned by digest.
 
 Installation examples now use the Steward origin
