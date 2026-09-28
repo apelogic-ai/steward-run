@@ -233,11 +233,11 @@ interpretation with an unpredictable per-run command token, replays the original
 separate groups, restores command processing, and then finalizes. Missing, extra, malformed, or
 over-limit diagnostic entries fail the action and still finalize the Task.
 
-`action.yml` is `runs: composite` and invokes the pinned `actions/setup-node`
-action to install Node 24 before running the bundle; it does not depend on the
-hosted runner's ambient Node version. No `<form>`-style ambient config;
-everything is an input or env. Verify current GitHub Actions OIDC + artifact
-APIs when implementing.
+`action.yml` is `runs: composite`. It probes for Node 24, uses the signed
+runner image's existing runtime without network access when present, and
+invokes a Node-24-based, commit-pinned `actions/setup-node` fallback only when
+Node 24 is absent. No `<form>`-style ambient config; everything is an input or
+env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 
 ---
 

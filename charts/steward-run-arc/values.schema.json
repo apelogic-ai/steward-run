@@ -30,38 +30,57 @@
           "type": "object", "required": ["spec"],
           "properties": {
             "spec": {
-              "type": "object", "required": ["securityContext", "containers"],
-              "allOf": [
-                {
-                  "not": {
-                    "anyOf": [
-                      {"required": ["initContainers"]},
-                      {"required": ["ephemeralContainers"]},
-                      {"required": ["hostNetwork"]},
-                      {"required": ["hostPID"]},
-                      {"required": ["hostIPC"]}
-                    ]
-                  }
-                }
-              ],
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["automountServiceAccountToken", "securityContext", "imagePullSecrets", "containers"],
               "properties": {
+                "automountServiceAccountToken": {"const": false},
                 "securityContext": {
                   "type": "object",
-                  "required": ["runAsNonRoot", "runAsUser", "runAsGroup"],
+                  "additionalProperties": false,
+                  "required": ["runAsNonRoot", "runAsUser", "runAsGroup", "fsGroup", "fsGroupChangePolicy", "seccompProfile"],
                   "properties": {
                     "runAsNonRoot": {"const": true},
                     "runAsUser": {"type": "integer", "minimum": 1},
-                    "runAsGroup": {"type": "integer", "minimum": 1}
+                    "runAsGroup": {"type": "integer", "minimum": 1},
+                    "fsGroup": {"type": "integer", "minimum": 1},
+                    "fsGroupChangePolicy": {"const": "OnRootMismatch"},
+                    "supplementalGroups": {
+                      "type": "array",
+                      "uniqueItems": true,
+                      "items": {"type": "integer", "minimum": 1}
+                    },
+                    "seccompProfile": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["type"],
+                      "properties": {"type": {"const": "RuntimeDefault"}}
+                    }
+                  }
+                },
+                "imagePullSecrets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["name"],
+                    "properties": {
+                      "name": {"type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]*[a-z0-9])?)*$"}
+                    }
                   }
                 },
                 "volumes": {
                   "type": "array",
                   "items": {
                     "type": "object",
+                    "additionalProperties": false,
+                    "required": ["name", "configMap"],
                     "properties": {
                       "name": {"type": "string", "minLength": 1},
                       "configMap": {
                         "type": "object",
+                        "additionalProperties": false,
+                        "required": ["name"],
                         "properties": {
                           "name": {
                             "type": "string",
@@ -72,6 +91,8 @@
                             "type": "array",
                             "items": {
                               "type": "object",
+                              "additionalProperties": false,
+                              "required": ["key", "path"],
                               "properties": {
                                 "key": {"type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[A-Za-z0-9._-]+$"},
                                 "path": {"type": "string", "minLength": 1}
@@ -84,9 +105,11 @@
                   }
                 },
                 "containers": {
-                  "type": "array", "minItems": 1,
+                  "type": "array", "minItems": 1, "maxItems": 1,
                   "items": {
-                    "type": "object", "required": ["name", "image", "imagePullPolicy", "command", "securityContext", "resources"],
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["name", "image", "imagePullPolicy", "command", "securityContext", "resources"],
                     "properties": {
                       "name": {"const": "runner"},
                       "image": {
@@ -100,6 +123,7 @@
                       "command": {"const": ["/home/runner/run.sh"]},
                       "securityContext": {
                         "type": "object",
+                        "additionalProperties": false,
                         "required": ["allowPrivilegeEscalation", "capabilities", "privileged", "readOnlyRootFilesystem"],
                         "properties": {
                           "allowPrivilegeEscalation": {"const": false},
@@ -108,8 +132,8 @@
                           "runAsGroup": {"type": "integer", "minimum": 1},
                           "capabilities": {
                             "type": "object",
+                            "additionalProperties": false,
                             "required": ["drop"],
-                            "not": {"required": ["add"]},
                             "properties": {"drop": {"const": ["ALL"]}}
                           },
                           "privileged": {"const": false},
@@ -118,10 +142,12 @@
                       },
                       "resources": {
                         "type": "object",
+                        "additionalProperties": false,
                         "required": ["requests", "limits"],
                         "properties": {
                           "requests": {
                             "type": "object",
+                            "additionalProperties": false,
                             "required": ["cpu", "memory"],
                             "properties": {
                               "cpu": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "number", "exclusiveMinimum": 0}]},
@@ -130,6 +156,7 @@
                           },
                           "limits": {
                             "type": "object",
+                            "additionalProperties": false,
                             "required": ["cpu", "memory"],
                             "properties": {
                               "cpu": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "number", "exclusiveMinimum": 0}]},
@@ -142,6 +169,8 @@
                         "type": "array",
                         "items": {
                           "type": "object",
+                          "additionalProperties": false,
+                          "required": ["name", "value"],
                           "properties": {
                             "name": {"type": "string", "minLength": 1},
                             "value": {"type": "string"}
@@ -152,10 +181,12 @@
                         "type": "array",
                         "items": {
                           "type": "object",
+                          "additionalProperties": false,
+                          "required": ["name", "mountPath", "readOnly"],
                           "properties": {
                             "name": {"type": "string", "minLength": 1},
                             "mountPath": {"type": "string", "minLength": 1},
-                            "readOnly": {"type": "boolean"}
+                            "readOnly": {"const": true}
                           }
                         }
                       }

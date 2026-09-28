@@ -68,6 +68,7 @@ test("the v0.7.2 guide is one self-contained operator runbook", async () => {
   assert.match(guide, /not GitHub artifact attestations/u);
   assert.match(guide, /Pod Security Admission/u);
   assert.match(guide, /pod-security\.kubernetes\.io\/enforce=restricted/u);
+  assert.match(guide, /runner Pod spec is a closed\s+allowlist/u);
   assert.match(guide, /does not create or alter GitHub App credentials/u);
   assert.doesNotMatch(guide, /kubectl[^\n]*create secret|--from-file=github_app/iu);
   assert.match(guide, /Uninstalling steward-run does not remove[\s\S]*?shared ARC controller/u);
@@ -76,9 +77,14 @@ test("the v0.7.2 guide is one self-contained operator runbook", async () => {
   assert.ok(values, "complete customer-values heredoc");
   const parsed = parse(values) as Record<string, any>;
   const scaleSet = parsed["gha-runner-scale-set"];
-  const runner = scaleSet?.template?.spec?.containers?.[0];
+  const pod = scaleSet?.template?.spec;
+  const runner = pod?.containers?.[0];
   assert.equal(scaleSet?.githubConfigSecret, "$GITHUB_APP_SECRET");
   assert.equal(scaleSet?.controllerServiceAccount?.name, "arc-gha-rs-controller");
+  assert.equal(pod?.automountServiceAccountToken, false);
+  assert.equal(pod?.securityContext?.fsGroup, 1001);
+  assert.equal(pod?.securityContext?.fsGroupChangePolicy, "OnRootMismatch");
+  assert.deepEqual(pod?.securityContext?.seccompProfile, { type: "RuntimeDefault" });
   assert.deepEqual(runner?.command, ["/home/runner/run.sh"]);
   assert.equal(runner?.securityContext?.allowPrivilegeEscalation, false);
   assert.equal(runner?.securityContext?.runAsNonRoot, true);

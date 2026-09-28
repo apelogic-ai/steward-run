@@ -27,10 +27,12 @@ reproduced below.
 ## Composite-action runtime dependency
 
 The composite action invokes the commit-pinned
-[`actions/setup-node`](https://github.com/actions/setup-node) 4.4.0 action to
-install Node.js 24 before executing `dist/index.cjs`. That action is
+[`actions/setup-node`](https://github.com/actions/setup-node) 7.0.0 action to
+install Node.js 24 only when the runner does not already provide it before
+executing `dist/index.cjs`. That action is
 MIT-licensed and is fetched by GitHub Actions; it is not bundled into this
-repository's JavaScript artifact.
+repository's JavaScript artifact. Its Node.js 24.21.0 fallback is distributed
+under the [Node.js license](https://github.com/nodejs/node/blob/v24.21.0/LICENSE).
 
 ## Runner image and Helm dependency
 

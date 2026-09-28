@@ -43,9 +43,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.18.1
+          node-version: 24.21.0
       - name: Validate release and public coordinates
         id: refs
         env:
@@ -63,6 +63,9 @@ jobs:
           else
             [[ -z "$INPUT_VERSION" ]]
           fi
+          main_status="$(gh api \
+            "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...main" --jq .status)"
+          [[ "$main_status" == "identical" || "$main_status" == "ahead" ]]
           [[ "$(node -p 'require("./package.json").version')" == "$VERSION" ]]
           [[ "$(sed -n 's/^version: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
           [[ "$(sed -n 's/^appVersion: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
@@ -73,7 +76,8 @@ jobs:
           action_metadata="$(gh api -H "Accept: application/vnd.github.raw+json" \
             "repos/$GITHUB_REPOSITORY/contents/action.yml?ref=$ACTION_COMMIT")"
           grep -Fq "failure-category:" <<<"$action_metadata"
-          grep -Fq "actions/setup-node@" <<<"$action_metadata"
+          grep -Fq "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020" <<<"$action_metadata"
+          grep -Fq "if: steps.node24.outputs.available != 'true'" <<<"$action_metadata"
           grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task.yml
           grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task-self-hosted.yml
           grep -Fq "failure-category:" .github/workflows/steward-task.yml
@@ -179,9 +183,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.18.1
+          node-version: 24.21.0
       - uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4.3.1
         with:
           version: v3.17.1

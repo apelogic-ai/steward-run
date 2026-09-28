@@ -41,8 +41,11 @@ node.
 
 Default behavior is zero idle runners, five maximum, direct execution in the
 digest-pinned runner image, a non-root Pod UID/GID, no privilege escalation,
-no added capabilities, no init or ephemeral containers, no host namespaces,
-and no mounted Kubernetes API token. Enforce the Kubernetes Pod Security
+no added capabilities, `RuntimeDefault` seccomp, no init or ephemeral
+containers, no host access, and no mounted Kubernetes API token. The values
+schema closes the runner Pod spec to the documented pod context, pull-secret
+references, one runner container, and optional ConfigMap trust volumes; every
+other pod or container field is rejected. Enforce the Kubernetes Pod Security
 Admission `restricted` policy on the dedicated runner namespace as a second
 boundary. If the image registry is private, reference an
 existing pull Secret in `template.spec.imagePullSecrets`. Publicly trusted
@@ -77,10 +80,11 @@ current guide covers discovery, compatibility inputs, trust, upgrade,
 rollback, and operator checks. Helm replaces lists when overlaying values. The
 chart schema therefore rejects a replacement runner entry that omits the run
 command, image pull policy, no-privilege security context, or CPU/memory
-requests and limits. It also requires non-root pod UID/GID values, rejects
-root container UID/GID overrides and any runner `capabilities.add` entry, and
-forbids init containers, ephemeral containers, and host namespaces. Preserve
-the complete entry when changing its image or adding mounts.
+requests and limits. It also requires non-root pod UID/GID and supplemental
+groups, pins `RuntimeDefault` seccomp, keeps ServiceAccount-token automounting
+off, permits only read-only ConfigMap volumes, and rejects all unlisted pod and
+container fields. Preserve the complete entry when changing its image or
+adding mounts.
 
 Artifact Hub indexes this OCI chart as
 [`steward-run-arc`](https://artifacthub.io/packages/helm/steward-run/steward-run-arc).

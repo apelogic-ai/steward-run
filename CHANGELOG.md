@@ -13,13 +13,14 @@ This project follows [Semantic Versioning](https://semver.org/).
   status; the self-checkout customer workflow exposes the same fields.
 - Added Artifact Hub repository publication and organization-level chart
   metadata.
-- Added tag-triggered release publication so keyless signatures bind the
-  exact release tag.
+- Added tag-triggered release publication from reviewed `main` commits so
+  keyless signatures bind the exact release tag.
 
 ### Changed
 
-- The composite action installs its pinned Node 24 runtime instead of relying
-  on the hosted runner's ambient Node executable.
+- The composite action uses an existing Node 24 runtime when present and
+  otherwise installs a pinned Node 24 fallback, avoiding downloads in the
+  signed runner image while remaining self-contained on hosted runners.
 - Clarified that BuildKit provenance/SPDX predicates are embedded OCI
   attestations rather than GitHub artifact attestations, and parameterized
   Cosign verification for the selected release repository.
@@ -31,9 +32,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Rejected init containers, ephemeral containers, host namespaces, and root
-  group overrides in application-chart runner-pod values; documented Pod
-  Security Admission `restricted` as a second enforcement boundary.
+- Closed application-chart runner-pod values to the documented hardened pod,
+  container, pull-secret, and ConfigMap-volume fields; pinned seccomp,
+  disabled ServiceAccount-token automounting, required non-root groups, and
+  documented Pod Security Admission `restricted` as a second boundary.
 
 ## [0.7.2] - 2026-09-28
 

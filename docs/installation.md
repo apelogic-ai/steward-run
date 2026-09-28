@@ -110,9 +110,11 @@ each runnable child manifest of the multi-platform OCI index. These are OCI
 image attestations, not GitHub artifact attestations; `gh attestation verify`
 is therefore not the verification command for this handoff. The Cosign
 commands above verify the image, chart, manifest, and checksum inventory
-against the exact release-workflow identity. For a fork-owned
-release, change `RELEASE_REPOSITORY`; do not retain the upstream certificate
-identity.
+against the exact release-workflow identity. `RELEASE_REPOSITORY` keeps that
+repository binding explicit; this maintained path sets it to the public
+upstream. An independent fork distribution needs its own complete release
+policy and verification guide and must not reuse the upstream manifest or
+certificate identity.
 
 ### 2. Select the cluster and verify ARC 0.14.2
 
@@ -184,10 +186,12 @@ is only for runner registration; it is not a Steward bearer credential.
 Helm replaces lists instead of merging them. Keep the entire runner container
 entry below when changing the image or adding mounts. The chart schema rejects
 an entry that drops the run command, pull policy, no-privilege security
-context, or CPU/memory requests and limits. It requires non-root pod UID/GID
-values, rejects root container overrides and any `capabilities.add` entry, and
-forbids `initContainers`, `ephemeralContainers`, `hostNetwork`, `hostPID`, and
-`hostIPC` in runner-pod values.
+context, or CPU/memory requests and limits. The runner Pod spec is a closed
+allowlist: it accepts only the documented hardened pod context, pull-secret
+references, one runner container, and optional ConfigMap trust volumes. It
+pins `RuntimeDefault` seccomp, requires non-root UID/GID and supplemental
+groups, disables ServiceAccount-token automounting, permits only read-only
+ConfigMap mounts, and rejects every other pod or container field.
 
 ```sh
 cat > customer-values.yaml <<YAML

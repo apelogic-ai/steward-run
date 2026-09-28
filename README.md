@@ -120,9 +120,10 @@ Identity v6 binds numeric owner/repository IDs plus its configured subject,
 event, and ref selectors; it does not yet enforce `job_workflow_ref` or the
 workflow SHA.
 
-Direct use on a GitHub-hosted runner needs no ambient Node version. The
-composite action installs its pinned Node 24 runtime before executing the
-bundle:
+Direct use on a GitHub-hosted runner needs no preinstalled Node 24. The
+composite action uses an existing Node 24 runtime when present and otherwise
+installs its pinned Node 24 fallback before executing the bundle. The signed
+runner image therefore executes its attested runtime without a download:
 
 ```yaml
 jobs:
@@ -191,7 +192,8 @@ pinned `steward-task-self-hosted.yml` reusable workflow. It has the same artifac
 Action, output, and `id-token: write` contract, so GitHub emits an exact `job_workflow_ref`; it
 does not declare a container. The runner operator is responsible for vetted Bash,
 Git, and tar installations and must restrict the runner label to that local environment. The
-action installs its own pinned Node 24 runtime. This is a
+action uses the image's Node 24 runtime and installs a pinned fallback only
+when Node 24 is absent. This is a
 separate workflow provenance record, but current Identity v6 cannot select a
 workflow ref or SHA; it is not a caller switch on the ARC workflow.
 

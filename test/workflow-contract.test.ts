@@ -511,6 +511,8 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /push:[\s\S]*?tags:[\s\S]*?v\[0-9\]\+/u);
   assert.match(release, /refs\/tags\/v\[0-9\]\+/u);
   assert.doesNotMatch(release, /\[\[ "\$GITHUB_REF" == refs\/heads\/main \]\]/u);
+  assert.match(release, /compare\/\$GITHUB_SHA\.\.\.main/u);
+  assert.match(release, /"\$main_status" == "identical"[\s\S]*?"\$main_status" == "ahead"/u);
   assert.match(release, /identity="https:\/\/github\.com\/\$GITHUB_REPOSITORY\/\.github\/workflows\/portable-release\.yml@\$GITHUB_REF"/u);
   assert.equal(
     release.match(/VERSION=\$\{\{ needs\.preflight\.outputs\.version \}\}/gu)?.length,
@@ -532,7 +534,8 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /compare\/\$ACTION_COMMIT\.\.\.\$GITHUB_SHA[\s\S]*?== ahead/u);
   assert.match(release, /contents\/action\.yml\?ref=\$ACTION_COMMIT/u);
   assert.match(release, /grep -Fq "failure-category:" <<<"\$action_metadata"/u);
-  assert.match(release, /grep -Fq "actions\/setup-node@" <<<"\$action_metadata"/u);
+  assert.match(release, /grep -Fq "actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020" <<<"\$action_metadata"/u);
+  assert.match(release, /grep -Fq "if: steps\.node24\.outputs\.available != 'true'" <<<"\$action_metadata"/u);
   assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task\.yml/u);
   assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task-self-hosted\.yml/u);
   assert.match(release, /schemaVersion:3/u);

@@ -8,7 +8,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
   const action = parse(source) as {
     inputs: Record<string, { required?: boolean; default?: string; description?: string }>;
     outputs: Record<string, unknown>;
-    runs: { using: string; steps: Array<{ shell?: string; run?: string; uses?: string; with?: Record<string, unknown>; id?: string }> };
+    runs: { using: string; steps: Array<{ shell?: string; run?: string; uses?: string; with?: Record<string, unknown>; id?: string; if?: string }> };
   };
 
   assert.equal(action.runs.using, "composite");
@@ -55,9 +55,15 @@ test("the composite action exposes the versioned steward-run contract", async ()
     Object.keys(action.outputs).sort(),
     ["failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
   );
+  const nodeProbe = action.runs.steps.find((step) => step.id === "node24");
+  assert.match(nodeProbe?.run ?? "", /command -v node/u);
+  assert.match(nodeProbe?.run ?? "", /\^v24\\\./u);
+  assert.match(nodeProbe?.run ?? "", /available=true/u);
+  assert.match(nodeProbe?.run ?? "", /available=false/u);
   const setupNode = action.runs.steps.find((step) => step.uses?.startsWith("actions/setup-node@"));
-  assert.equal(setupNode?.uses, "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020");
-  assert.equal(setupNode?.with?.["node-version"], "24.18.1");
+  assert.equal(setupNode?.if, "steps.node24.outputs.available != 'true'");
+  assert.equal(setupNode?.uses, "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
+  assert.equal(setupNode?.with?.["node-version"], "24.21.0");
   assert.match(action.runs.steps.find((step) => step.id === "steward-run")?.run ?? "", /dist\/index\.cjs/);
 });
 
