@@ -171,6 +171,9 @@ workflow inputs. Tokens are never action inputs.
 
 | Output | Meaning |
 |---|---|
+| `outcome` | Action result: exactly `success` or `failure` |
+| `failure-category` | Bounded failure category; empty on success |
+| `http-status` | Numeric Steward request status when available; empty otherwise |
 | `status` | Terminal phase of the Task |
 | `task-uid` | The Steward Task UID (for audit correlation) |
 | `runtime-uid` | The provisioned/adopted `AgentRuntime` UID (for audit correlation) |
@@ -218,7 +221,9 @@ Only those literals are rendered on failure. Arbitrary failure reasons, command 
 or headers, JWTs, assertions, provider tokens, API keys, cookies, credentials, and Kubernetes Secret
 values are neither rendered nor persisted by failure reporting. A finalization failure never
 replaces the primary failure category. Successful runs retain their existing outputs and publish no
-failure metadata.
+annotation or summary failure metadata. Both success and failure publish the bounded action outputs
+above; a direct caller uses `continue-on-error: true` when it needs to branch on outputs after a
+failed action step.
 
 If and only if the authenticated v2 Task status reports snapshotted
 `diagnostics.executionLog: full`, the successful output archive must carry exact server-owned
@@ -228,8 +233,11 @@ interpretation with an unpredictable per-run command token, replays the original
 separate groups, restores command processing, and then finalizes. Missing, extra, malformed, or
 over-limit diagnostic entries fail the action and still finalize the Task.
 
-`action.yml` is `runs: composite`. No `<form>`-style ambient config; everything is an input or
-env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
+`action.yml` is `runs: composite` and invokes the pinned `actions/setup-node`
+action to install Node 24 before running the bundle; it does not depend on the
+hosted runner's ambient Node version. No `<form>`-style ambient config;
+everything is an input or env. Verify current GitHub Actions OIDC + artifact
+APIs when implementing.
 
 ---
 
@@ -242,24 +250,26 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
   the agent needs). Multi-stage build; pinned digests.
 - Published publicly to GHCR as a multi-platform OCI index by version. The
   public release manifest's schema-3 `image` field identifies this signed image
-  both as the ARC runner and as the public governed job-container image. A fork
-  may publish the same source to an operator-owned registry. Environment config
-  pins the image by digest. Fork and mirror operators must rebuild and roll out
-  base-runner updates within GitHub's 30-day runner update window.
+  both as the ARC runner and as the public governed job-container image.
+  Environment config pins the image by digest. Independently built forks are
+  separate distributions and are not covered by the public installation
+  guide or release manifest.
 
 ---
 
 ## 7. Dependencies & seams
 
 - **Hard dependency: Steward's Task API and identity exchange boundary.** The
-  six-operation Task lifecycle and service groups are implemented. Customer
-  callers use `.github/workflows/steward-task-customer.yml` from a reviewed
-  fork commit so GitHub emits an allowlistable `job_workflow_ref`; the workflow
-  checks out its action from that same exact repository and commit. The
-  exchange emits a short-lived `steward-task-api` token.
+  six-operation Task lifecycle and service groups are implemented. GitHub.com
+  callers use the public `.github/workflows/steward-task-customer.yml` at the
+  release manifest's exact `workflowCommit`; the workflow checks out its
+  action from that same exact repository and commit. Identity v6 admits
+  configured numeric owner and repository IDs plus subject/event/ref
+  selectors; it does not currently select `job_workflow_ref` or workflow SHA.
+  The exchange emits a short-lived `steward-task-api` token.
 - **Consumed by ARC/operator configuration** (the scale set pins the image)
-  and **by customer workflows** (the reusable workflow is pinned to an exact
-  fork commit).
+  and **by customer workflows** (the reusable workflow is pinned to the exact
+  public release commit).
 - **Verified contract:** `contracts/steward-run-v1.openapi.yaml` records Steward's `/v1/tasks`
   submission, input, execute, status, output, and finalization operations. Workspace-relative
   input and output tar archives are limited to 64 MiB each.
@@ -278,7 +288,8 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
    only Steward capability; `GITHUB_TOKEN` never reaches the agent.
 5. The image builds, passes the check, and the standalone release publishes
    the multi-platform image and application chart to public GHCR OCI by
-   version. A fork can publish equivalent artifacts to its own registry.
+   version with tag-bound signatures and embedded BuildKit provenance/SBOM
+   predicates.
 6. `gitleaks` is green; no secret in history.
 
 ---

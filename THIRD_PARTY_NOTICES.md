@@ -24,6 +24,14 @@ below. `fast-fifo` and `streamx` carry the 2019 Mathias Buus MIT notice;
 `tar-stream` carries the 2014 Mathias Buus MIT notice. Those notices are also
 reproduced below.
 
+## Composite-action runtime dependency
+
+The composite action invokes the commit-pinned
+[`actions/setup-node`](https://github.com/actions/setup-node) 4.4.0 action to
+install Node.js 24 before executing `dist/index.cjs`. That action is
+MIT-licensed and is fetched by GitHub Actions; it is not bundled into this
+repository's JavaScript artifact.
+
 ## Runner image and Helm dependency
 
 The released runner image additionally contains or derives from:
@@ -41,9 +49,9 @@ The released runner image additionally contains or derives from:
   [Actions Runner Controller](https://github.com/actions/actions-runner-controller).
 
 Container redistributors must retain the license and copyright files shipped
-by the pinned base images and review the exact image's package inventory. A
-customer rebuild that changes a base digest, npm lockfile, or chart dependency
-must refresh this file for its resulting artifact.
+by the pinned base images and review the exact image's package inventory. An
+independent distribution that changes a base digest, npm lockfile, or chart
+dependency must refresh this file for its resulting artifact.
 
 ## Apache License 2.0
 

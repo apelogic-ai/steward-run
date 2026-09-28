@@ -47,6 +47,15 @@ inputs:
     required: false
     default: "10"
 outputs:
+  outcome:
+    description: Action result, exactly success or failure
+    value: ${{ steps.steward-run.outputs.outcome }}
+  failure-category:
+    description: Bounded steward-run failure category; empty on success
+    value: ${{ steps.steward-run.outputs.failure-category }}
+  http-status:
+    description: HTTP status for a classified Steward request failure; empty otherwise
+    value: ${{ steps.steward-run.outputs.http-status }}
   status:
     description: Terminal Steward Task phase
     value: ${{ steps.steward-run.outputs.status }}
@@ -60,6 +69,10 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Set up Node.js 24
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: 24.18.1
     - id: steward-run
       shell: bash
       env:

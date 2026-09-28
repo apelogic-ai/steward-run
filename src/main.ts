@@ -10,6 +10,7 @@ import {
   FAILURE_METADATA_VERSION,
   StewardRunFailure,
   publishFailureMetadata,
+  sanitizeFailureMetadata,
   type FailureMetadata,
 } from "./failure-metadata.js";
 import { identityExchangeTokenProvider } from "./identity-exchange.js";
@@ -24,7 +25,15 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
-async function setActionOutput(name: string, value: string): Promise<void> {
+type ActionOutputName =
+  | "failure-category"
+  | "http-status"
+  | "outcome"
+  | "runtime-uid"
+  | "status"
+  | "task-uid";
+
+async function setActionOutput(name: ActionOutputName, value: string): Promise<void> {
   if (!/^[a-z-]+$/u.test(name) || /[\r\n]/u.test(value)) {
     throw new Error("refusing to write an unsafe GitHub Actions output");
   }
@@ -45,7 +54,8 @@ function safeFailure(error: unknown): StewardRunFailure {
 }
 
 async function reportActionFailure(failure: StewardRunFailure): Promise<void> {
-  await publishFailureMetadata(failure.metadata, {
+  const safe = sanitizeFailureMetadata(failure.metadata);
+  await publishFailureMetadata(safe, {
     writeAnnotation: async (value) => {
       process.stdout.write(`::error title=Steward governed Task failed::${value}\n`);
     },
@@ -59,6 +69,13 @@ async function reportActionFailure(failure: StewardRunFailure): Promise<void> {
       }
     },
   });
+  try {
+    await setActionOutput("outcome", "failure");
+    await setActionOutput("failure-category", safe.failureCategory);
+    await setActionOutput("http-status", safe.httpStatus?.toString() ?? "");
+  } catch {
+    // Output publication must never replace or disclose the primary governed failure.
+  }
 }
 
 export async function main(): Promise<void> {
@@ -111,6 +128,9 @@ export async function main(): Promise<void> {
       signal: controller.signal,
       runtimeBindingTimeoutMilliseconds: config.runtimeBindingTimeoutMilliseconds,
     });
+    await setActionOutput("outcome", "success");
+    await setActionOutput("failure-category", "");
+    await setActionOutput("http-status", "");
   } catch (error) {
     const failure = safeFailure(error);
     await reportActionFailure(failure);

@@ -1,20 +1,18 @@
-# Customer rebuild path (superseded)
+# Customer rebuild path (unsupported legacy document)
 
-Use the [current installation guide](installation.md)
-for the maintained fork build, verification, publication, and installation
-procedure. It produces the same normalized `IMAGE_REFERENCE`, `CHART_PACKAGE`,
-and `WORKFLOW_COMMIT` inputs used by the public-release path.
+The maintained standalone installation path consumes the signed public
+release described by the [current installation guide](installation.md). That
+guide does not define or support a customer-fork build or publication
+procedure.
 
-GitHub requires self-hosted runner applications to be updated within 30 days
-of a new runner release. Fork and mirror operators must merge the weekly
-Docker base-image update, rebuild and publish the immutable image, verify its
-new digest, and roll it out within that window. Dependabot proposes the source
-change; it does not publish or deploy an operator's image.
+This page remains only so historical links fail safely instead of directing
+operators to stale commands. The old library-chart-only instructions and the
+earlier claim that the installation guide contains a fork publication track
+are withdrawn.
 
-This page is retained only so old links resolve. It intentionally duplicates
-no shell commands: the earlier library-chart-only path is not the supported
-installation, and maintaining two runbooks caused version and ordering drift.
-
-The source is MIT licensed. `.github/workflows/portable-release.yml` publishes
-the public GHCR image and application chart. Fork publication uses that
-portable workflow and fork-owned registry coordinates.
+The source remains MIT licensed. An operator may independently audit, modify,
+build, and publish it, but that is a separate distribution with its own action
+commit, workflow commit, OCI coordinates, signatures, SBOM/provenance review,
+runner-update process, and support boundary. Do not combine fork-built
+artifacts with a public release manifest or present them as the verified
+public handoff.

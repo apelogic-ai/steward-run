@@ -65,6 +65,15 @@ on:
         type: string
         default: ""
     outputs:
+      outcome:
+        description: Action result, exactly success or failure
+        value: ${{ jobs.governed.outputs.outcome }}
+      failure-category:
+        description: Bounded steward-run failure category; empty on success
+        value: ${{ jobs.governed.outputs.failure-category }}
+      http-status:
+        description: HTTP status for a classified Steward request failure; empty otherwise
+        value: ${{ jobs.governed.outputs.http-status }}
       status:
         description: Terminal Steward Task phase
         value: ${{ jobs.governed.outputs.status }}
@@ -83,6 +92,9 @@ jobs:
       contents: read
       id-token: write
     outputs:
+      outcome: ${{ steps.task.outputs.outcome }}
+      failure-category: ${{ steps.task.outputs.failure-category }}
+      http-status: ${{ steps.task.outputs.http-status }}
       status: ${{ steps.task.outputs.status }}
       task-uid: ${{ steps.task.outputs.task-uid }}
       runtime-uid: ${{ steps.task.outputs.runtime-uid }}

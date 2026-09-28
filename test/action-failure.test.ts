@@ -43,6 +43,7 @@ test("the action publishes sanitized failure metadata and never raw failure data
     child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
     const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
     const summary = await readFile(summaryFile, "utf8");
+    const outputs = await readFile(outputFile, "utf8");
 
     assert.equal(code, 1);
     assert.equal(
@@ -54,6 +55,9 @@ test("the action publishes sanitized failure metadata and never raw failure data
       /steward-run: Steward governed Task failed \(phase=unavailable, failure-category=input-output, cleanup-category=not-required\)\n$/u,
     );
     assert.match(summary, /\| steward-run\.failure\/v1 \| unavailable \| input-output \| not-required \|/u);
+    assert.match(outputs, /^outcome=failure$/mu);
+    assert.match(outputs, /^failure-category=input-output$/mu);
+    assert.match(outputs, /^http-status=$/mu);
     for (const forbidden of ["missing-secret-value", "private-credential", "declared input"] ) {
       assert.doesNotMatch(`${stdout}\n${stderr}\n${summary}`, new RegExp(forbidden, "u"));
     }
@@ -123,7 +127,9 @@ test("submit diagnostics never disclose a file-backed bearer or response body", 
       rendered,
       /steward-run\.request-failure\/v1 stage=submit category=authentication status=401 correlation-id=request-local-401/u,
     );
-    assert.equal(outputs, "");
+    assert.match(outputs, /^outcome=failure$/mu);
+    assert.match(outputs, /^failure-category=authentication$/mu);
+    assert.match(outputs, /^http-status=401$/mu);
     await assert.rejects(access(join(workspace, "out")));
     for (const forbidden of [bearer, "test-signature-secret", secretBody, "projected-token.jwt"]) {
       assert.doesNotMatch(rendered, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));

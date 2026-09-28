@@ -1,6 +1,9 @@
 name: Portable OSS release
 
 on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       version:
@@ -26,13 +29,14 @@ env:
   ACTION_COMMIT: e377593aabc574e2ab7d0ef35843a8a8bb1cf4b3
 
 concurrency:
-  group: portable-release-${{ inputs.version }}
+  group: portable-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   preflight:
     runs-on: ubuntu-24.04
     outputs:
+      version: ${{ steps.refs.outputs.version }}
       image: ${{ steps.refs.outputs.image }}
       chart: ${{ steps.refs.outputs.chart }}
     steps:
@@ -45,14 +49,20 @@ jobs:
       - name: Validate release and public coordinates
         id: refs
         env:
-          VERSION: ${{ inputs.version }}
+          INPUT_VERSION: ${{ inputs.version }}
           RESUME_IMAGE_DIGEST: ${{ inputs.resume_image_digest }}
           RESUME_CHART_DIGEST: ${{ inputs.resume_chart_digest }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          VERSION="${GITHUB_REF_NAME#v}"
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$INPUT_VERSION" == "$VERSION" ]]
+          else
+            [[ -z "$INPUT_VERSION" ]]
+          fi
           [[ "$(node -p 'require("./package.json").version')" == "$VERSION" ]]
           [[ "$(sed -n 's/^version: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
           [[ "$(sed -n 's/^appVersion: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
@@ -60,8 +70,14 @@ jobs:
           [[ "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ && "$ACTION_COMMIT" != "$GITHUB_SHA" ]]
           gh api "repos/$GITHUB_REPOSITORY/commits/$ACTION_COMMIT" --silent
           [[ "$(gh api "repos/$GITHUB_REPOSITORY/compare/$ACTION_COMMIT...$GITHUB_SHA" --jq .status)" == ahead ]]
+          action_metadata="$(gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/$GITHUB_REPOSITORY/contents/action.yml?ref=$ACTION_COMMIT")"
+          grep -Fq "failure-category:" <<<"$action_metadata"
+          grep -Fq "actions/setup-node@" <<<"$action_metadata"
           grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task.yml
           grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task-self-hosted.yml
+          grep -Fq "failure-category:" .github/workflows/steward-task.yml
+          grep -Fq "failure-category:" .github/workflows/steward-task-self-hosted.yml
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             printf 'release v%s already exists\n' "$VERSION" >&2
             exit 1
@@ -71,8 +87,11 @@ jobs:
             [[ "$RESUME_CHART_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
           fi
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          printf 'image=ghcr.io/%s/steward-run\n' "$owner" >> "$GITHUB_OUTPUT"
-          printf 'chart=ghcr.io/%s/charts/steward-run-arc\n' "$owner" >> "$GITHUB_OUTPUT"
+          {
+            printf 'version=%s\n' "$VERSION"
+            printf 'image=ghcr.io/%s/steward-run\n' "$owner"
+            printf 'chart=ghcr.io/%s/charts/steward-run-arc\n' "$owner"
+          } >> "$GITHUB_OUTPUT"
 
   build-amd64:
     if: ${{ inputs.resume_image_digest == '' && inputs.resume_chart_digest == '' }}
@@ -96,9 +115,9 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
-          tags: ${{ needs.preflight.outputs.image }}:candidate-${{ inputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}-amd64
+          tags: ${{ needs.preflight.outputs.image }}:candidate-${{ needs.preflight.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}-amd64
           build-args: |
-            VERSION=${{ inputs.version }}
+            VERSION=${{ needs.preflight.outputs.version }}
             REVISION=${{ github.sha }}
             SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
           provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -126,9 +145,9 @@ jobs:
           context: .
           push: true
           platforms: linux/arm64
-          tags: ${{ needs.preflight.outputs.image }}:candidate-${{ inputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}-arm64
+          tags: ${{ needs.preflight.outputs.image }}:candidate-${{ needs.preflight.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}-arm64
           build-args: |
-            VERSION=${{ inputs.version }}
+            VERSION=${{ needs.preflight.outputs.version }}
             REVISION=${{ github.sha }}
             SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
           provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -151,7 +170,7 @@ jobs:
     needs: [preflight, build-amd64, build-arm64]
     runs-on: ubuntu-24.04
     env:
-      VERSION: ${{ inputs.version }}
+      VERSION: ${{ needs.preflight.outputs.version }}
       IMAGE: ${{ needs.preflight.outputs.image }}
       CHART: ${{ needs.preflight.outputs.chart }}
       RESUME_IMAGE_DIGEST: ${{ inputs.resume_image_digest }}
@@ -216,6 +235,11 @@ jobs:
             helm push "$RUNNER_TEMP/steward-run-arc-$VERSION.tgz" \
               "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
           fi
+          oras push "$CHART:artifacthub.io" \
+            --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+            "charts/steward-run-arc/artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml"
+          artifacthub_descriptor="$(oras manifest fetch --descriptor "$CHART:artifacthub.io")"
+          [[ "$(jq -r '.digest // empty' <<<"$artifacthub_descriptor")" =~ ^sha256:[a-f0-9]{64}$ ]]
           image_digest="$(oras manifest fetch --descriptor "$IMAGE:$VERSION" | jq -r '.digest')"
           chart_digest="$(oras manifest fetch --descriptor "$CHART:$VERSION" | jq -r '.digest')"
           [[ "$image_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
@@ -275,7 +299,7 @@ jobs:
               chart:$chart,
               platforms:["linux/amd64","linux/arm64"],
               arcControllerVersion:"0.14.2",
-              attestations:{provenance:"https://slsa.dev/provenance/v1",sbom:"https://spdx.dev/Document",summaryAsset:"release-attestation-summary.json"},
+              attestations:{format:"buildkit-embedded-oci",githubArtifactAttestations:false,provenance:"https://slsa.dev/provenance/v1",sbom:"https://spdx.dev/Document",summaryAsset:"release-attestation-summary.json"},
               signatures:{imageBundle:"image-signature.sigstore.json",chartBundle:"chart-signature.sigstore.json"},
               assets:{
                 ($chart_package):{sha256:$chart_sha256},
@@ -300,9 +324,13 @@ jobs:
           ## Published artifacts
 
           Public standalone OSS runner image and Helm chart with immutable
-          coordinates, keyless signatures, SLSA provenance, SPDX SBOM, and
-          checksums in oss-release-manifest.json. Run the released read-only
-          ARC preflight before registration; it prints no Secret or token data.
+          coordinates, tag-bound keyless signatures, embedded BuildKit SLSA
+          provenance and SPDX SBOM predicates, and checksums in
+          oss-release-manifest.json. These are embedded OCI attestations, not
+          GitHub artifact attestations; verify the signatures with Cosign and
+          the exact refs/tags/v$VERSION workflow identity documented in the
+          installation guide. Run the released read-only ARC preflight before
+          registration; it prints no Secret or token data.
 
           Sanitized success example:
           PASS ARC 0.14.2 controller arc-system/arc-gha-rs-controller

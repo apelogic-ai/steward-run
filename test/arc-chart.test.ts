@@ -114,6 +114,10 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       /runAsUser|minimum/u,
     );
     assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.securityContext.runAsGroup=0"),
+      /runAsGroup|minimum/u,
+    );
+    assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.runAsNonRoot=false"),
       /runAsNonRoot|Must validate/u,
     );
@@ -122,9 +126,34 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       /runAsUser|minimum/u,
     );
     assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.runAsGroup=0"),
+      /runAsGroup|minimum/u,
+    );
+    assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.capabilities.add[0]=NET_ADMIN"),
       /capabilities|Must not validate/u,
     );
+    for (const [path, value] of [
+      ["initContainers[0].name", "privileged-init"],
+      ["ephemeralContainers[0].name", "debugger"],
+      ["hostNetwork", "true"],
+      ["hostPID", "true"],
+      ["hostIPC", "true"],
+    ] as const) {
+      assert.throws(
+        () => template(
+          "steward-run",
+          chart,
+          "--namespace",
+          "arc-runners",
+          "--values",
+          fixture,
+          "--set",
+          `gha-runner-scale-set.template.spec.${path}=${value}`,
+        ),
+        /template\.spec[\s\S]*Must not validate/u,
+      );
+    }
     assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", caFixture, "--set", "gha-runner-scale-set.template.spec.volumes[0].configMap.name="),
       /configMap\.name|valid non-empty ConfigMap name/u,
@@ -156,9 +185,18 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     }]);
     const metadata = readFileSync(join(chart, "Chart.yaml"), "utf8");
     const schema = readFileSync(join(chart, "values.schema.json"), "utf8");
+    const artifactHubRepository = readFileSync(join(chart, "artifacthub-repo.yml"), "utf8");
     assert.match(metadata, /type: application/u);
     assert.match(metadata, /version: 0\.14\.2/u);
-    assert.doesNotMatch(metadata, /apelogic-ai\/steward-run/u);
+    assert.match(metadata, /home: https:\/\/github\.com\/apelogic-ai\/steward-run/u);
+    assert.match(metadata, /name: HyperShell[\s\S]*?url: https:\/\/hypershell\.ai/u);
+    assert.match(metadata, /artifacthub\.io\/license: MIT/u);
+    assert.match(metadata, /artifacthub\.io\/links/u);
+    assert.match(metadata, /icon: https:\/\/hypershell\.ai\/favicon\.png/u);
+    assert.match(
+      artifactHubRepository,
+      /repositoryID: b580a641-1bdf-4ff1-ad22-8a64a6cc696a/u,
+    );
     for (const field of ["configMap", "items", "env", "volumeMounts", "mountPath", "readOnly"]) {
       assert.ok(schema.includes(`\"${field}\"`), `trust-bundle schema: ${field}`);
     }

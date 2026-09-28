@@ -31,13 +31,27 @@
           "properties": {
             "spec": {
               "type": "object", "required": ["securityContext", "containers"],
+              "allOf": [
+                {
+                  "not": {
+                    "anyOf": [
+                      {"required": ["initContainers"]},
+                      {"required": ["ephemeralContainers"]},
+                      {"required": ["hostNetwork"]},
+                      {"required": ["hostPID"]},
+                      {"required": ["hostIPC"]}
+                    ]
+                  }
+                }
+              ],
               "properties": {
                 "securityContext": {
                   "type": "object",
-                  "required": ["runAsNonRoot"],
+                  "required": ["runAsNonRoot", "runAsUser", "runAsGroup"],
                   "properties": {
                     "runAsNonRoot": {"const": true},
-                    "runAsUser": {"type": "integer", "minimum": 1}
+                    "runAsUser": {"type": "integer", "minimum": 1},
+                    "runAsGroup": {"type": "integer", "minimum": 1}
                   }
                 },
                 "volumes": {
@@ -91,6 +105,7 @@
                           "allowPrivilegeEscalation": {"const": false},
                           "runAsNonRoot": {"const": true},
                           "runAsUser": {"type": "integer", "minimum": 1},
+                          "runAsGroup": {"type": "integer", "minimum": 1},
                           "capabilities": {
                             "type": "object",
                             "required": ["drop"],

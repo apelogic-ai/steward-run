@@ -61,9 +61,13 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
     const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
     assert.equal(code, 0, stderr);
     assert.deepEqual(await readFile(join(workspace, "out", "payload.bin")), payload);
-    assert.match(await readFile(outputFile, "utf8"), /status=succeeded/);
-    assert.match(await readFile(outputFile, "utf8"), /task-uid=[0-9a-f-]+/);
-    assert.match(await readFile(outputFile, "utf8"), /runtime-uid=mock-runtime-uid/);
+    const outputs = await readFile(outputFile, "utf8");
+    assert.match(outputs, /status=succeeded/);
+    assert.match(outputs, /task-uid=[0-9a-f-]+/);
+    assert.match(outputs, /runtime-uid=mock-runtime-uid/);
+    assert.match(outputs, /^outcome=success$/mu);
+    assert.match(outputs, /^failure-category=$/mu);
+    assert.match(outputs, /^http-status=$/mu);
     assert.match(await readFile(finalizationMarker, "utf8"), /^[0-9a-f-]+\n$/u);
     assert.equal(await readFile(summaryFile, "utf8"), "");
     assert.ok(mock.observations.oidcRequests >= 5);
@@ -261,11 +265,15 @@ test("the checked-in bundle emits only bounded GitHub failure metadata", async (
     child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += String(chunk)));
     child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
     const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
-    const visible = `${stdout}\n${stderr}\n${await readFile(summaryFile, "utf8")}`;
+    const outputs = await readFile(outputFile, "utf8");
+    const visible = `${stdout}\n${stderr}\n${await readFile(summaryFile, "utf8")}\n${outputs}`;
 
     assert.equal(code, 1);
     assert.match(visible, /steward-run\.failure\/v1/u);
     assert.match(visible, /phase=unavailable failure-category=input-output cleanup-category=not-required/u);
+    assert.match(outputs, /^outcome=failure$/mu);
+    assert.match(outputs, /^failure-category=input-output$/mu);
+    assert.match(outputs, /^http-status=$/mu);
     assert.doesNotMatch(visible, /missing-bundle-private-value|bundle-private-value\.jwt/u);
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -399,7 +407,8 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
       child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
       const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
       const summary = await readFile(summaryFile, "utf8");
-      const visible = `${stdout}\n${stderr}\n${summary}`;
+      const outputs = await readFile(outputFile, "utf8");
+      const visible = `${stdout}\n${stderr}\n${summary}\n${outputs}`;
 
       assert.equal(code, 1);
       assert.match(
@@ -416,6 +425,12 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
           "u",
         ),
       );
+      assert.match(outputs, /^outcome=failure$/mu);
+      assert.match(
+        outputs,
+        new RegExp(`^failure-category=${fixture.expectedCategory}$`, "mu"),
+      );
+      assert.match(outputs, /^http-status=$/mu);
       if (fixture.expectedStage === undefined) {
         assert.doesNotMatch(visible, /steward-run\.assertion-stage\/v1/u);
       } else {

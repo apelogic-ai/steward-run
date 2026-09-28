@@ -8,7 +8,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
   const action = parse(source) as {
     inputs: Record<string, { required?: boolean; default?: string; description?: string }>;
     outputs: Record<string, unknown>;
-    runs: { using: string; steps: Array<{ shell?: string; run?: string }> };
+    runs: { using: string; steps: Array<{ shell?: string; run?: string; uses?: string; with?: Record<string, unknown>; id?: string }> };
   };
 
   assert.equal(action.runs.using, "composite");
@@ -51,8 +51,14 @@ test("the composite action exposes the versioned steward-run contract", async ()
     assert.match(action.inputs[name]?.description ?? "", /Deprecated compatibility/u);
   }
   assert.equal(action.inputs["coding-agent-runtime"], undefined);
-  assert.deepEqual(Object.keys(action.outputs).sort(), ["runtime-uid", "status", "task-uid"]);
-  assert.match(action.runs.steps[0]?.run ?? "", /dist\/index\.cjs/);
+  assert.deepEqual(
+    Object.keys(action.outputs).sort(),
+    ["failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
+  );
+  const setupNode = action.runs.steps.find((step) => step.uses?.startsWith("actions/setup-node@"));
+  assert.equal(setupNode?.uses, "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020");
+  assert.equal(setupNode?.with?.["node-version"], "24.18.1");
+  assert.match(action.runs.steps.find((step) => step.id === "steward-run")?.run ?? "", /dist\/index\.cjs/);
 });
 
 test("the Steward Task API contract covers the complete lifecycle", async () => {
