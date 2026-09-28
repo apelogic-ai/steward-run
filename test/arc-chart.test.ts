@@ -110,6 +110,18 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       /runAsNonRoot|Must validate/u,
     );
     assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.securityContext.runAsUser=0"),
+      /runAsUser|minimum/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.runAsNonRoot=false"),
+      /runAsNonRoot|Must validate/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.runAsUser=0"),
+      /runAsUser|minimum/u,
+    );
+    assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].securityContext.capabilities.add[0]=NET_ADMIN"),
       /capabilities|Must not validate/u,
     );

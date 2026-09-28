@@ -36,7 +36,8 @@
                   "type": "object",
                   "required": ["runAsNonRoot"],
                   "properties": {
-                    "runAsNonRoot": {"const": true}
+                    "runAsNonRoot": {"const": true},
+                    "runAsUser": {"type": "integer", "minimum": 1}
                   }
                 },
                 "volumes": {
@@ -88,6 +89,8 @@
                         "required": ["allowPrivilegeEscalation", "capabilities", "privileged", "readOnlyRootFilesystem"],
                         "properties": {
                           "allowPrivilegeEscalation": {"const": false},
+                          "runAsNonRoot": {"const": true},
+                          "runAsUser": {"type": "integer", "minimum": 1},
                           "capabilities": {
                             "type": "object",
                             "required": ["drop"],
