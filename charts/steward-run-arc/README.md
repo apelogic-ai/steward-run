@@ -8,6 +8,9 @@ an existing GitHub App Secret reference, a GitHub registration URL, and an
 operator-selected runner image pinned by `sha256` digest. No credential value is
 accepted in Helm values.
 
+The supported Kubernetes window is 1.32 through 1.36 inclusive. CI renders
+every minor in that window and rejects versions outside it.
+
 The separately installed controller identity is also required explicitly at
 `gha-runner-scale-set.controllerServiceAccount.namespace` and `.name`; the
 chart never performs ARC's cluster-wide fallback discovery. For the pinned
@@ -68,6 +71,8 @@ for discovery only: resolve and pin the image digest from the release's
 The [historical v0.5.0 guide](../../docs/installation-v0.5.0.md) applies only
 to that release and its required explicit Identity exchange inputs. The
 current guide covers discovery, compatibility inputs, trust, upgrade,
-rollback, and operator checks. Helm replaces lists when overlaying values, so
-preserve the complete runner container entry when changing its image or adding
-mounts.
+rollback, and operator checks. Helm replaces lists when overlaying values. The
+chart schema therefore rejects a replacement runner entry that omits the run
+command, image pull policy, no-privilege security context, or CPU/memory
+requests and limits; preserve the complete entry when changing its image or
+adding mounts.

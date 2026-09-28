@@ -4,7 +4,7 @@ description: Installable steward-run adapter for the upstream ARC runner scale s
 type: application
 version: 0.7.1
 appVersion: 0.7.1
-kubeVersion: ">=1.30.0-0 <1.35.0-0"
+kubeVersion: ">=1.32.0-0 <1.37.0-0"
 sources:
   - https://github.com/actions/actions-runner-controller
 annotations:

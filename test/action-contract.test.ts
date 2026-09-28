@@ -24,6 +24,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
       "inputs",
       "oidc-audience",
       "outputs",
+      "runtime-binding-timeout-minutes",
       "steward-ca-certificate-file",
       "steward-api-url",
       "workflow",
@@ -39,6 +40,8 @@ test("the composite action exposes the versioned steward-run contract", async ()
   assert.notEqual(action.inputs["bearer-token-file"]?.required, true);
   assert.notEqual(action.inputs["steward-ca-certificate-file"]?.required, true);
   assert.notEqual(action.inputs["envelope-digest"]?.required, true);
+  assert.equal(action.inputs["runtime-binding-timeout-minutes"]?.default, "10");
+  assert.match(source, /STEWARD_RUN_RUNTIME_BINDING_TIMEOUT_MINUTES:\s*\$\{\{ inputs\.runtime-binding-timeout-minutes \}\}/u);
   for (const name of [
     "identity-exchange-url",
     "identity-exchange-audience",

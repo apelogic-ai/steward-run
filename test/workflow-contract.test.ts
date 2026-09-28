@@ -5,8 +5,8 @@ import { parse } from "yaml";
 
 const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml", "steward-task-self-hosted.yml", "steward-task-customer.yml"];
 const governedJobContainer =
-  "663383948333.dkr.ecr.us-east-1.amazonaws.com/steward-run@" +
-  "sha256:27235891b596debb1d8bba5f7763e14a56ce4435e2fc82f3de80122b19ff8c61";
+  "ghcr.io/apelogic-ai/steward-run@" +
+  "sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4";
 const actionCommit = "018d9eb20d036b26060c5cb3d979a84d42bcc051";
 const directPackageActionCommit = actionCommit;
 const buildkitImage =
@@ -25,6 +25,17 @@ test("all external workflow actions are pinned to immutable commits", async () =
       assert.match(reference, /@[a-f0-9]{40}$/u, `${file}: ${reference}`);
     }
     assert.doesNotMatch(source, /:latest\b|@(?:main|master|v\d+)\b/u);
+  }
+});
+
+test("public workflows and security evidence contain no private cloud account coordinates", async () => {
+  const files = [
+    ...workflowFiles.map((file) => new URL(`../.github/workflows/${file}`, import.meta.url)),
+    new URL("../security/ecr-v0.1.0-critical-findings.json", import.meta.url),
+  ];
+  for (const file of files) {
+    const source = await readFile(file, "utf8");
+    assert.doesNotMatch(source, /\b\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com\b/u);
   }
 });
 
@@ -303,7 +314,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.equal(job?.container?.credentials, undefined);
   assert.match(
     containerImage,
-    /^\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/u,
+    /^ghcr\.io\/apelogic-ai\/steward-run@sha256:[a-f0-9]{64}$/u,
   );
   assert.doesNotMatch(containerImage, /\$\{\{/u);
   assert.doesNotMatch(containerImage.split("@", 1)[0] ?? "", /:[^/]+$/u);

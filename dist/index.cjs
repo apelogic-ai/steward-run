@@ -2875,6 +2875,20 @@ function shortLivedBearerTokenFileProvider(path, now = () => Math.floor(Date.now
 }
 
 // src/config.ts
+var defaultRuntimeBindingTimeoutMinutes = 10;
+var maximumRuntimeBindingTimeoutMinutes = 360;
+function runtimeBindingTimeoutMilliseconds(environment) {
+  const raw = environment.STEWARD_RUN_RUNTIME_BINDING_TIMEOUT_MINUTES?.trim();
+  if (!raw) return defaultRuntimeBindingTimeoutMinutes * 60 * 1e3;
+  if (!/^[1-9][0-9]*$/u.test(raw)) {
+    throw new Error("runtime-binding-timeout-minutes must be an integer from 1 through 360");
+  }
+  const minutes = Number(raw);
+  if (!Number.isSafeInteger(minutes) || minutes > maximumRuntimeBindingTimeoutMinutes) {
+    throw new Error("runtime-binding-timeout-minutes must be an integer from 1 through 360");
+  }
+  return minutes * 60 * 1e3;
+}
 function required(environment, name) {
   const value = environment[name]?.trim();
   if (!value) {
@@ -2943,6 +2957,7 @@ function readActionConfig(environment) {
     outputPaths: required(environment, "STEWARD_RUN_OUTPUTS"),
     apiUrl,
     authentication,
+    runtimeBindingTimeoutMilliseconds: runtimeBindingTimeoutMilliseconds(environment),
     ...caCertificateFile ? { caCertificateFile } : {}
   };
   return invocationPath ? { ...common, invocationPath, ...envelopeDigest ? { envelopeDigest } : {} } : {
@@ -4131,8 +4146,7 @@ var StewardClient = class {
 
 // src/lifecycle.ts
 var terminalPhases = /* @__PURE__ */ new Set(["succeeded", "failed", "cancelled"]);
-var runtimeBindingPollAttempts = 60;
-var runtimeBindingTimeoutMilliseconds = 10 * 60 * 1e3;
+var runtimeBindingTimeoutMilliseconds2 = 10 * 60 * 1e3;
 function identityField(environment, name) {
   const value = environment[name]?.trim();
   if (!value) throw new Error(`required GitHub job identity ${name} is missing`);
@@ -4181,7 +4195,7 @@ function assertPreExecutionTask(task) {
   }
   return task;
 }
-async function pollUntilRuntimeBound(initial, client, sleep, signal, timeoutMilliseconds = runtimeBindingTimeoutMilliseconds) {
+async function pollUntilRuntimeBound(initial, client, sleep, signal, timeoutMilliseconds = runtimeBindingTimeoutMilliseconds2) {
   const alreadyBound = boundTask(initial);
   if (alreadyBound) return assertPreExecutionTask(alreadyBound);
   const controller = new AbortController();
@@ -4197,7 +4211,7 @@ async function pollUntilRuntimeBound(initial, client, sleep, signal, timeoutMill
   if (signal?.aborted) controller.abort();
   try {
     let interval = 250;
-    for (let attempt = 0; attempt < runtimeBindingPollAttempts; attempt += 1) {
+    while (true) {
       if (controller.signal.aborted) {
         if (signal?.aborted) throw abortError();
         throw timeoutError();
@@ -4218,7 +4232,6 @@ async function pollUntilRuntimeBound(initial, client, sleep, signal, timeoutMill
       if (currentBound) return assertPreExecutionTask(currentBound);
       interval = Math.min(interval * 2, 1e4);
     }
-    throw timeoutError();
   } catch (error) {
     if (controller.signal.aborted) {
       if (signal?.aborted) throw abortError();
@@ -4691,7 +4704,8 @@ async function main() {
       client,
       environment: process.env,
       setOutput: setActionOutput,
-      signal: controller.signal
+      signal: controller.signal,
+      runtimeBindingTimeoutMilliseconds: config.runtimeBindingTimeoutMilliseconds
     });
   } catch (error) {
     const failure = safeFailure(error);
