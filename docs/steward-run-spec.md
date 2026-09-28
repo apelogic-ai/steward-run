@@ -242,10 +242,13 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
   immutable Steward Workflow and are not caller inputs or image contents.
 - **No secrets, minimal packages** (the modern runner image ships lean on purpose; add only what
   the agent needs). Multi-stage build; pinned digests.
-- Published publicly to GHCR as a multi-platform OCI index by version. A fork
-  may publish the same source to a customer-owned registry. Environment config
-  pins the ARC runner by digest; the legacy internal governed workflow
-  independently pins its ECR job-container image by digest.
+- Published publicly to GHCR as a multi-platform OCI index by version. The
+  public release manifest identifies this signed image both as the ARC runner
+  and as the public governed job-container image. A fork may publish the same
+  source to a customer-owned registry. Environment config pins the ARC runner
+  by digest; the legacy internal governed workflow independently pins its ECR
+  job-container image by digest. Fork and mirror operators must rebuild and
+  roll out base-runner updates within GitHub's 30-day runner update window.
 
 ---
 

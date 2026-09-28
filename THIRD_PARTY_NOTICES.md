@@ -1,6 +1,6 @@
 # Third-party notices
 
-This inventory applies to `steward-run` v0.7.0. The root [MIT license](LICENSE)
+This inventory applies to `steward-run` v0.7.1. The root [MIT license](LICENSE)
 covers ApeLogic's first-party source and charts; it does not relicense the
 components below.
 
@@ -28,7 +28,7 @@ reproduced below.
 
 The released runner image additionally contains or derives from:
 
-- `ghcr.io/actions/actions-runner:2.336.0`, including the MIT-licensed
+- `ghcr.io/actions/actions-runner:2.337.0`, including the MIT-licensed
   [GitHub Actions Runner](https://github.com/actions/runner) and its pinned
   Ubuntu base packages;
 - the Node.js runtime copied from the pinned `node:24-bookworm-slim` image;

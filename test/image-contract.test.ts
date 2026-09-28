@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { parse } from "yaml";
 
 test("the ARC image pins runner and Node images and remains a thin shell", async () => {
   const dockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
@@ -10,7 +11,7 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
   );
   assert.match(
     dockerfile,
-    /FROM ghcr\.io\/actions\/actions-runner:2\.336\.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda/,
+    /FROM ghcr\.io\/actions\/actions-runner:2\.337\.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4/,
   );
   assert.match(dockerfile, /COPY --from=node-runtime \/usr\/local\/bin\/node/);
   assert.match(dockerfile, /ARG SOURCE_REPOSITORY/u);
@@ -99,21 +100,37 @@ test("the package metadata identifies the in-cluster integration release", async
     await readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   ) as { version: string; packages: Record<string, { version?: string }> };
 
-  assert.equal(packageJson.version, "0.7.0");
+  assert.equal(packageJson.version, "0.7.1");
   assert.equal(packageJson.license, "MIT");
-  assert.equal(packageLock.version, "0.7.0");
-  assert.equal(packageLock.packages[""]?.version, "0.7.0");
+  assert.equal(packageLock.version, "0.7.1");
+  assert.equal(packageLock.packages[""]?.version, "0.7.1");
   for (const chart of ["steward-run", "steward-run-arc"]) {
     const metadata = await readFile(
       new URL(`../charts/${chart}/Chart.yaml`, import.meta.url),
       "utf8",
     );
-    assert.match(metadata, /^appVersion: 0\.7\.0$/mu);
+    assert.match(metadata, /^appVersion: 0\.7\.1$/mu);
   }
   const libraryChart = await readFile(new URL("../charts/steward-run/Chart.yaml", import.meta.url), "utf8");
   const applicationChart = await readFile(new URL("../charts/steward-run-arc/Chart.yaml", import.meta.url), "utf8");
   assert.match(libraryChart, /^version: 0\.1\.0$/mu);
-  assert.match(applicationChart, /^version: 0\.7\.0$/mu);
+  assert.match(applicationChart, /^version: 0\.7\.1$/mu);
+});
+
+test("Docker base images receive updates inside the runner support window", async () => {
+  const source = await readFile(new URL("../.github/dependabot.yml", import.meta.url), "utf8");
+  const config = parse(source) as {
+    version: number;
+    updates: Array<{
+      "package-ecosystem": string;
+      directory: string;
+      schedule: { interval: string };
+    }>;
+  };
+  const docker = config.updates.find((entry) => entry["package-ecosystem"] === "docker");
+  assert.equal(config.version, 2);
+  assert.equal(docker?.directory, "/");
+  assert.equal(docker?.schedule.interval, "weekly");
 });
 
 test("the thin-shell security check is a required build gate", async () => {

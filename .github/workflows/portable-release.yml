@@ -260,11 +260,12 @@ jobs:
             --arg workflow_repository "$GITHUB_REPOSITORY" \
             --arg workflow_commit "$GITHUB_SHA" --arg action_commit "$ACTION_COMMIT" \
             --arg image "$IMAGE@$IMAGE_DIGEST" --arg chart "$CHART@$CHART_DIGEST" \
+            --arg job_container_repository "$IMAGE" --arg job_container_digest "$IMAGE_DIGEST" \
             --arg chart_package "$chart_package" --arg chart_sha256 "$chart_sha256" \
             --arg identity_sha256 "$identity_sha256" --arg preflight_sha256 "$preflight_sha256" \
             --arg attestation_sha256 "$attestation_sha256" \
             '{
-              schemaVersion:3,
+              schemaVersion:4,
               version:$version,
               commit:$commit,
               workflowRepository:$workflow_repository,
@@ -272,6 +273,11 @@ jobs:
               actionCommit:$action_commit,
               image:$image,
               chart:$chart,
+              governedJobContainerImage:{
+                repository:$job_container_repository,
+                digest:$job_container_digest,
+                immutableReference:($job_container_repository+"@"+$job_container_digest)
+              },
               platforms:["linux/amd64","linux/arm64"],
               arcControllerVersion:"0.14.2",
               attestations:{provenance:"https://slsa.dev/provenance/v1",sbom:"https://spdx.dev/Document",summaryAsset:"release-attestation-summary.json"},
