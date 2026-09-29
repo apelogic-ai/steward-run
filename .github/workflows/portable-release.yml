@@ -6,6 +6,14 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
+      operation:
+        description: Build a pre-tag runner image or resume a tagged release
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - bootstrap
       version:
         description: Semantic version matching package.json and the application chart
         required: true
@@ -32,7 +40,179 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  bootstrap-preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'bootstrap' }}
+    runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.refs.outputs.version }}
+      image: ${{ steps.refs.outputs.image }}
+      tag: ${{ steps.refs.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Validate bootstrap coordinates
+        id: refs
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RESUME_IMAGE_DIGEST: ${{ inputs.resume_image_digest }}
+          RESUME_CHART_DIGEST: ${{ inputs.resume_chart_digest }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/* ]]
+          [[ "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ -z "$RESUME_IMAGE_DIGEST" ]]
+          [[ -z "$RESUME_CHART_DIGEST" ]]
+          [[ "$(node -p 'require("./package.json").version')" == "$INPUT_VERSION" ]]
+          [[ "$(sed -n 's/^version: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$INPUT_VERSION" ]]
+          [[ "$(sed -n 's/^appVersion: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$INPUT_VERSION" ]]
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          {
+            printf 'version=%s\n' "$INPUT_VERSION"
+            printf 'image=ghcr.io/%s/steward-run\n' "$owner"
+            printf 'tag=bootstrap-%s-%s\n' "$INPUT_VERSION" "${GITHUB_SHA:0:12}"
+          } >> "$GITHUB_OUTPUT"
+
+  bootstrap-build-amd64:
+    needs: bootstrap-preflight
+    runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Authenticate to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          driver-opts: image=docker.io/moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+      - name: Build and publish native amd64 bootstrap image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ needs.bootstrap-preflight.outputs.image }}:candidate-${{ needs.bootstrap-preflight.outputs.tag }}-amd64
+          build-args: |
+            VERSION=${{ needs.bootstrap-preflight.outputs.version }}-bootstrap
+            REVISION=${{ github.sha }}
+            SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
+          provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e30c6e3df01b92bc93654d6a9
+      - name: Verify patched amd64 bootstrap image
+        env:
+          IMAGE: ${{ needs.bootstrap-preflight.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$(uname -m)" == x86_64 ]]
+          docker pull --platform linux/amd64 "$IMAGE@$DIGEST"
+          # shellcheck disable=SC2016
+          docker run --rm --platform linux/amd64 --entrypoint /bin/bash "$IMAGE@$DIGEST" -c \
+            'test "$(dpkg-query -W -f=${Version} openssl)" = "3.0.13-0ubuntu3.15" && test "$(dpkg-query -W -f=${Version} libssl3t64)" = "3.0.13-0ubuntu3.15"'
+
+  bootstrap-build-arm64:
+    needs: bootstrap-preflight
+    runs-on: ${{ vars.STEWARD_RUN_RELEASE_ARM64_RUNNER || 'ubuntu-24.04-arm' }}
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Authenticate to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          driver-opts: image=docker.io/moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+      - name: Build and publish native arm64 bootstrap image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          push: true
+          platforms: linux/arm64
+          tags: ${{ needs.bootstrap-preflight.outputs.image }}:candidate-${{ needs.bootstrap-preflight.outputs.tag }}-arm64
+          build-args: |
+            VERSION=${{ needs.bootstrap-preflight.outputs.version }}-bootstrap
+            REVISION=${{ github.sha }}
+            SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
+          provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e30c6e3df01b92bc93654d6a9
+      - name: Verify patched arm64 bootstrap image
+        env:
+          IMAGE: ${{ needs.bootstrap-preflight.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$(uname -m)" == aarch64 ]]
+          docker pull --platform linux/arm64 "$IMAGE@$DIGEST"
+          # shellcheck disable=SC2016
+          docker run --rm --platform linux/arm64 --entrypoint /bin/bash "$IMAGE@$DIGEST" -c \
+            'test "$(dpkg-query -W -f=${Version} openssl)" = "3.0.13-0ubuntu3.15" && test "$(dpkg-query -W -f=${Version} libssl3t64)" = "3.0.13-0ubuntu3.15"'
+
+  bootstrap-publish:
+    needs: [bootstrap-preflight, bootstrap-build-amd64, bootstrap-build-arm64]
+    runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Authenticate to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          driver-opts: image=docker.io/moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+      - name: Publish immutable multi-platform bootstrap image
+        env:
+          IMAGE: ${{ needs.bootstrap-preflight.outputs.image }}
+          TAG: ${{ needs.bootstrap-preflight.outputs.tag }}
+          AMD64_DIGEST: ${{ needs.bootstrap-build-amd64.outputs.digest }}
+          ARM64_DIGEST: ${{ needs.bootstrap-build-arm64.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+            printf 'bootstrap tag already exists: %s:%s\n' "$IMAGE" "$TAG" >&2
+            exit 1
+          fi
+          docker buildx imagetools create --tag "$IMAGE:$TAG" \
+            "$IMAGE@$AMD64_DIGEST" "$IMAGE@$ARM64_DIGEST"
+          docker buildx imagetools inspect "$IMAGE:$TAG" --raw > "$RUNNER_TEMP/bootstrap-index.json"
+          node scripts/verify-runnable-image-platforms.mjs \
+            "$RUNNER_TEMP/bootstrap-index.json" linux/amd64 linux/arm64
+          # shellcheck disable=SC2016
+          digest="$(docker buildx imagetools inspect "$IMAGE:$TAG" | awk '$1 == "Digest:" { print $2; exit }')"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          {
+            printf '## Bootstrap runner image\n\n'
+            printf '`%s@%s`\n' "$IMAGE" "$digest"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   preflight:
+    if: ${{ inputs.operation != 'bootstrap' }}
     runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: read

@@ -96,6 +96,9 @@ test("the current handoff documents the public workflow and published OSS artifa
   assert.match(rebuild, /workflowCommit` and `actionCommit`/u);
   assert.match(rebuild, /jobs\.governed\.container\.image/u);
   assert.match(rebuild, /bootstrap digest/u);
+  assert.match(rebuild, /Before every release[\s\S]*?silently trail the release/u);
+  assert.match(rebuild, /portable release workflow's `bootstrap` operation/u);
+  assert.match(rebuild, /previous release's signed image digest/u);
   assert.match(rebuild, /artifacthub-repo\.yml` `repositoryID`/u);
   assert.match(rebuild, /supported publication target is the fork owner's GHCR namespace/u);
   assert.match(guide, /job\.workflow_repository/u);
