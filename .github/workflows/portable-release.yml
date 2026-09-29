@@ -111,7 +111,7 @@ jobs:
             REVISION=${{ github.sha }}
             SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
           provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e30c6e3df01b92bc93654d6a9
+          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
       - name: Verify patched amd64 bootstrap image
         env:
           IMAGE: ${{ needs.bootstrap-preflight.outputs.image }}
@@ -156,7 +156,7 @@ jobs:
             REVISION=${{ github.sha }}
             SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
           provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e30c6e3df01b92bc93654d6a9
+          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
       - name: Verify patched arm64 bootstrap image
         env:
           IMAGE: ${{ needs.bootstrap-preflight.outputs.image }}

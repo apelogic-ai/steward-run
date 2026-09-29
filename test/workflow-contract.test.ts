@@ -425,6 +425,9 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   );
   assert.match(release, /provenance: mode=max,builder-id=\$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\/actions\/runs\/\$\{\{ github\.run_id \}\}/u);
   assert.match(release, /sbom: generator=docker\.io\/docker\/buildkit-syft-scanner@sha256:[a-f0-9]{64}/u);
+  const sbomGeneratorDigests = [...release.matchAll(/sbom: generator=docker\.io\/docker\/buildkit-syft-scanner@sha256:([a-f0-9]+)/gu)];
+  assert.equal(sbomGeneratorDigests.length, 4);
+  for (const [, digest] of sbomGeneratorDigests) assert.equal(digest?.length, 64);
   assert.match(release, /verify-release-attestations\.mjs/u);
   assert.match(
     release,
