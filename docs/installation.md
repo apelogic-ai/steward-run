@@ -1,4 +1,4 @@
-# steward-run v0.7.4 installation, setup, and integration
+# steward-run v0.7.5 installation, setup, and integration
 
 This is the complete operator runbook for the standalone OSS release. Use one
 tagged release as a unit: reusable workflow, action commit, runner image, and
@@ -19,7 +19,7 @@ manifest field is required.
 
 The [v0.5.0 guide](installation-v0.5.0.md) is historical and applies only to
 that release. Do not use its versions, paths, or explicit-authentication
-defaults for v0.7.4.
+defaults for v0.7.5.
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ the signed manifest.
 
 ```sh
 set -euo pipefail
-RELEASE_VERSION=0.7.4
+RELEASE_VERSION=0.7.5
 RELEASE_TAG="v$RELEASE_VERSION"
 RELEASE_REPOSITORY=apelogic-ai/steward-run
 RELEASE_IDENTITY="https://github.com/$RELEASE_REPOSITORY/.github/workflows/portable-release.yml@refs/tags/$RELEASE_TAG"
@@ -405,8 +405,8 @@ budget. Metadata responses must be exactly HTTP 200.
 | Purpose | Object or claim | Owner |
 | --- | --- | --- |
 | ARC registration | Existing `Opaque` Secret in `arc-runners` with `github_app_id`, `github_app_installation_id`, and `github_app_private_key` | GitHub App / cluster operator |
-| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.7.4 release |
-| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.7.4 release |
+| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.7.5 release |
+| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.7.5 release |
 | Steward authentication | Job-scoped GitHub OIDC token from `id-token: write`; no static token Secret | GitHub / Identity |
 | Optional public CA | Existing ConfigMap key `ca.crt`, mounted at `/etc/steward-run/trust/ca.crt` | PKI / cluster operator |
 | ARC controller | Separate 0.14.2 controller and CRDs | Cluster platform operator |
@@ -587,6 +587,10 @@ Restore the previous release as one coherent unit: previous chart package,
 image digest, and reusable-workflow commit. Restore Identity policy only when
 the release migration actually changed a supported policy field.
 Do not roll back only the image or only the workflow.
+
+The v0.7.4 image contains the affected OpenSSL packages described in the
+v0.7.5 release notes. Rolling back to it reintroduces CVE-2026-75803; do so
+only under an explicit incident/security decision and upgrade again promptly.
 
 ```sh
 helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \

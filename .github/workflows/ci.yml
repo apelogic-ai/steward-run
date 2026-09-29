@@ -69,6 +69,16 @@ jobs:
           -v "${{ github.workspace }}:/workspace:ro"
           steward-run:ci-${{ matrix.architecture }}
           -c 'test "$(id -un)" = runner && test -x /home/runner/run.sh && test -d /home/runner/k8s && sudo -n true && sudo -n apt-get check && test "$(dpkg-query -W -f=\${Version} openssl)" = "3.0.13-0ubuntu3.15" && test "$(dpkg-query -W -f=\${Version} libssl3t64)" = "3.0.13-0ubuntu3.15" && ! dpkg-query -W gir1.2-glib-2.0 && ! dpkg-query -W libglib2.0-0t64 && ! dpkg-query -W libglib2.0-bin && ! dpkg-query -W libglib2.0-data && ! command -v curl && ! command -v docker && ! command -v dockerd && ! command -v runc && command -v node && command -v git && command -v jq && command -v python3 && command -v tar && command -v unzip && /home/runner/bin/Runner.Listener --version && ldd /home/runner/bin/Runner.Listener >/dev/null && ! ldd /home/runner/bin/Runner.Listener | grep -F "not found" && /home/runner/externals/node20/bin/node --version && node /workspace/dist/index.cjs'
+      - name: Verify pinned governed job-container image
+        run: |
+          set -euo pipefail
+          image="$(sed -n 's/^[[:space:]]*image: \(ghcr.io\/[^[:space:]]*\)$/\1/p' \
+            .github/workflows/steward-task.yml)"
+          [[ "$image" =~ ^ghcr\.io/apelogic-ai/steward-run@sha256:[a-f0-9]{64}$ ]]
+          docker pull --platform linux/${{ matrix.architecture }} "$image"
+          # shellcheck disable=SC2016
+          docker run --rm --platform linux/${{ matrix.architecture }} --entrypoint /bin/bash "$image" -c \
+            'test "$(dpkg-query -W -f=\${Version} openssl)" = "3.0.13-0ubuntu3.15" && test "$(dpkg-query -W -f=\${Version} libssl3t64)" = "3.0.13-0ubuntu3.15"'
       - name: Export image vulnerability report
         run: >-
           docker run --rm

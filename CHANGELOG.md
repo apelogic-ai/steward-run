@@ -7,6 +7,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-09-28
+
 ### Added
 
 - Added a complete fork-owned rebuild and publication runbook, configurable
@@ -27,14 +29,18 @@ This project follows [Semantic Versioning](https://semver.org/).
 - The schema-3 release manifest now records the tag commit as both
   `workflowCommit` and `actionCommit`, matching the self-pinned reusable
   workflow source.
+- Added a native pre-tag runner-image bootstrap operation and made deliberate
+  governed job-container review/re-pinning part of every release. CI verifies
+  the wrapper's immutable digest on both supported architectures.
 
 ### Security
 
 - Fixed the two v0.4.1 ECR critical occurrences of CVE-2026-75803 by pinning
   `openssl` and `libssl3t64` to Canonical's fixed `3.0.13-0ubuntu3.15` package
-  version, verifying it in both native image jobs, and adding the CVE to the
-  registry-critical baseline. v0.7.4 remains affected, so operators must
-  upgrade to v0.7.5; no vulnerability acceptance is used.
+  version, verifying it in both native image jobs and the pinned governed
+  job-container image, and adding the CVE to the registry-critical baseline.
+  v0.7.4 remains affected, so operators must upgrade to v0.7.5; no
+  vulnerability acceptance is used.
 
 ## [0.7.4] - 2026-09-28
 
@@ -249,7 +255,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.4...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.5...HEAD
+[0.7.5]: https://github.com/apelogic-ai/steward-run/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/apelogic-ai/steward-run/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/apelogic-ai/steward-run/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/apelogic-ai/steward-run/compare/v0.7.1...v0.7.2

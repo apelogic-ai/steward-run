@@ -87,9 +87,24 @@ A fork must also replace its distribution identity before the first tag:
   replace `jobs.governed.container.image` in
   `.github/workflows/steward-task.yml` with its immutable index digest.
 
-For the first fork release, a trusted native multi-platform builder can create
-that bootstrap digest before the release tag. Authenticate Docker to GHCR with
-the fork owner's existing GitHub CLI session, then run:
+Before every release, confirm that the wrapper digest is still supported and
+free of release-blocking findings. Re-pin it deliberately as part of the
+release-preparation pull request; do not let the governed job-container image
+silently trail the release. The previous signed release image is normally the
+right input. When the current source contains a required image fix, use the
+portable release workflow's `bootstrap` operation to build and verify a new
+multi-platform digest on the configured native runners before tagging.
+
+For the first fork release, or whenever the current source must be bootstrapped,
+dispatch **Portable OSS release**, select `bootstrap`, and enter the prepared
+version. The workflow verifies both native child images, publishes the immutable
+`bootstrap-X.Y.Z-<commit>` index, and prints its digest in the run summary. Pin
+that exact digest in `.github/workflows/steward-task.yml`, rerun the normal CI,
+and merge the reviewed result before tagging.
+
+If GitHub Actions is unavailable, an equivalently trusted native
+multi-platform builder can create the bootstrap digest. Authenticate Docker to
+GHCR with the fork owner's existing GitHub CLI session, then run:
 
 ```sh
 set -euo pipefail
@@ -111,8 +126,10 @@ printf '%s@%s\n' "$IMAGE" "$DIGEST"
 
 Commit the exact printed `IMAGE@sha256:...` value in the wrapper. The release
 preflight rejects a job-container owner that differs from the fork owner and
-rejects unchanged upstream chart/Artifact Hub identity. This bootstrap is only
-needed until the fork has a prior released image digest available to pin.
+rejects unchanged upstream chart/Artifact Hub identity. The normal case after
+the first release is to pin the previous release's signed image digest.
+Bootstrap again whenever that prior image does not contain a required security
+or runtime fix.
 
 Run `npm run check` again and merge that commit normally. Do not tag an
 unmerged pull-request commit.

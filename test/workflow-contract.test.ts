@@ -8,7 +8,7 @@ import { parse } from "yaml";
 
 const governedJobContainer =
   "ghcr.io/apelogic-ai/steward-run@" +
-  "sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4";
+  "sha256:e2ebfb7f3da3fec3ce2dc61eb45a631493282c6359dd4ac8df00a6ee182c8f9e";
 const buildkitImage =
   "docker.io/moby/buildkit@" +
   "sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8";
@@ -409,6 +409,9 @@ test("CI executes the governed job-container runtime contract", async () => {
     assert.match(ci, new RegExp(capability.replaceAll("/", "\\/"), "u"));
   assert.match(ci, /\/home\/runner\/externals\/node20\/bin\/node --version/u);
   assert.match(ci, /node \/workspace\/dist\/index\.cjs/u);
+  assert.match(ci, /Verify pinned governed job-container image/u);
+  assert.match(ci, /steward-task\.yml/u);
+  assert.equal(ci.match(/dpkg-query -W -f=\\\$\{Version\}/gu)?.length, 4);
   const ciContainerProbe = ci.slice(
     ci.indexOf("- name: Smoke-test ARC and governed job-container contracts"),
     ci.indexOf("- name: Export image vulnerability report"),
@@ -425,6 +428,9 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   );
   assert.match(release, /provenance: mode=max,builder-id=\$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\/actions\/runs\/\$\{\{ github\.run_id \}\}/u);
   assert.match(release, /sbom: generator=docker\.io\/docker\/buildkit-syft-scanner@sha256:[a-f0-9]{64}/u);
+  const sbomGeneratorDigests = [...release.matchAll(/sbom: generator=docker\.io\/docker\/buildkit-syft-scanner@sha256:([a-f0-9]+)/gu)];
+  assert.equal(sbomGeneratorDigests.length, 4);
+  for (const [, digest] of sbomGeneratorDigests) assert.equal(digest?.length, 64);
   assert.match(release, /verify-release-attestations\.mjs/u);
   assert.match(
     release,
@@ -432,6 +438,17 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   );
   assert.match(release, /resume_image_digest:/u);
   assert.match(release, /resume_chart_digest:/u);
+  assert.match(release, /operation:[\s\S]*?- release[\s\S]*?- bootstrap/u);
+  assert.match(release, /bootstrap-preflight:/u);
+  assert.match(release, /bootstrap-build-amd64:/u);
+  assert.match(release, /bootstrap-build-arm64:/u);
+  assert.match(release, /bootstrap-publish:/u);
+  assert.match(release, /printf 'tag=bootstrap-%s-%s/u);
+  assert.match(release, /Verify patched amd64 bootstrap image[\s\S]*?3\.0\.13-0ubuntu3\.15/u);
+  assert.match(release, /Verify patched arm64 bootstrap image[\s\S]*?3\.0\.13-0ubuntu3\.15/u);
+  assert.equal(release.match(/dpkg-query -W -f=\\\$\{Version\}/gu)?.length, 4);
+  assert.match(release, /verify-runnable-image-platforms\.mjs[\s\\\n]*"\$RUNNER_TEMP\/bootstrap-index\.json" linux\/amd64 linux\/arm64/u);
+  assert.doesNotMatch(release, /awk '\$1 == "Digest:" \{ print \$2; exit \}'/u);
   assert.match(release, /push:[\s\S]*?tags:[\s\S]*?v\[0-9\]\+/u);
   assert.match(release, /refs\/tags\/v\[0-9\]\+/u);
   assert.doesNotMatch(release, /\[\[ "\$GITHUB_REF" == refs\/heads\/main \]\]/u);
