@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
+  IdentityExchangeHttpError,
   STEWARD_TASK_API_AUDIENCE,
   identityExchangeTokenProvider,
 } from "../src/identity-exchange.ts";
@@ -131,6 +132,10 @@ test("identity exchange failures never disclose either token", async () => {
   );
 
   await assert.rejects(provider(), (error: Error) => {
+    assert.ok(error instanceof IdentityExchangeHttpError);
+    assert.equal(error.httpStatus, 401);
+    assert.equal(error.oauthErrorCode, undefined);
+    assert.equal(error.retryable, false);
     assert.match(error.message, /status 401/);
     assert.doesNotMatch(
       error.message,
@@ -138,6 +143,38 @@ test("identity exchange failures never disclose either token", async () => {
     );
     return true;
   });
+});
+
+test("identity exchange preserves only a bounded OAuth error code and retry policy", async () => {
+  const environment = {
+    ACTIONS_ID_TOKEN_REQUEST_TOKEN: "github-request-secret",
+    ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.actions.example/id",
+  };
+  const sourceFetch = async () => jsonResponse({ value: sourceToken });
+  for (const [status, code, retryable] of [
+    [400, "invalid_request", false],
+    [401, "invalid_token", false],
+    [403, "access_denied", false],
+    [429, "temporarily_unavailable", true],
+    [503, "server_error", true],
+  ] as const) {
+    const provider = identityExchangeTokenProvider(
+      environment,
+      "https://identity.example/v1/exchange",
+      sourceFetch,
+      () => now,
+      GITHUB_IDENTITY_EXCHANGE_AUDIENCE,
+      async () => jsonResponse({ error: code, error_description: "private policy detail" }, status),
+    );
+    await assert.rejects(provider(), (error: unknown) => {
+      assert.ok(error instanceof IdentityExchangeHttpError);
+      assert.equal(error.httpStatus, status);
+      assert.equal(error.oauthErrorCode, code);
+      assert.equal(error.retryable, retryable);
+      assert.doesNotMatch(error.message, /private policy detail|invalid_token|access_denied/u);
+      return true;
+    });
+  }
 });
 
 test("identity exchange fails closed on malformed or unsafe responses", async (context) => {

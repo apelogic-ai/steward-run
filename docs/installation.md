@@ -1,4 +1,4 @@
-# steward-run v0.7.5 installation, setup, and integration
+# steward-run v0.7.6 installation, setup, and integration
 
 This is the complete operator runbook for the standalone OSS release. Use one
 tagged release as a unit: reusable workflow, action commit, runner image, and
@@ -11,15 +11,15 @@ release preflight also requires the tagged commit to be reachable from
 `refs/heads/main` before it publishes artifacts.
 
 The manifest remains schema 3. Its `image` field is the signed public
-multi-platform image used for both the ARC runner and governed job-container
-roles. Steward's
+multi-platform image embedded in the container-based reusable workflow and
+projected into Steward's governed job-container setting. The pre-tag digest is
+promoted unchanged to the release version tag. Steward's
 [installation mapping](https://github.com/apelogic-ai/steward/blob/v0.3.0/docs/installation/governed-platform-compatibility.md#installation-bom)
-projects that exact value to `governedJobContainerImage`; no additional
-manifest field is required.
+projects `image` to `governedJobContainerImage`.
 
 The [v0.5.0 guide](installation-v0.5.0.md) is historical and applies only to
 that release. Do not use its versions, paths, or explicit-authentication
-defaults for v0.7.5.
+defaults for v0.7.6.
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ the signed manifest.
 
 ```sh
 set -euo pipefail
-RELEASE_VERSION=0.7.5
+RELEASE_VERSION=0.7.6
 RELEASE_TAG="v$RELEASE_VERSION"
 RELEASE_REPOSITORY=apelogic-ai/steward-run
 RELEASE_IDENTITY="https://github.com/$RELEASE_REPOSITORY/.github/workflows/portable-release.yml@refs/tags/$RELEASE_TAG"
@@ -405,8 +405,8 @@ budget. Metadata responses must be exactly HTTP 200.
 | Purpose | Object or claim | Owner |
 | --- | --- | --- |
 | ARC registration | Existing `Opaque` Secret in `arc-runners` with `github_app_id`, `github_app_installation_id`, and `github_app_private_key` | GitHub App / cluster operator |
-| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.7.5 release |
-| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.7.5 release |
+| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.7.6 release |
+| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.7.6 release |
 | Steward authentication | Job-scoped GitHub OIDC token from `id-token: write`; no static token Secret | GitHub / Identity |
 | Optional public CA | Existing ConfigMap key `ca.crt`, mounted at `/etc/steward-run/trust/ca.crt` | PKI / cluster operator |
 | ARC controller | Separate 0.14.2 controller and CRDs | Cluster platform operator |
@@ -453,13 +453,62 @@ The reusable workflow checks out its action from the immutable
 no PAT or checkout-token input, and it does not accept an action repository,
 action ref, container image, or job-container image from the caller.
 
-Cross-repository consumption from a different private fork is not supported:
-the caller's `GITHUB_TOKEN` cannot be assumed to read that private workflow
-repository, and this workflow intentionally has no credential input. Either
-consume the public upstream workflow, call the workflow from the same private
-repository, or vendor the reviewed workflow and action bundle into the caller
-repository. Do not add a PAT without a separately reviewed authentication
-design.
+### Private fork consumed by another repository
+
+Use the release's official vendored workflow when the same-organization caller
+must consume a private fork. In the fork's **Settings → Actions → General →
+Access**, allow Actions access from the intended organization repositories.
+Download and verify the fork release normally, then copy the release asset to
+the caller:
+
+```sh
+mkdir -p CALLER_REPOSITORY/.github/workflows
+cp steward-task-vendored.yml \
+  CALLER_REPOSITORY/.github/workflows/steward-task-vendored.yml
+```
+
+The released file contains a direct immutable
+`OWNER/REPOSITORY@actionCommit` action reference rendered from the signed
+manifest. It has no internal private-repository checkout and accepts no PAT or
+checkout token. `SHA256SUMS` and `oss-release-manifest.json` bind the exact
+file. Fork maintainers can reproduce it from the checked-in template:
+
+```sh
+node ./render-vendored-workflow.mjs oss-release-manifest.json \
+  ./steward-task-vendored.rendered.yml \
+  ./steward-task-vendored.template.yml
+cmp ./steward-task-vendored.rendered.yml ./steward-task-vendored.yml
+```
+
+Steward currently renders the remote private-fork workflow reference. After
+rendering, change only that caller `uses:` line to the verified local asset:
+
+```yaml
+jobs:
+  governed:
+    uses: ./.github/workflows/steward-task-vendored.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      runner-label: steward-run
+      workflow: CUSTOMER_WORKFLOW_REFERENCE
+      input-artifact: request
+      output-artifact: result
+      steward-api-url: https://steward.customer.example
+```
+
+[Steward issue #218](https://github.com/apelogic-ai/steward/issues/218) tracks
+native rendering of this local reference. Until it lands, that one-line caller
+edit is required.
+
+The vendored workflow is strict by default: the governed task must write at
+least one file under `out/`. Otherwise it stops before artifact upload with
+`the task wrote nothing to out/`. A workflow that intentionally produces no
+files is not compatible with this handoff contract.
+
+Refresh the vendored file whenever release notes say it changed. Do not hand-
+patch its action owner or commit, and do not add a PAT.
 
 ### Identity policy
 
@@ -476,6 +525,13 @@ chain pin. Do not mistake that source pin for an Identity policy control.
 [github-oidc-exchange issue #82](https://github.com/apelogic-ai/github-oidc-exchange/issues/82)
 tracks workflow-ref and workflow-SHA selectors. If that feature lands, follow
 the exchange release's migration guidance before adding either selector.
+
+On the first quickstart run, `failure-category=authentication` with
+`http-status=401` and `request-failure ... stage=exchange` means Identity
+rejected the job policy; it is not a network transport failure. The action
+makes one exchange attempt. Check the admitted numeric owner/repository IDs and
+the exact subject, event, and ref selectors before retrying. A 403 is reported
+as `authorization`; only exchange 429, 5xx, and network failures are retried.
 
 ### Task source and timeout inputs
 
@@ -589,7 +645,7 @@ the release migration actually changed a supported policy field.
 Do not roll back only the image or only the workflow.
 
 The v0.7.4 image contains the affected OpenSSL packages described in the
-v0.7.5 release notes. Rolling back to it reintroduces CVE-2026-75803; do so
+v0.7.5 release notes. Rolling back past v0.7.5 reintroduces CVE-2026-75803; do so
 only under an explicit incident/security decision and upgrade again promptly.
 
 ```sh

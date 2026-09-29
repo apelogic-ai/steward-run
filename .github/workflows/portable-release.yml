@@ -7,13 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Build a pre-tag runner image or resume a tagged release
+        description: Release, build a signed pre-tag job container, or retire a legacy bootstrap tag
         required: true
         default: release
         type: choice
         options:
           - release
           - bootstrap
+          - retire-bootstrap
       version:
         description: Semantic version matching package.json and the application chart
         required: true
@@ -25,6 +26,11 @@ on:
         type: string
       resume_chart_digest:
         description: Exact existing chart digest when resuming an interrupted publication
+        required: false
+        default: ""
+        type: string
+      bootstrap_tag:
+        description: Legacy bootstrap-* tag to sign, promote, and delete with retire-bootstrap
         required: false
         default: ""
         type: string
@@ -63,12 +69,17 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
           RESUME_IMAGE_DIGEST: ${{ inputs.resume_image_digest }}
           RESUME_CHART_DIGEST: ${{ inputs.resume_chart_digest }}
+          BOOTSTRAP_TAG: ${{ inputs.bootstrap_tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF" == refs/heads/* ]]
+          default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)"
+          [[ "$GITHUB_REF_NAME" == "$default_branch" ]]
           [[ "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ -z "$RESUME_IMAGE_DIGEST" ]]
           [[ -z "$RESUME_CHART_DIGEST" ]]
+          [[ -z "$BOOTSTRAP_TAG" ]]
           [[ "$(node -p 'require("./package.json").version')" == "$INPUT_VERSION" ]]
           [[ "$(sed -n 's/^version: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$INPUT_VERSION" ]]
           [[ "$(sed -n 's/^appVersion: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$INPUT_VERSION" ]]
@@ -76,7 +87,7 @@ jobs:
           {
             printf 'version=%s\n' "$INPUT_VERSION"
             printf 'image=ghcr.io/%s/steward-run\n' "$owner"
-            printf 'tag=bootstrap-%s-%s\n' "$INPUT_VERSION" "${GITHUB_SHA:0:12}"
+            printf 'tag=job-container-%s-%s\n' "$INPUT_VERSION" "${GITHUB_SHA:0:12}"
           } >> "$GITHUB_OUTPUT"
 
   bootstrap-build-amd64:
@@ -107,7 +118,7 @@ jobs:
           platforms: linux/amd64
           tags: ${{ needs.bootstrap-preflight.outputs.image }}:candidate-${{ needs.bootstrap-preflight.outputs.tag }}-amd64
           build-args: |
-            VERSION=${{ needs.bootstrap-preflight.outputs.version }}-bootstrap
+            VERSION=${{ needs.bootstrap-preflight.outputs.version }}
             REVISION=${{ github.sha }}
             SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
           provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -152,7 +163,7 @@ jobs:
           platforms: linux/arm64
           tags: ${{ needs.bootstrap-preflight.outputs.image }}:candidate-${{ needs.bootstrap-preflight.outputs.tag }}-arm64
           build-args: |
-            VERSION=${{ needs.bootstrap-preflight.outputs.version }}-bootstrap
+            VERSION=${{ needs.bootstrap-preflight.outputs.version }}
             REVISION=${{ github.sha }}
             SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
           provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -175,6 +186,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -186,7 +198,10 @@ jobs:
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
         with:
           driver-opts: image=docker.io/moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
-      - name: Publish immutable multi-platform bootstrap image
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.2
+      - name: Publish and sign immutable multi-platform job container
         env:
           IMAGE: ${{ needs.bootstrap-preflight.outputs.image }}
           TAG: ${{ needs.bootstrap-preflight.outputs.tag }}
@@ -194,24 +209,142 @@ jobs:
           ARM64_DIGEST: ${{ needs.bootstrap-build-arm64.outputs.digest }}
         run: |
           set -euo pipefail
+          docker buildx imagetools inspect "$IMAGE@$AMD64_DIGEST" --raw \
+            > "$RUNNER_TEMP/bootstrap-amd64-index.json"
+          docker buildx imagetools inspect "$IMAGE@$ARM64_DIGEST" --raw \
+            > "$RUNNER_TEMP/bootstrap-arm64-index.json"
           if docker buildx imagetools inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
-            printf 'bootstrap tag already exists: %s:%s\n' "$IMAGE" "$TAG" >&2
-            exit 1
+            printf 'validating existing %s:%s against this run\x27s native build outputs\n' \
+              "$IMAGE" "$TAG"
+            docker buildx imagetools inspect "$IMAGE:$TAG" --raw \
+              > "$RUNNER_TEMP/bootstrap-index.json"
+          else
+            staging_tag="candidate-$TAG-index-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            docker buildx imagetools create --tag "$IMAGE:$staging_tag" \
+              "$IMAGE@$AMD64_DIGEST" "$IMAGE@$ARM64_DIGEST"
+            docker buildx imagetools inspect "$IMAGE:$staging_tag" --raw \
+              > "$RUNNER_TEMP/bootstrap-index.json"
           fi
-          docker buildx imagetools create --tag "$IMAGE:$TAG" \
-            "$IMAGE@$AMD64_DIGEST" "$IMAGE@$ARM64_DIGEST"
-          docker buildx imagetools inspect "$IMAGE:$TAG" --raw > "$RUNNER_TEMP/bootstrap-index.json"
+          digest="$(node scripts/verify-combined-image-index.mjs \
+            "$RUNNER_TEMP/bootstrap-index.json" \
+            "$RUNNER_TEMP/bootstrap-amd64-index.json" "$AMD64_DIGEST" \
+            "$RUNNER_TEMP/bootstrap-arm64-index.json" "$ARM64_DIGEST")"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          docker buildx imagetools inspect "$IMAGE@$digest" --raw \
+            > "$RUNNER_TEMP/bootstrap-index-by-digest.json"
+          cmp "$RUNNER_TEMP/bootstrap-index.json" "$RUNNER_TEMP/bootstrap-index-by-digest.json"
           node scripts/verify-runnable-image-platforms.mjs \
             "$RUNNER_TEMP/bootstrap-index.json" linux/amd64 linux/arm64
-          digest="$(docker buildx imagetools inspect "$IMAGE:$TAG" | sed -n 's/^Digest:[[:space:]]*//p')"
-          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/portable-release.yml@$GITHUB_REF"
+          cosign sign --yes --registry-referrers-mode=oci-1-1 \
+            -a steward-run-operation=bootstrap \
+            -a "steward-run-version=${{ needs.bootstrap-preflight.outputs.version }}" \
+            -a "steward-run-revision=$GITHUB_SHA" "$IMAGE@$digest"
+          cosign verify --experimental-oci11=true \
+            -a steward-run-operation=bootstrap \
+            -a "steward-run-version=${{ needs.bootstrap-preflight.outputs.version }}" \
+            -a "steward-run-revision=$GITHUB_SHA" \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE@$digest"
+          if docker buildx imagetools inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+            docker buildx imagetools inspect "$IMAGE:$TAG" --raw \
+              > "$RUNNER_TEMP/bootstrap-tag.json"
+            [[ "sha256:$(sha256sum "$RUNNER_TEMP/bootstrap-tag.json" | cut -d ' ' -f 1)" == "$digest" ]]
+          else
+            docker buildx imagetools create --tag "$IMAGE:$TAG" "$IMAGE@$digest"
+            docker buildx imagetools inspect "$IMAGE:$TAG" --raw \
+              > "$RUNNER_TEMP/bootstrap-tag.json"
+            [[ "sha256:$(sha256sum "$RUNNER_TEMP/bootstrap-tag.json" | cut -d ' ' -f 1)" == "$digest" ]]
+          fi
           {
-            printf '## Bootstrap runner image\n\n'
+            printf '## Signed governed job-container image\n\n'
             printf '\x60%s@%s\x60\n' "$IMAGE" "$digest"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  retire-bootstrap:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'retire-bootstrap' }}
+    runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.2
+      - name: Install pinned ORAS
+        env:
+          ORAS_VERSION: 1.3.3
+          ORAS_LINUX_AMD64_SHA256: 9ce999f8d2de03fc03968b29d743077a58783e545e5eaa53917ca177352d0e59
+        run: |
+          set -euo pipefail
+          archive="oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -sSLo "$RUNNER_TEMP/$archive" "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/$archive"
+          printf '%s  %s\n' "$ORAS_LINUX_AMD64_SHA256" "$RUNNER_TEMP/$archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/oras-bin"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/oras-bin" oras
+          printf '%s\n' "$RUNNER_TEMP/oras-bin" >> "$GITHUB_PATH"
+      - name: Sign, promote, and retire legacy bootstrap tag
+        env:
+          VERSION: ${{ inputs.version }}
+          DIGEST: ${{ inputs.resume_image_digest }}
+          RESUME_CHART_DIGEST: ${{ inputs.resume_chart_digest }}
+          BOOTSTRAP_TAG: ${{ inputs.bootstrap_tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)"
+          [[ "$GITHUB_REF" == "refs/heads/$default_branch" ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ -z "$RESUME_CHART_DIGEST" ]]
+          [[ "$BOOTSTRAP_TAG" =~ ^bootstrap-$VERSION-[0-9a-f]{12}$ ]]
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/$owner/steward-run"
+          promoted_tag="job-container-$VERSION"
+          printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          actual="$(oras manifest fetch --descriptor "$image:$BOOTSTRAP_TAG" | jq -r .digest)"
+          [[ "$actual" == "$DIGEST" ]]
+          oras manifest fetch "$image@$DIGEST" > "$RUNNER_TEMP/bootstrap-index.json"
+          node scripts/verify-runnable-image-platforms.mjs \
+            "$RUNNER_TEMP/bootstrap-index.json" linux/amd64 linux/arm64
+          existing="$(oras manifest fetch --descriptor "$image:$promoted_tag" 2>/dev/null | jq -r '.digest // empty' || true)"
+          [[ -z "$existing" || "$existing" == "$DIGEST" ]]
+          oras tag "$image@$DIGEST" "$promoted_tag"
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/portable-release.yml@$GITHUB_REF"
+          cosign sign --yes --registry-referrers-mode=oci-1-1 \
+            -a steward-run-operation=retire-bootstrap \
+            -a "steward-run-version=$VERSION" "$image@$DIGEST"
+          cosign verify --experimental-oci11=true \
+            -a steward-run-operation=retire-bootstrap \
+            -a "steward-run-version=$VERSION" \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image@$DIGEST"
+          jq -n --arg retired "$BOOTSTRAP_TAG" \
+            '{schemaVersion:1,retiredTag:$retired}' > "$RUNNER_TEMP/retired-bootstrap.json"
+          (
+            cd "$RUNNER_TEMP"
+            oras push --artifact-type application/vnd.apelogic.steward-run.retired.v1 \
+              "$image:$BOOTSTRAP_TAG" \
+              "retired-bootstrap.json:application/vnd.apelogic.steward-run.retired.v1+json"
+          )
+          tombstone_digest="$(oras manifest fetch --descriptor "$image:$BOOTSTRAP_TAG" | jq -r .digest)"
+          [[ "$tombstone_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ "$tombstone_digest" != "$DIGEST" ]]
+          oras manifest delete --force "$image@$tombstone_digest"
+          [[ "$(oras manifest fetch --descriptor "$image:$promoted_tag" | jq -r .digest)" == "$DIGEST" ]]
+          if oras manifest fetch --descriptor "$image:$BOOTSTRAP_TAG" >/dev/null 2>&1; then
+            printf 'legacy bootstrap tag still exists\n' >&2
+            exit 1
+          fi
+          printf 'Signed %s@%s, retained %s, and removed %s.\n' \
+            "$image" "$DIGEST" "$promoted_tag" "$BOOTSTRAP_TAG" >> "$GITHUB_STEP_SUMMARY"
+
   preflight:
-    if: ${{ inputs.operation != 'bootstrap' }}
+    if: ${{ github.event_name == 'push' || inputs.operation == 'release' }}
     runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: read
@@ -219,6 +352,7 @@ jobs:
       version: ${{ steps.refs.outputs.version }}
       image: ${{ steps.refs.outputs.image }}
       chart: ${{ steps.refs.outputs.chart }}
+      job_container_image: ${{ steps.refs.outputs.job_container_image }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -295,103 +429,35 @@ jobs:
             printf 'version=%s\n' "$VERSION"
             printf 'image=ghcr.io/%s/steward-run\n' "$owner"
             printf 'chart=ghcr.io/%s/charts/steward-run-arc\n' "$owner"
+            printf 'job_container_image=%s\n' "$job_container_image"
           } >> "$GITHUB_OUTPUT"
 
-  build-amd64:
-    if: ${{ inputs.resume_image_digest == '' && inputs.resume_chart_digest == '' }}
-    needs: preflight
-    runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - name: Authenticate to GHCR
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - name: Build and publish native amd64 candidate
-        id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64
-          tags: ${{ needs.preflight.outputs.image }}:candidate-${{ needs.preflight.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}-amd64
-          build-args: |
-            VERSION=${{ needs.preflight.outputs.version }}
-            REVISION=${{ github.sha }}
-            SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
-          provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
-
-  build-arm64:
-    if: ${{ inputs.resume_image_digest == '' && inputs.resume_chart_digest == '' }}
-    needs: preflight
-    runs-on: ${{ vars.STEWARD_RUN_RELEASE_ARM64_RUNNER || 'ubuntu-24.04-arm' }}
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - name: Authenticate to GHCR
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - name: Build and publish native arm64 candidate
-        id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: .
-          push: true
-          platforms: linux/arm64
-          tags: ${{ needs.preflight.outputs.image }}:candidate-${{ needs.preflight.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}-arm64
-          build-args: |
-            VERSION=${{ needs.preflight.outputs.version }}
-            REVISION=${{ github.sha }}
-            SOURCE_REPOSITORY=${{ github.server_url }}/${{ github.repository }}
-          provenance: mode=max,builder-id=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
-
   publish:
-    if: >-
-      ${{
-        always() &&
-        needs.preflight.result == 'success' &&
-        (
-          (inputs.resume_image_digest != '' && inputs.resume_chart_digest != '') ||
-          (needs.build-amd64.result == 'success' && needs.build-arm64.result == 'success')
-        )
-      }}
+    if: ${{ needs.preflight.result == 'success' }}
     permissions:
       contents: write
       packages: write
       id-token: write
-    needs: [preflight, build-amd64, build-arm64]
+    needs: preflight
     runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
     env:
       VERSION: ${{ needs.preflight.outputs.version }}
       IMAGE: ${{ needs.preflight.outputs.image }}
       CHART: ${{ needs.preflight.outputs.chart }}
+      JOB_CONTAINER_IMAGE: ${{ needs.preflight.outputs.job_container_image }}
       RESUME_IMAGE_DIGEST: ${{ inputs.resume_image_digest }}
       RESUME_CHART_DIGEST: ${{ inputs.resume_chart_digest }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.21.0
+          package-manager-cache: false
+      - name: Install release validators
+        run: npm ci --ignore-scripts
       - uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4.3.1
         with:
           version: v3.17.1
@@ -419,6 +485,27 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Verify signed governed job container
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$JOB_CONTAINER_IMAGE" --format '{{json .Image}}' \
+            > "$RUNNER_TEMP/job-container-metadata.json"
+          image_revision="$(node scripts/verify-image-release-labels.mjs \
+            "$RUNNER_TEMP/job-container-metadata.json" "$VERSION" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY")"
+          git cat-file -e "$image_revision^{commit}"
+          git merge-base --is-ancestor "$image_revision" "$GITHUB_SHA"
+          git diff --quiet "$image_revision" "$GITHUB_SHA" -- Dockerfile
+          default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)"
+          bootstrap_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/portable-release.yml@refs/heads/$default_branch"
+          cosign verify --experimental-oci11=true \
+            -a steward-run-operation=bootstrap \
+            -a "steward-run-version=$VERSION" \
+            -a "steward-run-revision=$image_revision" \
+            --certificate-identity "$bootstrap_identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$JOB_CONTAINER_IMAGE"
       - name: Validate version tag state
         run: |
           set -euo pipefail
@@ -437,9 +524,8 @@ jobs:
           if [[ -n "$RESUME_IMAGE_DIGEST" ]]; then
             helm pull "oci://$CHART" --version "$VERSION" --destination "$RUNNER_TEMP"
           else
-            docker buildx imagetools create --tag "$IMAGE:$VERSION" \
-              "$IMAGE@${{ needs.build-amd64.outputs.digest }}" \
-              "$IMAGE@${{ needs.build-arm64.outputs.digest }}"
+            oras tag "$JOB_CONTAINER_IMAGE" "$VERSION"
+            npm run check:vendored-workflow
             npm run check:vendored-chart
             helm package charts/steward-run-arc --destination "$RUNNER_TEMP"
             helm push "$RUNNER_TEMP/steward-run-arc-$VERSION.tgz" \
@@ -454,6 +540,7 @@ jobs:
           chart_digest="$(oras manifest fetch --descriptor "$CHART:$VERSION" | jq -r '.digest')"
           [[ "$image_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
           [[ "$chart_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ "$image_digest" == "${JOB_CONTAINER_IMAGE##*@}" ]]
           if [[ -n "$RESUME_IMAGE_DIGEST" ]]; then
             [[ "$image_digest" == "$RESUME_IMAGE_DIGEST" ]]
             [[ "$chart_digest" == "$RESUME_CHART_DIGEST" ]]
@@ -486,6 +573,8 @@ jobs:
           set -euo pipefail
           cp scripts/arc-controller-identity.mjs "$RUNNER_TEMP/arc-controller-identity.mjs"
           cp scripts/steward-run-arc-preflight.mjs "$RUNNER_TEMP/steward-run-arc-preflight.mjs"
+          cp scripts/render-vendored-workflow.mjs "$RUNNER_TEMP/render-vendored-workflow.mjs"
+          cp vendor/steward-task-vendored.yml "$RUNNER_TEMP/steward-task-vendored.template.yml"
           chart_package="steward-run-arc-$VERSION.tgz"
           chart_sha256="$(sha256sum "$RUNNER_TEMP/$chart_package" | cut -d ' ' -f 1)"
           identity_sha256="$(sha256sum "$RUNNER_TEMP/arc-controller-identity.mjs" | cut -d ' ' -f 1)"
@@ -519,10 +608,28 @@ jobs:
               }
             }' \
             > "$RUNNER_TEMP/oss-release-manifest.json"
+          node "$RUNNER_TEMP/render-vendored-workflow.mjs" \
+            "$RUNNER_TEMP/oss-release-manifest.json" \
+            "$RUNNER_TEMP/steward-task-vendored.yml" \
+            "$RUNNER_TEMP/steward-task-vendored.template.yml"
+          renderer_sha256="$(sha256sum "$RUNNER_TEMP/render-vendored-workflow.mjs" | cut -d ' ' -f 1)"
+          template_sha256="$(sha256sum "$RUNNER_TEMP/steward-task-vendored.template.yml" | cut -d ' ' -f 1)"
+          vendored_sha256="$(sha256sum "$RUNNER_TEMP/steward-task-vendored.yml" | cut -d ' ' -f 1)"
+          jq --arg renderer_sha256 "$renderer_sha256" \
+            --arg template_sha256 "$template_sha256" --arg vendored_sha256 "$vendored_sha256" \
+            '.assets += {
+              "render-vendored-workflow.mjs":{sha256:$renderer_sha256},
+              "steward-task-vendored.template.yml":{sha256:$template_sha256},
+              "steward-task-vendored.yml":{sha256:$vendored_sha256}
+            }' "$RUNNER_TEMP/oss-release-manifest.json" \
+            > "$RUNNER_TEMP/oss-release-manifest.next.json"
+          mv "$RUNNER_TEMP/oss-release-manifest.next.json" "$RUNNER_TEMP/oss-release-manifest.json"
           (
             cd "$RUNNER_TEMP"
             sha256sum "$chart_package" arc-controller-identity.mjs steward-run-arc-preflight.mjs \
-              release-attestation-summary.json oss-release-manifest.json > SHA256SUMS
+              render-vendored-workflow.mjs steward-task-vendored.template.yml \
+              steward-task-vendored.yml release-attestation-summary.json \
+              oss-release-manifest.json > SHA256SUMS
           )
           cosign sign-blob --yes --bundle "$RUNNER_TEMP/oss-release-manifest.sigstore.json" \
             "$RUNNER_TEMP/oss-release-manifest.json"
@@ -558,6 +665,9 @@ jobs:
             "$RUNNER_TEMP/chart-signature.sigstore.json" \
             "$RUNNER_TEMP/arc-controller-identity.mjs" \
             "$RUNNER_TEMP/steward-run-arc-preflight.mjs" \
+            "$RUNNER_TEMP/render-vendored-workflow.mjs" \
+            "$RUNNER_TEMP/steward-task-vendored.template.yml" \
+            "$RUNNER_TEMP/steward-task-vendored.yml" \
             "$RUNNER_TEMP/$chart_package" \
             "$release_assets/"
           node scripts/check-public-release-assets.mjs \
@@ -574,4 +684,7 @@ jobs:
             "$release_assets/chart-signature.sigstore.json" \
             "$release_assets/arc-controller-identity.mjs" \
             "$release_assets/steward-run-arc-preflight.mjs" \
+            "$release_assets/render-vendored-workflow.mjs" \
+            "$release_assets/steward-task-vendored.template.yml" \
+            "$release_assets/steward-task-vendored.yml" \
             "$release_assets/$chart_package"

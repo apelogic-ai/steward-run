@@ -5,6 +5,7 @@ import {
   type RequestFailureCategory,
   type RequestStage,
 } from "./failure-metadata.js";
+import { IdentityExchangeHttpError } from "./identity-exchange.js";
 import type { FetchLike } from "./oidc.js";
 
 export type RuntimeOwnership = "provisioned" | "adopted";
@@ -581,7 +582,17 @@ export class StewardClient {
         if (error instanceof Error && error.name === "TimeoutError") {
           throw new StewardRequestFailure(options.stage, "timeout");
         }
+        if (error instanceof IdentityExchangeHttpError && !error.retryable) {
+          throw new StewardRequestFailure("exchange", httpFailureCategory(error.httpStatus), {
+            httpStatus: error.httpStatus,
+          });
+        }
         if (attempt + 1 === this.#maxAttempts) {
+          if (error instanceof IdentityExchangeHttpError) {
+            throw new StewardRequestFailure("exchange", httpFailureCategory(error.httpStatus), {
+              httpStatus: error.httpStatus,
+            });
+          }
           throw new StewardRequestFailure(options.stage, transportFailureCategory(error));
         }
         try {

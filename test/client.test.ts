@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { getGitHubOidcToken } from "../src/oidc.ts";
+import { IdentityExchangeHttpError } from "../src/identity-exchange.ts";
 import {
   StewardClient,
   StewardRequestFailure,
@@ -551,6 +552,37 @@ test("the Steward client retries transient responses and honors Retry-After", as
   });
   assert.deepEqual(await client.getTask(task.taskUid), task);
   assert.deepEqual(delays, [2_000]);
+});
+
+test("Identity policy denials fail once while transient exchange failures retry", async () => {
+  for (const [status, expectedCategory, expectedCalls] of [
+    [400, "validation", 1],
+    [401, "authentication", 1],
+    [403, "authorization", 1],
+    [429, "dependency", 4],
+    [503, "dependency", 4],
+  ] as const) {
+    let calls = 0;
+    const client = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => {
+        calls += 1;
+        throw new IdentityExchangeHttpError(status, "invalid_token");
+      },
+      fetch: async () => {
+        throw new Error("Steward must not be called after an exchange failure");
+      },
+      sleep: async () => undefined,
+    });
+    await assert.rejects(client.getTask(task.taskUid), (error: unknown) => {
+      assert.ok(error instanceof StewardRequestFailure);
+      assert.equal(error.stage, "exchange");
+      assert.equal(error.category, expectedCategory);
+      assert.equal(error.httpStatus, status);
+      return true;
+    });
+    assert.equal(calls, expectedCalls, `status ${status}`);
+  }
 });
 
 test("input upload retries recreate the archive stream", async () => {

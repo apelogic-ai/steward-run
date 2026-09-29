@@ -28599,6 +28599,19 @@ var minimumRemainingLifetimeSeconds = 30;
 var allowedClockSkewSeconds = 60;
 var maximumExchangeUrlLength = 2048;
 var maximumExchangeResponseBytes = 64 * 1024;
+var oauthErrorCodePattern = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/u;
+var IdentityExchangeHttpError = class extends Error {
+  httpStatus;
+  oauthErrorCode;
+  retryable;
+  constructor(httpStatus, oauthErrorCode) {
+    super(`identity exchange request failed with status ${httpStatus}`);
+    this.name = "IdentityExchangeHttpError";
+    this.httpStatus = httpStatus;
+    this.oauthErrorCode = oauthErrorCodePattern.test(oauthErrorCode ?? "") ? oauthErrorCode : void 0;
+    this.retryable = httpStatus === 429 || httpStatus >= 500 && httpStatus <= 599;
+  }
+};
 function isLoopback(hostname) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
@@ -28652,6 +28665,18 @@ async function exchangePayload(response) {
     throw new Error("identity exchange response was incompatible");
   }
 }
+async function exchangeErrorCode(response) {
+  try {
+    const payload = await exchangePayload(response);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return void 0;
+    const candidate = payload.error;
+    return typeof candidate === "string" && oauthErrorCodePattern.test(candidate) ? candidate : void 0;
+  } catch {
+    return void 0;
+  } finally {
+    await response.body?.cancel().catch(() => void 0);
+  }
+}
 function jwtClaims(token) {
   const segments = token.split(".");
   if (segments.length !== 3 || segments.some((segment) => !segment)) return void 0;
@@ -28703,7 +28728,10 @@ function identityExchangeTokenProvider(environment, exchangeUrl, sourceFetchImpl
       throw new Error("identity exchange request failed");
     }
     if (!response.ok) {
-      throw new Error(`identity exchange request failed with status ${response.status}`);
+      throw new IdentityExchangeHttpError(
+        response.status,
+        await exchangeErrorCode(response)
+      );
     }
     const payload = await exchangePayload(response);
     const candidate = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : void 0;
@@ -29086,6 +29114,7 @@ function implicitIdentityExchangeAudienceNotice(environment) {
 // src/failure-metadata.ts
 var FAILURE_METADATA_VERSION = "steward-run.failure/v1";
 var REQUEST_FAILURE_METADATA_VERSION = "steward-run.request-failure/v1";
+var IDENTITY_EXCHANGE_FAILURE_METADATA_VERSION = "steward-run.identity-exchange/v1";
 var ASSERTION_STAGE_METADATA_VERSION = "steward-run.assertion-stage/v1";
 var PROVIDER_CONNECTION_STAGE_METADATA_VERSION = "steward-run.provider-connection-stage/v1";
 var PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION = "steward-run.provider-connection-stage/v2";
@@ -29115,7 +29144,7 @@ var failureCategories = [
   "cancelled",
   "unknown"
 ];
-var requestStages = ["submit", "upload", "execute", "poll", "output", "finalize"];
+var requestStages = ["exchange", "submit", "upload", "execute", "poll", "output", "finalize"];
 var requestFailureCategories = [
   "validation",
   "authentication",
@@ -29303,6 +29332,11 @@ async function publishFailureMetadata(metadata, sink) {
     await sink.writeAnnotation(
       `${REQUEST_FAILURE_METADATA_VERSION} stage=${safe.requestStage} category=${safe.failureCategory}${safe.httpStatus === void 0 ? "" : ` status=${safe.httpStatus}`}${safe.correlationId === void 0 ? "" : ` correlation-id=${safe.correlationId}`}`
     );
+    if (safe.requestStage === "exchange" && (safe.httpStatus === 400 || safe.httpStatus === 401 || safe.httpStatus === 403)) {
+      await sink.writeAnnotation(
+        `${IDENTITY_EXCHANGE_FAILURE_METADATA_VERSION} result=denied operator-action=check-policy-subject-event-ref`
+      );
+    }
   }
   if (safe.assertionStage !== void 0) {
     await sink.writeAnnotation(
@@ -29338,6 +29372,12 @@ async function publishFailureMetadata(metadata, sink) {
       "| --- | --- | --- | --- | --- |",
       `| ${REQUEST_FAILURE_METADATA_VERSION} | ${safe.requestStage} | ${safe.failureCategory} | ${safe.httpStatus ?? "-"} | ${safe.correlationId ?? "-"} |`
     );
+    if (safe.requestStage === "exchange" && (safe.httpStatus === 400 || safe.httpStatus === 401 || safe.httpStatus === 403)) {
+      summary.push(
+        "",
+        "Identity exchange denied this job. Check the policy repository, subject, event, and ref selectors."
+      );
+    }
   }
   if (safe.assertionStage !== void 0) {
     summary.push(
@@ -30084,7 +30124,17 @@ var StewardClient = class {
         if (error instanceof Error && error.name === "TimeoutError") {
           throw new StewardRequestFailure(options.stage, "timeout");
         }
+        if (error instanceof IdentityExchangeHttpError && !error.retryable) {
+          throw new StewardRequestFailure("exchange", httpFailureCategory(error.httpStatus), {
+            httpStatus: error.httpStatus
+          });
+        }
         if (attempt + 1 === this.#maxAttempts) {
+          if (error instanceof IdentityExchangeHttpError) {
+            throw new StewardRequestFailure("exchange", httpFailureCategory(error.httpStatus), {
+              httpStatus: error.httpStatus
+            });
+          }
           throw new StewardRequestFailure(options.stage, transportFailureCategory(error));
         }
         try {

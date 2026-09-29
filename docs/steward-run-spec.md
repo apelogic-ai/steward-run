@@ -181,7 +181,7 @@ both direct and proxied TLS connections.
 |---|---|
 | `outcome` | Action result: exactly `success` or `failure` |
 | `failure-category` | Bounded failure category; empty on success |
-| `http-status` | Numeric Steward request status when available; empty otherwise |
+| `http-status` | Numeric Steward or Identity exchange request status when available; empty otherwise |
 | `status` | Terminal phase of the Task |
 | `task-uid` | The Steward Task UID (for audit correlation) |
 | `runtime-uid` | The provisioned/adopted `AgentRuntime` UID (for audit correlation) |
@@ -225,6 +225,14 @@ optional integer HTTP status, and an optional correlation identifier accepted on
 timeout, transport, and malformed-response remain distinct. Response bodies and arbitrary headers
 are never parsed into diagnostics.
 
+An Identity exchange HTTP failure uses the same bounded request signal with
+stage `exchange`. HTTP 400, 401, and 403 are attempted once and retain their
+validation, authentication, or authorization category and numeric status.
+HTTP 429, 5xx, and network failures retain the bounded retry policy. A denied
+exchange also emits only the fixed `steward-run.identity-exchange/v1`
+operator action to check the repository, subject, event, and ref selectors;
+OAuth descriptions and response bodies are never rendered.
+
 Only those literals are rendered on failure. Arbitrary failure reasons, command output, HTTP bodies
 or headers, JWTs, assertions, provider tokens, API keys, cookies, credentials, and Kubernetes Secret
 values are neither rendered nor persisted by failure reporting. A finalization failure never
@@ -252,13 +260,19 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 ## 6. The runner image
 
 - Base: pinned `actions/runner`.
+- Ubuntu packages are exact-version pinned and resolved from a timestamped
+  Ubuntu snapshot. Operators refresh the snapshot and pins together after
+  verifying both architectures; vulnerability-driven exceptions are explicit
+  reviewed source changes, never an unpinned rebuild.
 - Plus the `steward-run` prerequisites; agent runtime configuration and skills belong to the
   immutable Steward Workflow and are not caller inputs or image contents.
 - **No secrets, minimal packages** (the modern runner image ships lean on purpose; add only what
   the agent needs). Multi-stage build; pinned digests.
 - Published publicly to GHCR as a multi-platform OCI index by version. The
   public release manifest's schema-3 `image` field identifies this signed image
-  both as the ARC runner and as the public governed job-container image.
+  both as the ARC runner and as the exact public governed job-container image
+  embedded in the reusable workflow. The pre-tag image is signed on the default
+  branch and promoted unchanged to the release version tag.
   Environment config pins the image by digest. Independently built forks are
   separate distributions and are not covered by the public installation
   guide or release manifest.
@@ -278,6 +292,11 @@ env. Verify current GitHub Actions OIDC + artifact APIs when implementing.
 - **Consumed by ARC/operator configuration** (the scale set pins the image)
   and **by customer workflows** (the reusable workflow is pinned to the exact
   public release commit).
+- **Private-fork composition:** the release ships a generated, vendorable
+  self-hosted reusable workflow whose action reference is the manifest's exact
+  `workflowRepository` and `actionCommit`. A caller repository copies that
+  workflow locally and grants the private fork Actions access; runtime PATs
+  and hand-edited upstream workflow files are not part of the contract.
 - **Verified contract:** `contracts/steward-run-v1.openapi.yaml` records Steward's `/v1/tasks`
   submission, input, execute, status, output, and finalization operations. Workspace-relative
   input and output tar archives are limited to 64 MiB each.

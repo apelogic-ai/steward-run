@@ -7,6 +7,7 @@ import {
   PROVIDER_CONNECTION_STAGE_V2_METADATA_VERSION,
   PROVIDER_CONNECTION_STAGE_V3_METADATA_VERSION,
   REQUEST_FAILURE_METADATA_VERSION,
+  IDENTITY_EXCHANGE_FAILURE_METADATA_VERSION,
   StewardRunFailure,
   assertionStages,
   classifyAssertionStage,
@@ -91,7 +92,7 @@ test("failure metadata uses a versioned bounded category allowlist", () => {
 
 test("request failures publish a separate bounded diagnostic contract", async () => {
   assert.equal(REQUEST_FAILURE_METADATA_VERSION, "steward-run.request-failure/v1");
-  assert.deepEqual(requestStages, ["submit", "upload", "execute", "poll", "output", "finalize"]);
+  assert.deepEqual(requestStages, ["exchange", "submit", "upload", "execute", "poll", "output", "finalize"]);
   assert.deepEqual(requestFailureCategories, [
     "validation",
     "authentication",
@@ -129,6 +130,32 @@ test("request failures publish a separate bounded diagnostic contract", async ()
     summaries[0] ?? "",
     /\| steward-run\.request-failure\/v1 \| submit \| authentication \| 401 \| request-01HZABC \|/u,
   );
+});
+
+test("Identity exchange denials publish a fixed operator action", async () => {
+  assert.equal(
+    IDENTITY_EXCHANGE_FAILURE_METADATA_VERSION,
+    "steward-run.identity-exchange/v1",
+  );
+  const visible: string[] = [];
+  await publishFailureMetadata(
+    {
+      version: FAILURE_METADATA_VERSION,
+      phase: "unavailable",
+      failureCategory: "authentication",
+      cleanupCategory: "not-required",
+      requestStage: "exchange",
+      httpStatus: 401,
+    },
+    {
+      writeAnnotation: async (value) => void visible.push(value),
+      writeStepSummary: async (value) => void visible.push(value),
+    },
+  );
+  const rendered = visible.join("\n");
+  assert.match(rendered, /steward-run\.request-failure\/v1 stage=exchange category=authentication status=401/u);
+  assert.match(rendered, /steward-run\.identity-exchange\/v1 result=denied operator-action=check-policy-subject-event-ref/u);
+  assert.match(rendered, /Check the policy repository, subject, event, and ref selectors/u);
 });
 
 test("request diagnostics reject unbounded or hostile header data", async () => {

@@ -66,6 +66,23 @@ network access to the selected base registries, GitHub action sources, GHCR
 publication endpoints, and the pinned ORAS download; only Helm dependency
 resolution is source-complete and offline.
 
+The exact Ubuntu packages are resolved from the immutable
+`snapshot.ubuntu.com` timestamp in `Dockerfile`, not from the moving archive.
+This keeps an unchanged source commit rebuildable after Ubuntu supersedes a
+package version. To refresh packages, choose a reviewed UTC snapshot after the
+required fixes were published, update `UBUNTU_SNAPSHOT` and every explicit
+`name=version` together, build both native architectures, and verify installed
+versions with `dpkg-query`. Do not remove exact versions or point a reviewed
+release at the moving archive. A plain upstream `docker build .` has a safe
+upstream source-label default; every fork release must still pass its own
+`SOURCE_REPOSITORY` build argument.
+
+Run the fixable-critical vulnerability gate against both runnable child
+manifests after a package refresh. A fixable critical finding cannot be waived.
+An unfixed registry-critical finding requires the exact package/CVE acceptance,
+security-owner review, substantive justification, and short expiry defined in
+the [vulnerability policy](security/vulnerability-policy.md).
+
 ## 3. Prepare one version
 
 Choose `X.Y.Z` and update these files in one reviewed commit on the default
@@ -87,49 +104,40 @@ A fork must also replace its distribution identity before the first tag:
   replace `jobs.governed.container.image` in
   `.github/workflows/steward-task.yml` with its immutable index digest.
 
-Before every release, confirm that the wrapper digest is still supported and
-free of release-blocking findings. Re-pin it deliberately as part of the
-release-preparation pull request; do not let the governed job-container image
-silently trail the release. The previous signed release image is normally the
-right input. When the current source contains a required image fix, use the
-portable release workflow's `bootstrap` operation to build and verify a new
-multi-platform digest on the configured native runners before tagging.
+Before every release, use the portable release workflow's `bootstrap`
+operation to build and verify the prepared version on the configured native
+runners. Re-pin its digest deliberately as part of the release-preparation
+pull request; do not let the governed job-container image silently trail the
+release.
 
-For the first fork release, or whenever the current source must be bootstrapped,
-dispatch **Portable OSS release**, select `bootstrap`, and enter the prepared
-version. The workflow verifies both native child images, publishes the immutable
-`bootstrap-X.Y.Z-<commit>` index, and prints its digest in the run summary. Pin
-that exact digest in `.github/workflows/steward-task.yml`, rerun the normal CI,
-and merge the reviewed result before tagging.
+For every fork release, dispatch **Portable OSS release**, select `bootstrap`,
+and enter the prepared version. The workflow verifies both native child images,
+publishes the immutable
+`job-container-X.Y.Z-<commit>` index, keyless-signs its digest with the fork's
+default-branch workflow identity, and prints the digest in the run summary.
+Pin that exact digest in `.github/workflows/steward-task.yml`, rerun the normal
+CI, and merge the reviewed result before tagging. Release publication promotes
+that digest unchanged to `X.Y.Z`; the final schema-3 manifest records it in
+the existing `image` field mapped into Steward's `governedJobContainerImage`.
 
-If GitHub Actions is unavailable, an equivalently trusted native
-multi-platform builder can create the bootstrap digest. Authenticate Docker to
-GHCR with the fork owner's existing GitHub CLI session, then run:
-
-```sh
-set -euo pipefail
-FORK_OWNER=YOUR_FORK_OWNER
-VERSION=X.Y.Z
-REVISION="$(git rev-parse HEAD)"
-IMAGE="ghcr.io/$(printf '%s' "$FORK_OWNER" | tr '[:upper:]' '[:lower:]')/steward-run"
-gh auth token | docker login ghcr.io --username "$FORK_OWNER" --password-stdin
-docker buildx build --platform linux/amd64,linux/arm64 --push \
-  --build-arg VERSION="$VERSION-bootstrap" \
-  --build-arg REVISION="$REVISION" \
-  --build-arg SOURCE_REPOSITORY="https://github.com/$FORK_OWNER/steward-run" \
-  --tag "$IMAGE:bootstrap-$VERSION" .
-DIGEST="$(docker buildx imagetools inspect "$IMAGE:bootstrap-$VERSION" | \
-  awk '$1 == "Digest:" { print $2; exit }')"
-test "${#DIGEST}" -eq 71
-printf '%s@%s\n' "$IMAGE" "$DIGEST"
-```
+There is no unsigned local-build fallback for this step. The release preflight
+requires the selected job-container digest to carry a keyless signature from
+this repository's portable workflow on its default branch. If the configured
+native GitHub Actions builders are unavailable, restore them or configure
+equivalent trusted native runner labels before continuing.
 
 Commit the exact printed `IMAGE@sha256:...` value in the wrapper. The release
 preflight rejects a job-container owner that differs from the fork owner and
-rejects unchanged upstream chart/Artifact Hub identity. The normal case after
-the first release is to pin the previous release's signed image digest.
-Bootstrap again whenever that prior image does not contain a required security
-or runtime fix.
+rejects unchanged upstream chart/Artifact Hub identity.
+
+Repositories that published a legacy `bootstrap-*` tag can dispatch
+`retire-bootstrap` with the exact version, tag, and digest. The workflow checks
+the two runnable platforms, promotes the digest to `job-container-X.Y.Z`,
+keyless-signs and verifies it with the maintenance-only
+`steward-run-operation=retire-bootstrap` annotation, then deletes only the
+named legacy tag. Release publication rejects that annotation and accepts only
+normal `bootstrap` signatures bound to the released version and source
+revision. Never delete an unpromoted digest that a released wrapper still pins.
 
 Run `npm run check` again and merge that commit normally. Do not tag an
 unmerged pull-request commit.
@@ -150,8 +158,8 @@ git tag -a "v$VERSION" -m "steward-run v$VERSION"
 git push origin "v$VERSION"
 ```
 
-The tag starts `.github/workflows/portable-release.yml`. It builds native
-amd64 and arm64 images, publishes the multi-platform image and application
+The tag starts `.github/workflows/portable-release.yml`. It verifies and
+promotes the signed pre-tag multi-platform image, publishes the application
 chart under `ghcr.io/<fork-owner>`, signs both OCI digests and the release
 inventory with the fork's tag-bound GitHub OIDC identity, and creates the
 GitHub release. The schema-3 manifest records the tag commit as both
@@ -163,8 +171,8 @@ artifacts and their signature material to another OCI registry requires a
 separately reviewed mirroring and signing procedure and is outside this
 workflow's contract.
 
-Watch the run and stop on any failed preflight, build, attestation, signature,
-or public-asset check:
+Watch the run and stop on any failed preflight, promotion, attestation,
+signature, or public-asset check:
 
 ```sh
 gh run list --repo FORK_OWNER/steward-run --workflow portable-release.yml \
@@ -217,11 +225,22 @@ Kubernetes/ARC window, and fork-specific security contact. Installation uses
 the normal guide with `RELEASE_REPOSITORY=FORK_OWNER/steward-run`.
 
 A public fork's reusable workflow can be consumed directly from another
-repository at the manifest's exact `workflowCommit`. A private fork does not
-make its source readable to another repository's `GITHUB_TOKEN`, and the
-workflow deliberately accepts no PAT or checkout-token input. For a private
-distribution, keep the caller in the same repository or use a separately
-reviewed vendored workflow/action copy.
+repository at the manifest's exact `workflowCommit`. For a private fork used by
+another repository in the same organization, enable that caller under
+**Settings → Actions → General → Access**, then copy the verified release asset
+`steward-task-vendored.yml` to the caller's
+`.github/workflows/steward-task-vendored.yml`. Steward currently renders the
+remote reusable-workflow reference, so change only its `uses:` line to
+`./.github/workflows/steward-task-vendored.yml`; [Steward issue
+#218](https://github.com/apelogic-ai/steward/issues/218) tracks native local
+rendering. That official file is generated from
+`vendor/steward-task-vendored.yml` and the signed manifest's
+`workflowRepository` and `actionCommit`; CI proves it differs from the
+supported self-hosted workflow only by removing the internal checkout boundary
+and using the immutable direct action reference. It accepts no PAT or checkout
+token. The strict default requires at least one file under `out/`; an empty
+result stops with `the task wrote nothing to out/` before artifact upload.
+Release notes flag changes so callers know when to refresh the vendored file.
 
 Monitor Dependabot and vulnerability-gate results. GitHub requires
 self-hosted runners to be updated within 30 days of a new runner release, so a

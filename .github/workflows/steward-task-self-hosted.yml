@@ -72,7 +72,7 @@ on:
         description: Bounded steward-run failure category; empty on success
         value: ${{ jobs.governed.outputs.failure-category }}
       http-status:
-        description: HTTP status for a classified Steward request failure; empty otherwise
+        description: HTTP status for a classified Steward or Identity exchange failure; empty otherwise
         value: ${{ jobs.governed.outputs.http-status }}
       status:
         description: Terminal Steward Task phase
@@ -172,6 +172,14 @@ jobs:
           steward-ca-certificate-file: ${{ inputs.steward-ca-certificate-file }}
           agent-runtime: ${{ inputs.agent-runtime }}
           runtime-binding-timeout-minutes: ${{ inputs.runtime-binding-timeout-minutes }}
+      - name: Require governed outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -d out ]] || ! find out -type f -print -quit | grep -q .; then
+            echo "::error::the task wrote nothing to out/"
+            exit 1
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.output-artifact }}

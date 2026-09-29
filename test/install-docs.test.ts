@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
 
-test("the v0.7.5 guide is one self-contained operator runbook", async () => {
+test("the v0.7.6 guide is one self-contained operator runbook", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const guide = await readFile(new URL("../docs/installation.md", import.meta.url), "utf8");
   const historical = await readFile(new URL("../docs/installation-v0.5.0.md", import.meta.url), "utf8");
@@ -16,8 +16,8 @@ test("the v0.7.5 guide is one self-contained operator runbook", async () => {
     await readFile(new URL("../charts/steward-run/Chart.yaml", import.meta.url), "utf8"),
   ) as { kubeVersion?: string };
 
-  assert.match(readme, /v0\.7\.5 installation, setup, and integration guide/u);
-  assert.match(arcReadme, /v0\.7\.5/u);
+  assert.match(readme, /v0\.7\.6 installation, setup, and integration guide/u);
+  assert.match(arcReadme, /v0\.7\.6/u);
   assert.match(historical, /Historical release guide/u);
   assert.equal(applicationChart.kubeVersion, ">=1.32.0-0 <1.37.0-0");
   assert.equal(libraryChart.kubeVersion, applicationChart.kubeVersion);
@@ -62,8 +62,9 @@ test("the v0.7.5 guide is one self-contained operator runbook", async () => {
     assert.ok(guide.includes(marker), marker);
   }
   assert.match(guide, /schema 3/u);
-  assert.match(guide, /manifest remains schema 3[\s\S]*?`image`[\s\S]*?ARC runner and governed job-container/u);
+  assert.match(guide, /manifest remains schema 3[\s\S]*?`image`[\s\S]*?governed job-container/u);
   assert.match(guide, /governedJobContainerImage/u);
+  assert.doesNotMatch(guide, /workflowJobContainerImage/u);
   assert.match(guide, /refs\/heads\/main/u);
   assert.match(
     guide,
@@ -125,10 +126,14 @@ test("the public upstream and private-fork integration boundaries are explicit",
 
   for (const document of [guide, readme]) {
     assert.match(document, /public upstream workflow directly|Direct consumption of the public upstream reusable workflow is supported/u);
-    assert.match(document, /different private fork|different repository cannot assume/u);
-    assert.match(document, /no PAT|accepts no\s+PAT/u);
+    assert.match(document, /private fork|private-fork/u);
+    assert.match(document, /no PAT|accepts no\s+PAT|No PAT/u);
     assert.match(document, /job_workflow_ref/u);
   }
+  assert.match(guide, /Private fork consumed by another repository/u);
+  assert.match(guide, /steward-task-vendored\.template\.yml/u);
+  assert.match(guide, /uses: \.\/\.github\/workflows\/steward-task-vendored\.yml/u);
+  assert.match(guide, /Steward issue[\s\S]*?#218/u);
   assert.match(guide, /no workflow-ref or workflow-SHA selector/u);
   assert.match(guide, /numeric GitHub owner and repository IDs/u);
   assert.match(guide, /github-oidc-exchange\/issues\/82/u);
@@ -144,13 +149,14 @@ test("the public upstream and private-fork integration boundaries are explicit",
 
 test("current authentication, timeout, links, and examples cannot drift", async () => {
   const root = new URL("..", import.meta.url).pathname;
-  const [guide, readme, specification, actionSource, arcReadme, libraryReadme, releaseNotes, priorReleaseNotes] = await Promise.all([
+  const [guide, readme, specification, actionSource, arcReadme, libraryReadme, releaseNotes, securityReleaseNotes, priorReleaseNotes] = await Promise.all([
     readFile(new URL("../docs/installation.md", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/steward-run-spec.md", import.meta.url), "utf8"),
     readFile(new URL("../action.yml", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run-arc/README.md", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run/README.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/release-notes-v0.7.6.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.7.5.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.7.4.md", import.meta.url), "utf8"),
   ]);
@@ -203,8 +209,10 @@ test("current authentication, timeout, links, and examples cannot drift", async 
   assert.match(guide, /Discovery compares raw strings[\s\S]*?taskIdentity\.resource[\s\S]*?Identity's `issuer` exactly/u);
   assert.match(priorReleaseNotes, /proxy variables are newly honored/u);
   assert.match(priorReleaseNotes, /private-CA request path now follows redirects/u);
-  assert.match(releaseNotes, /CVE-2026-75803/u);
-  assert.match(releaseNotes, /v0\.7\.4 remains affected/u);
+  assert.match(releaseNotes, /failure-category=authentication/u);
+  assert.match(releaseNotes, /steward-task-vendored\.yml/u);
+  assert.match(securityReleaseNotes, /CVE-2026-75803/u);
+  assert.match(securityReleaseNotes, /v0\.7\.4 remains affected/u);
   assert.doesNotMatch(guide, /https:\/\/steward\.customer\.example\/api\b/u);
   assert.doesNotMatch(guide, /"https:\/\/identity\.customer\.example\/"/u);
 
@@ -212,7 +220,8 @@ test("current authentication, timeout, links, and examples cannot drift", async 
     [new URL("../README.md", import.meta.url), readme],
     [new URL("../docs/installation.md", import.meta.url), guide],
     [new URL("../docs/steward-run-spec.md", import.meta.url), specification],
-    [new URL("../docs/release-notes-v0.7.5.md", import.meta.url), releaseNotes],
+    [new URL("../docs/release-notes-v0.7.6.md", import.meta.url), releaseNotes],
+    [new URL("../docs/release-notes-v0.7.5.md", import.meta.url), securityReleaseNotes],
     [new URL("../docs/release-notes-v0.7.4.md", import.meta.url), priorReleaseNotes],
     [new URL("../charts/steward-run-arc/README.md", import.meta.url), arcReadme],
     [new URL("../charts/steward-run/README.md", import.meta.url), libraryReadme],

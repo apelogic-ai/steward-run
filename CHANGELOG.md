@@ -7,6 +7,37 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-09-29
+
+### Added
+
+- Added an official manifest-rendered, checksum-bound
+  `steward-task-vendored.yml` reusable
+  workflow for cross-repository consumers of private forks, with a structural
+  equivalence gate, an explicit empty-output diagnostic, and no PAT or
+  checkout-token input.
+- Added signed governed job-container publication. The pre-tag digest is
+  promoted unchanged to the release version, so the schema-3 handoff's
+  existing `image` field is the exact wrapper image and remains Steward's
+  `governedJobContainerImage` source.
+
+### Changed
+
+- Identity exchange 400, 401, and 403 responses now fail after one attempt at
+  the bounded `exchange` stage with their HTTP status and correct category.
+  Exchange 429, 5xx, and network failures remain retryable.
+- Runner builds resolve exact Ubuntu packages from a dated immutable snapshot,
+  keeping reviewed source rebuildable after moving archive packages are
+  superseded.
+- Pre-tag job-container images use durable `job-container-*` tags and are
+  keyless-signed by immutable digest only after their exact native inputs are
+  verified. Release promotion binds the image version, repository, revision,
+  and Dockerfile to the tag. A guarded maintenance operation uses a distinct
+  non-release signature while promoting and removing the legacy public
+  `bootstrap-*` tag.
+- The release publisher installs its vendored-chart validator dependencies
+  before packaging, closing the recovery-only gap observed during v0.7.5.
+
 ## [0.7.5] - 2026-09-28
 
 ### Added
@@ -255,7 +286,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.5...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.6...HEAD
+[0.7.6]: https://github.com/apelogic-ai/steward-run/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/apelogic-ai/steward-run/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/apelogic-ai/steward-run/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/apelogic-ai/steward-run/compare/v0.7.2...v0.7.3

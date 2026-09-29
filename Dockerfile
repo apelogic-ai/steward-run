@@ -4,7 +4,8 @@ FROM ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b7
 
 ARG VERSION=0.0.0-dev
 ARG REVISION=unknown
-ARG SOURCE_REPOSITORY
+ARG SOURCE_REPOSITORY=https://github.com/apelogic-ai/steward-run
+ARG UBUNTU_SNAPSHOT=20260928T000000Z
 LABEL org.opencontainers.image.title="steward-run" \
       org.opencontainers.image.description="Thin ARC runner for governed Steward jobs" \
       org.opencontainers.image.version="${VERSION}" \
@@ -14,8 +15,17 @@ LABEL org.opencontainers.image.title="steward-run" \
 
 USER root
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
-RUN apt-get update \
-    && test -n "$SOURCE_REPOSITORY" \
+RUN test -n "$SOURCE_REPOSITORY" \
+    && printf '%s' "$UBUNTU_SNAPSHOT" | grep -Eq '^[0-9]{8}T[0-9]{6}Z$' \
+    && sed -i "s|^URIs: .*$|URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/|" \
+       /etc/apt/sources.list.d/ubuntu.sources \
+    && grep -Fq "URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/" \
+       /etc/apt/sources.list.d/ubuntu.sources \
+    && ! grep -Eq '^URIs: .*https?://(archive|security|ports)\.ubuntu\.com' \
+       /etc/apt/sources.list.d/ubuntu.sources \
+    && printf 'Acquire::Check-Valid-Until "false";\n' \
+       > /etc/apt/apt.conf.d/99steward-run-snapshot \
+    && apt-get update --error-on=any \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --only-upgrade \
        libc6=2.39-0ubuntu8.9 \
        libc-bin=2.39-0ubuntu8.9 \
