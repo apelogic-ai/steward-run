@@ -203,12 +203,11 @@ jobs:
           docker buildx imagetools inspect "$IMAGE:$TAG" --raw > "$RUNNER_TEMP/bootstrap-index.json"
           node scripts/verify-runnable-image-platforms.mjs \
             "$RUNNER_TEMP/bootstrap-index.json" linux/amd64 linux/arm64
-          # shellcheck disable=SC2016
-          digest="$(docker buildx imagetools inspect "$IMAGE:$TAG" | awk '$1 == "Digest:" { print $2; exit }')"
+          digest="$(docker buildx imagetools inspect "$IMAGE:$TAG" | sed -n 's/^Digest:[[:space:]]*//p')"
           [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
           {
             printf '## Bootstrap runner image\n\n'
-            printf '`%s@%s`\n' "$IMAGE" "$digest"
+            printf '\x60%s@%s\x60\n' "$IMAGE" "$digest"
           } >> "$GITHUB_STEP_SUMMARY"
 
   preflight:
@@ -273,10 +272,16 @@ jobs:
             .github/workflows/steward-task.yml)"
           [[ "$job_container_image" =~ ^ghcr\.io/$owner/steward-run@sha256:[a-f0-9]{64}$ ]]
           if [[ "$owner" != "apelogic-ai" ]]; then
-            ! grep -Fq "github.com/apelogic-ai/steward-run" \
-              charts/steward-run-arc/Chart.yaml charts/steward-run-arc/README.md
-            ! grep -Fq "repositoryID: b580a641-1bdf-4ff1-ad22-8a64a6cc696a" \
-              charts/steward-run-arc/artifacthub-repo.yml
+            if grep -Fq "github.com/apelogic-ai/steward-run" \
+              charts/steward-run-arc/Chart.yaml charts/steward-run-arc/README.md; then
+              printf 'fork release retains upstream chart identity\n' >&2
+              exit 1
+            fi
+            if grep -Fq "repositoryID: b580a641-1bdf-4ff1-ad22-8a64a6cc696a" \
+              charts/steward-run-arc/artifacthub-repo.yml; then
+              printf 'fork release retains upstream Artifact Hub identity\n' >&2
+              exit 1
+            fi
           fi
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             printf 'release v%s already exists\n' "$VERSION" >&2

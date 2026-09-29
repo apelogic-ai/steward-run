@@ -14,6 +14,11 @@ chart coordinates, signer identity, Kubernetes 1.32–1.36 support, and ARC
 - Both native image jobs verify the installed versions, and the CVE remains in
   the registry-critical ID baseline so a scanner severity mismatch cannot hide
   a regression. No vulnerability acceptance is used.
+- The container-based reusable workflow now pins a v0.7.5 bootstrap image built
+  on the same trusted native runners. Both children were verified at the fixed
+  package version before the immutable multi-platform index was composed, and
+  CI pulls the pinned digest on both architectures to prevent it silently
+  lagging the release again.
 - v0.7.4 remains affected at `3.0.13-0ubuntu3.12`. Operators must upgrade the
   image digest, chart package, and reusable-workflow commit together to v0.7.5.
   Rolling back to v0.7.4 reintroduces this vulnerability.
@@ -32,6 +37,10 @@ chart coordinates, signer identity, Kubernetes 1.32–1.36 support, and ARC
   on that branch, and rejects upstream job-container or chart identity in a
   fork. Native amd64 and arm64 release runner labels are repository variables
   with GitHub-hosted defaults.
+- The portable workflow has a pre-tag `bootstrap` operation for security or
+  runtime fixes that cannot wait for the next signed release image. The rebuild
+  runbook makes deliberate wrapper-image review and re-pinning a required part
+  of every release preparation.
 - The schema-3 manifest now records the tag commit as both `workflowCommit`
   and `actionCommit`, matching the immutable self-pinned action source.
 
