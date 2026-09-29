@@ -100,21 +100,21 @@ test("the package metadata identifies the in-cluster integration release", async
     await readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   ) as { version: string; packages: Record<string, { version?: string }> };
 
-  assert.equal(packageJson.version, "0.7.3");
+  assert.equal(packageJson.version, "0.7.4");
   assert.equal(packageJson.license, "MIT");
-  assert.equal(packageLock.version, "0.7.3");
-  assert.equal(packageLock.packages[""]?.version, "0.7.3");
+  assert.equal(packageLock.version, "0.7.4");
+  assert.equal(packageLock.packages[""]?.version, "0.7.4");
   for (const chart of ["steward-run", "steward-run-arc"]) {
     const metadata = await readFile(
       new URL(`../charts/${chart}/Chart.yaml`, import.meta.url),
       "utf8",
     );
-    assert.match(metadata, /^appVersion: 0\.7\.3$/mu);
+    assert.match(metadata, /^appVersion: 0\.7\.4$/mu);
   }
   const libraryChart = await readFile(new URL("../charts/steward-run/Chart.yaml", import.meta.url), "utf8");
   const applicationChart = await readFile(new URL("../charts/steward-run-arc/Chart.yaml", import.meta.url), "utf8");
   assert.match(libraryChart, /^version: 0\.1\.1$/mu);
-  assert.match(applicationChart, /^version: 0\.7\.3$/mu);
+  assert.match(applicationChart, /^version: 0\.7\.4$/mu);
 });
 
 test("Docker base images receive updates inside the runner support window", async () => {

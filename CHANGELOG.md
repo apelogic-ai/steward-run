@@ -7,6 +7,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-09-28
+
 ### Added
 
 - Added standard HTTP(S) proxy and `NO_PROXY` support across GitHub OIDC,
@@ -21,7 +23,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 - Removed the obsolete AWS/ECR release workflow and its role assumption,
   registry variables, promotion, scan handoff, and dead release helpers. Public
-  tag releases now stage a fixed asset set and reject private registry
+  tag releases now stage a fixed asset set and reject deployment-specific
   references before GitHub publication.
 - Tightened the ARC chart to reject unsupported GitHub Enterprise account URLs
   and documented its deliberate scale-to-zero, direct-mode, single-container,
@@ -218,7 +220,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.4...HEAD
+[0.7.4]: https://github.com/apelogic-ai/steward-run/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/apelogic-ai/steward-run/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/apelogic-ai/steward-run/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/apelogic-ai/steward-run/compare/v0.7.0...v0.7.1

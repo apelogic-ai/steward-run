@@ -4,7 +4,7 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-The [v0.7.3 installation, setup, and integration guide](docs/installation.md)
+The [v0.7.4 installation, setup, and integration guide](docs/installation.md)
 describes the current release contract. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
 authoritative guide for v0.5.0, which predates authentication discovery and
 requires the explicit Identity exchange inputs.
@@ -15,10 +15,10 @@ The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. Release `v0.7.3` publishes the standalone
-multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.3` and the
+long-running Steward API service. Release `v0.7.4` publishes the standalone
+multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.4` and the
 application chart in
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.3`; the
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.4`; the
 [Artifact Hub package](https://artifacthub.io/packages/helm/steward-run/steward-run-arc)
 indexes the same OCI repository. The
 attached `oss-release-manifest.json` records both immutable OCI digests, the
@@ -257,7 +257,7 @@ input/output paths and remove it with the disposable cluster.
 `portable-release.yml` publishes the public GHCR image, OCI chart, release
 manifest, checksums, verified embedded provenance/SBOM summary, tag-bound signatures, chart
 archive, and read-only ARC preflight without cloud-specific infrastructure
-inputs. Private-registry promotion is deployment-owned and absent from this
+inputs. Deployment-specific promotion is deployment-owned and absent from this
 repository. Before creating a GitHub release, the workflow stages an exact
-asset set and rejects AWS account/role coordinates, private registry hosts,
-and internal hostnames in both text assets and the packaged chart.
+asset set and rejects AWS account/role coordinates and deployment-only
+hostnames in both text assets and the packaged chart.

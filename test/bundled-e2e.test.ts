@@ -146,6 +146,7 @@ test("both supported wrappers pin and execute the discovery-capable action bundl
     const bundle = execFileSync("git", ["show", `${pins[0]}:dist/index.cjs`], {
       cwd: repository,
       encoding: "utf8",
+      maxBuffer: 4 * 1024 * 1024,
     });
     await mkdir(join(workspace, "in"));
     await writeFile(join(workspace, "in", "payload.bin"), "fixture");
