@@ -6,6 +6,7 @@ import test from "node:test";
 import { shortLivedBearerTokenFileProvider } from "../src/auth.ts";
 import {
   compatibilityInputNotice,
+  implicitIdentityExchangeAudienceNotice,
   readActionConfig,
   usedCompatibilityInputs,
 } from "../src/config.ts";
@@ -88,15 +89,23 @@ test("compatibility input notices reveal names but never supplied values", () =>
   };
   assert.deepEqual(usedCompatibilityInputs(environment), [
     "identity-exchange-url",
-    "identity-exchange-audience",
     "steward-ca-certificate-file",
   ]);
   assert.deepEqual(usedCompatibilityInputs(baseEnvironment), []);
   const notices = usedCompatibilityInputs(environment).map(compatibilityInputNotice).join("\n");
-  for (const name of ["identity-exchange-url", "identity-exchange-audience", "steward-ca-certificate-file"]) {
+  for (const name of ["identity-exchange-url", "steward-ca-certificate-file"]) {
     assert.match(notices, new RegExp(name));
   }
   assert.doesNotMatch(notices, /secret\.example|secret-audience|\/secret\/ca\.pem/u);
+  assert.equal(implicitIdentityExchangeAudienceNotice(environment), undefined);
+  const implicit = implicitIdentityExchangeAudienceNotice({
+    ...baseEnvironment,
+    STEWARD_RUN_IDENTITY_EXCHANGE_URL: "https://secret.example/v1/exchange",
+  });
+  assert.match(implicit ?? "", /identity-exchange-audience was omitted/u);
+  assert.match(implicit ?? "", /apelogic-github-identity-exchange/u);
+  assert.doesNotMatch(implicit ?? "", /secret\.example/u);
+  assert.equal(implicitIdentityExchangeAudienceNotice(baseEnvironment), undefined);
 });
 
 test("direct GitHub OIDC authentication is restricted to loopback Steward tests", () => {

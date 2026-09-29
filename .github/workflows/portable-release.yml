@@ -344,9 +344,9 @@ jobs:
           PASS ARC 0.14.2 controller arc-system/arc-gha-rs-controller
           PASS controller ServiceAccount arc-system/arc-gha-rs-controller
           EOF
-          gh release create "v$VERSION" --target "$GITHUB_SHA" \
-            --title "steward-run v$VERSION" \
-            --notes-file "$RUNNER_TEMP/release-notes.md" \
+          release_assets="$RUNNER_TEMP/public-release-assets"
+          mkdir "$release_assets"
+          cp \
             "$RUNNER_TEMP/oss-release-manifest.json" \
             "$RUNNER_TEMP/oss-release-manifest.sigstore.json" \
             "$RUNNER_TEMP/SHA256SUMS" \
@@ -356,4 +356,20 @@ jobs:
             "$RUNNER_TEMP/chart-signature.sigstore.json" \
             "$RUNNER_TEMP/arc-controller-identity.mjs" \
             "$RUNNER_TEMP/steward-run-arc-preflight.mjs" \
-            "$RUNNER_TEMP/$chart_package"
+            "$RUNNER_TEMP/$chart_package" \
+            "$release_assets/"
+          node scripts/check-public-release-assets.mjs \
+            "$release_assets" "$RUNNER_TEMP/release-notes.md"
+          gh release create "v$VERSION" --target "$GITHUB_SHA" \
+            --title "steward-run v$VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            "$release_assets/oss-release-manifest.json" \
+            "$release_assets/oss-release-manifest.sigstore.json" \
+            "$release_assets/SHA256SUMS" \
+            "$release_assets/SHA256SUMS.sigstore.json" \
+            "$release_assets/release-attestation-summary.json" \
+            "$release_assets/image-signature.sigstore.json" \
+            "$release_assets/chart-signature.sigstore.json" \
+            "$release_assets/arc-controller-identity.mjs" \
+            "$release_assets/steward-run-arc-preflight.mjs" \
+            "$release_assets/$chart_package"

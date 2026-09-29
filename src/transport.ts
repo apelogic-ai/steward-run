@@ -1,14 +1,14 @@
 import { X509Certificate } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { request as httpRequest, type IncomingMessage } from "node:http";
-import { request as httpsRequest } from "node:https";
-import { Readable } from "node:stream";
 import { getCACertificates } from "node:tls";
+import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 import type { FetchLike } from "./oidc.js";
+
+export type CloseableFetch = FetchLike & { close: () => Promise<void> };
 
 const certificatePattern = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/gu;
 
-async function trustedCaBundle(path: string): Promise<string> {
+async function trustedCaBundle(path: string): Promise<string[]> {
   let source: string;
   try {
     source = await readFile(path, "utf8");
@@ -25,146 +25,30 @@ async function trustedCaBundle(path: string): Promise<string> {
   } catch {
     throw new Error("Steward CA certificate file does not contain a valid CA certificate");
   }
-  return certificates.join("\n");
+  return certificates;
 }
 
-function headersFrom(response: IncomingMessage): Headers {
-  const headers = new Headers();
-  for (let index = 0; index < response.rawHeaders.length; index += 2) {
-    const name = response.rawHeaders[index];
-    const value = response.rawHeaders[index + 1];
-    if (name && value !== undefined) headers.append(name, value);
-  }
-  return headers;
-}
-
-function pipeBody(
-  body: Readable,
-  request: ReturnType<typeof httpsRequest>,
-): void {
-  body.once("error", (error) => request.destroy(error));
-  body.pipe(request);
-}
-
-function isAsyncIterableBody(value: object): value is AsyncIterable<Uint8Array | string> {
-  return Symbol.asyncIterator in value && typeof value[Symbol.asyncIterator] === "function";
-}
-
-function writeBody(request: ReturnType<typeof httpsRequest>, body: unknown): void {
-  if (body === undefined || body === null) {
-    request.end();
-  } else if (
-    typeof body === "string" ||
-    body instanceof Uint8Array ||
-    body instanceof ArrayBuffer
-  ) {
-    request.end(body);
-  } else if (body instanceof URLSearchParams) {
-    request.end(body.toString());
-  } else if (body instanceof Readable) {
-    pipeBody(body, request);
-  } else if (typeof body === "object" && isAsyncIterableBody(body)) {
-    // tar-stream Pack objects are backed by streamx. They satisfy the Node
-    // async-iterable stream contract, but are not instanceof node:stream.Readable.
-    pipeBody(Readable.from(body), request);
-  } else if (typeof body === "object" && "getReader" in body) {
-    pipeBody(
-      Readable.fromWeb(body as import("node:stream/web").ReadableStream),
-      request,
-    );
-  } else {
-    request.destroy(new Error("unsupported Steward request body"));
-  }
-}
-
-function privateCaFetch(ca: string): FetchLike {
-  return async (input, init = {}) => {
-    const url = new URL(input instanceof Request ? input.url : input);
-    const method = (init.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-    const requestHeaders = new Headers(
-      init.headers ?? (input instanceof Request ? input.headers : undefined),
-    );
-    return new Promise<Response>((resolve, reject) => {
-      const handleResponse = (response: IncomingMessage): void => {
-        const status = response.statusCode ?? 500;
-        const noBody = method === "HEAD" || status === 204 || status === 205 || status === 304;
-        const responseInit = {
-          status,
-          ...(response.statusMessage ? { statusText: response.statusMessage } : {}),
-          headers: headersFrom(response),
-        };
-        if (noBody) {
-          let settled = false;
-          const cleanup = (): void => {
-            response.off("end", onEnd);
-            response.off("error", onError);
-            response.off("aborted", onAborted);
-            response.off("close", onClose);
-          };
-          const onEnd = (): void => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            resolve(new Response(null, responseInit));
-          };
-          const onError = (error: Error): void => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            reject(error);
-          };
-          const onAborted = (): void => onError(new Error("Steward response was aborted"));
-          const onClose = (): void => {
-            if (!response.complete) onError(new Error("Steward response closed prematurely"));
-          };
-          response.once("end", onEnd);
-          response.once("error", onError);
-          response.once("aborted", onAborted);
-          response.once("close", onClose);
-          response.resume();
-          return;
+export async function createStewardFetch(caCertificateFile?: string): Promise<CloseableFetch> {
+  const certificates = caCertificateFile
+    ? [...getCACertificates("default"), ...(await trustedCaBundle(caCertificateFile))]
+    : undefined;
+  const dispatcher = new EnvHttpProxyAgent(
+    certificates
+      ? {
+          connect: { ca: certificates, rejectUnauthorized: true },
+          proxyTls: { ca: certificates, rejectUnauthorized: true },
+          requestTls: { ca: certificates, rejectUnauthorized: true },
         }
-        resolve(
-          new Response(
-            Readable.toWeb(response) as import("node:stream/web").ReadableStream,
-            responseInit,
-          ),
-        );
-      };
-      const outgoingHeaders: Record<string, string> = {};
-      requestHeaders.forEach((value, name) => {
-        outgoingHeaders[name] = value;
-      });
-      const options = {
-        method,
-        headers: outgoingHeaders,
-        ...(init.signal ? { signal: init.signal } : {}),
-      };
-      const request =
-        url.protocol === "https:"
-          ? httpsRequest(
-              url,
-              {
-                ...options,
-                ca: [...getCACertificates("default"), ca],
-                rejectUnauthorized: true,
-              },
-              handleResponse,
-            )
-          : url.protocol === "http:"
-            ? httpRequest(url, options, handleResponse)
-            : undefined;
-      if (!request) {
-        reject(new Error("unsupported Steward URL protocol"));
-        return;
-      }
-      request.once("error", reject);
-      writeBody(request, init.body ?? (input instanceof Request ? input.body : undefined));
-    });
-  };
-}
+      : undefined,
+  );
 
-export async function createStewardFetch(caCertificateFile?: string): Promise<FetchLike> {
-  if (!caCertificateFile) return fetch;
-  return privateCaFetch(await trustedCaBundle(caCertificateFile));
+  const fetchImplementation: FetchLike = async (input, init = {}) =>
+    (await undiciFetch(
+      input as Parameters<typeof undiciFetch>[0],
+      {
+        ...init,
+        dispatcher,
+      } as Parameters<typeof undiciFetch>[1],
+    )) as unknown as Response;
+  return Object.assign(fetchImplementation, { close: () => dispatcher.close() });
 }

@@ -3,6 +3,7 @@ import { discoveredIdentityExchangeTokenProvider } from "./auth-discovery.js";
 import { shortLivedBearerTokenFileProvider } from "./auth.js";
 import {
   compatibilityInputNotice,
+  implicitIdentityExchangeAudienceNotice,
   readActionConfig,
   usedCompatibilityInputs,
 } from "./config.js";
@@ -17,7 +18,7 @@ import { identityExchangeTokenProvider } from "./identity-exchange.js";
 import { runWorkflow } from "./lifecycle.js";
 import { oidcTokenProvider } from "./oidc.js";
 import { StewardClient } from "./steward-client.js";
-import { createStewardFetch } from "./transport.js";
+import { createStewardFetch, type CloseableFetch } from "./transport.js";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -80,6 +81,7 @@ async function reportActionFailure(failure: StewardRunFailure): Promise<void> {
 
 export async function main(): Promise<void> {
   const controller = new AbortController();
+  const transports = new Set<CloseableFetch>();
   const cancel = () => controller.abort();
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
@@ -89,15 +91,24 @@ export async function main(): Promise<void> {
         `::warning title=Deprecated steward-run input::${compatibilityInputNotice(input)}\n`,
       );
     }
+    const implicitAudienceNotice = implicitIdentityExchangeAudienceNotice(process.env);
+    if (implicitAudienceNotice) {
+      process.stdout.write(
+        `::warning title=Deprecated identity-exchange audience default::${implicitAudienceNotice}\n`,
+      );
+    }
     const config = readActionConfig(process.env);
+    const githubFetch = await createStewardFetch();
+    transports.add(githubFetch);
     const stewardFetch = await createStewardFetch(config.caCertificateFile);
+    transports.add(stewardFetch);
     const getToken = (() => {
       switch (config.authentication.kind) {
         case "github-oidc-discovery":
           return discoveredIdentityExchangeTokenProvider(
             process.env,
             config.apiUrl,
-            undefined,
+            githubFetch,
             undefined,
             stewardFetch,
           );
@@ -105,13 +116,13 @@ export async function main(): Promise<void> {
           return identityExchangeTokenProvider(
             process.env,
             config.authentication.url,
-            undefined,
+            githubFetch,
             undefined,
             config.authentication.audience,
             stewardFetch,
           );
         case "github-oidc":
-          return oidcTokenProvider(process.env, config.authentication.audience);
+          return oidcTokenProvider(process.env, config.authentication.audience, githubFetch);
         case "bearer-token-file":
           return shortLivedBearerTokenFileProvider(config.authentication.path);
       }
@@ -138,6 +149,7 @@ export async function main(): Promise<void> {
   } finally {
     process.off("SIGINT", cancel);
     process.off("SIGTERM", cancel);
+    await Promise.allSettled([...transports].map((transport) => transport.close()));
   }
 }
 

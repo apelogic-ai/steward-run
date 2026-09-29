@@ -8,7 +8,13 @@
       "additionalProperties": false,
       "required": ["githubConfigUrl", "githubConfigSecret", "controllerServiceAccount", "runnerScaleSetName", "scaleSetLabels", "minRunners", "maxRunners", "containerMode", "template"],
       "properties": {
-        "githubConfigUrl": {"type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?$"},
+        "githubConfigUrl": {
+          "type": "string",
+          "allOf": [
+            {"pattern": "^https://github\\.com/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?$"},
+            {"not": {"pattern": "^https://github\\.com/[Ee][Nn][Tt][Ee][Rr][Pp][Rr][Ii][Ss][Ee][Ss](?:/|$)"}}
+          ]
+        },
         "githubConfigSecret": {"type": "string", "minLength": 1},
         "controllerServiceAccount": {
           "type": "object",

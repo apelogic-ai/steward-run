@@ -498,7 +498,8 @@ test("the checked-in bundle preserves exact bounded failure metadata without rea
       }
       assert.doesNotMatch(visible, /task agent exited|bundle-private-token|Bearer|header:/u);
       assert.match(visible, /Deprecated steward-run input::identity-exchange-url/u);
-      assert.match(visible, /Deprecated steward-run input::identity-exchange-audience/u);
+      assert.doesNotMatch(visible, /Deprecated steward-run input::identity-exchange-audience/u);
+      assert.doesNotMatch(visible, /Deprecated identity-exchange audience default/u);
       assert.doesNotMatch(visible, new RegExp(`${mock.url}/v1/exchange`, "u"));
       assert.equal(mock.observations.protectedResourceDiscoveryRequests, 0);
       assert.equal(mock.observations.identityDiscoveryRequests, 0);

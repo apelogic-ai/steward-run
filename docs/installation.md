@@ -185,6 +185,10 @@ kubectl --kubeconfig "$KUBECONFIG_FILE" --context "$KUBE_CONTEXT" \
 The App must be installed for the organization or repository in
 `GITHUB_CONFIG_URL` and have the permissions required by upstream ARC. The App
 is only for runner registration; it is not a Steward bearer credential.
+GitHub Enterprise account URLs under `https://github.com/enterprises/` and PAT
+registration Secrets containing `github_token` are unsupported. The schema
+rejects enterprise-scope URLs; the key-inventory check above is the operator
+gate for the referenced Secret because this chart never reads Secret values.
 
 ### 4. Create the complete hardened values file
 
@@ -197,6 +201,11 @@ references, one runner container, and optional ConfigMap trust volumes. It
 pins `RuntimeDefault` seccomp, requires non-root UID/GID and supplemental
 groups, disables ServiceAccount-token automounting, permits only read-only
 ConfigMap mounts, and rejects every other pod or container field.
+It intentionally fixes `minRunners: 0`, direct mode
+`containerMode.type: ""`, and one container named `runner`; warm pools, DinD,
+Kubernetes container mode, sidecars, and renamed runner containers are outside
+the supported chart contract. Fork operators who relax those constraints own
+the resulting capacity, privilege, and compatibility validation.
 
 ```sh
 cat > customer-values.yaml <<YAML
@@ -302,6 +311,45 @@ node ./steward-run-arc-preflight.mjs \
 
 The default is zero idle runners, so an empty runner Pod list before dispatch
 is expected. The listener and `AutoscalingRunnerSet` must exist.
+
+## Network egress and proxies
+
+Permit outbound TCP 443 only to the destinations required by the selected
+installation and workload. Hostnames discovered from configuration are exact
+operator-owned values; do not replace them with vendor guesses.
+
+| Component / phase | Required destination | Purpose |
+| --- | --- | --- |
+| Action | Exact host in `steward-api-url` | RFC 9728 metadata and the six-operation Steward Task lifecycle |
+| Action | Exact Identity issuer and `token_endpoint` hosts from validated metadata, or the explicit compatibility exchange URL | RFC 8414 metadata and token exchange |
+| Action | Host in GitHub's `ACTIONS_ID_TOKEN_REQUEST_URL` (normally under `*.actions.githubusercontent.com`) | Job-scoped GitHub OIDC assertion |
+| GitHub runner / reusable workflow | `github.com`, `api.github.com`, `*.actions.githubusercontent.com`, `codeload.github.com` | Runner control plane and pinned action checkout |
+| Artifact transfer | `results-receiver.actions.githubusercontent.com`, `*.blob.core.windows.net` | Download the declared input artifact and upload the declared output artifact |
+| ARC registration | GitHub endpoints required by ARC for the selected GitHub.com organization or repository | Listener registration and job acquisition |
+| Installation only | `ghcr.io`, `pkg-containers.githubusercontent.com`, `release-assets.githubusercontent.com` | Pull the runner image, chart, and release assets |
+
+GitHub maintains the authoritative, changeable runner-domain inventory in its
+[self-hosted runner communication reference](https://docs.github.com/en/actions/reference/runners/self-hosted-runners#requirements-for-communication-with-github).
+Resolve any CNAMEs according to the firewall's policy; GitHub notes that their
+targets can change.
+
+The action HTTP client honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`, plus
+the lowercase `http_proxy`, `https_proxy`, and `no_proxy` forms. Lowercase takes
+precedence when both cases are present. `NO_PROXY` is a comma- or space-separated
+host list; an entry can include a port, a leading dot or `*.` for subdomains, or
+`*` to bypass all proxies. The same routing applies to GitHub OIDC, both metadata
+requests, Identity exchange, and every Steward API request. The private-CA
+compatibility transport uses the same proxy path and keeps TLS verification on.
+
+Set proxy variables before the action's Node process starts. For self-hosted
+runners, follow GitHub's
+[runner proxy procedure](https://docs.github.com/en/actions/how-tos/manage-runners/use-proxy-servers)
+and restart the runner after changing its service environment. Containerized
+runners may also require runtime-level proxy configuration. Never commit a
+credential-bearing proxy URL or place one in Helm values; use the deployment's
+masked environment/Secret mechanism. If TLS interception is authorized, mount
+the public CA as documented above and keep `NO_PROXY` limited to destinations
+that are intentionally reached directly.
 
 ## Authentication discovery contract
 
@@ -438,19 +486,22 @@ through 360, and defaults to 15.
 runtime, accepts whole minutes from 1 through 360, and defaults to 10. Increase
 both when expected approval or capacity waits exceed the defaults.
 
-## Deprecated compatibility inputs
+## Explicit exchange compatibility inputs
 
-The three production compatibility inputs remain optional with `default: ""`:
+The explicit path remains optional and backward compatible:
 
 | Input | Behavior |
 | --- | --- |
 | `identity-exchange-url` | Non-empty bypasses discovery and selects the explicit exchange endpoint. |
-| `identity-exchange-audience` | Valid only with an explicit exchange URL; empty retains the historical explicit-path audience. |
+| `identity-exchange-audience` | Exact GitHub OIDC audience for the explicit URL. It is rejected without that URL and is not required yet. |
 | `steward-ca-certificate-file` | Non-empty extends system trust with the named public CA file. |
 
-Each supplied compatibility input emits a warning containing only its name.
-An audience without an explicit URL is rejected. These inputs cannot be
-removed without a separately reviewed major-version migration.
+Supplying the URL or CA-file compatibility input emits a value-free deprecation
+warning. When the URL is supplied without `identity-exchange-audience`, the
+action retains `apelogic-github-identity-exchange` for compatibility and emits a
+separate warning that names the deprecated default but no supplied URL or
+credential. Supply the exchange's exact audience now; making it required or
+removing the default requires a separately reviewed major-version migration.
 
 ## Post-install
 

@@ -50,7 +50,7 @@ on:
         type: string
         default: ""
       identity-exchange-audience:
-        description: Deprecated compatibility audience; valid only with identity-exchange-url
+        description: Exact audience for identity-exchange-url; omission uses a deprecated compatibility default
         required: false
         type: string
         default: ""

@@ -44,12 +44,15 @@ test("the composite action exposes the versioned steward-run contract", async ()
   assert.match(source, /STEWARD_RUN_RUNTIME_BINDING_TIMEOUT_MINUTES:\s*\$\{\{ inputs\.runtime-binding-timeout-minutes \}\}/u);
   for (const name of [
     "identity-exchange-url",
-    "identity-exchange-audience",
     "steward-ca-certificate-file",
   ]) {
     assert.equal(action.inputs[name]?.default, "", `${name} must default to empty`);
     assert.match(action.inputs[name]?.description ?? "", /Deprecated compatibility/u);
   }
+  assert.equal(action.inputs["identity-exchange-audience"]?.default, "");
+  assert.notEqual(action.inputs["identity-exchange-audience"]?.required, true);
+  assert.match(action.inputs["identity-exchange-audience"]?.description ?? "", /Exact GitHub OIDC audience/u);
+  assert.match(action.inputs["identity-exchange-audience"]?.description ?? "", /deprecated compatibility default/u);
   assert.equal(action.inputs["coding-agent-runtime"], undefined);
   assert.deepEqual(
     Object.keys(action.outputs).sort(),

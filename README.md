@@ -182,6 +182,10 @@ shows how to resolve and verify their immutable digests.
 The supported runner artifact is one multi-platform OCI index containing
 `linux/amd64` and `linux/arm64`; the chart remains architecture-neutral and
 pins the index digest so Kubernetes selects the matching image.
+The chart supports GitHub.com organization/repository registration with a
+GitHub App only: enterprise-scope URLs and PAT registration are unsupported.
+Scale-to-zero, direct container mode, and the single `runner` container name are
+deliberate schema constraints, not omitted ARC features.
 GitHub requires self-hosted runners to be upgraded within 30 days of a new
 runner release. This repository checks Docker base images weekly, but fork and
 mirror operators must merge the update, rebuild and publish the image, and
@@ -200,12 +204,20 @@ workflow ref or SHA; it is not a caller switch on the ARC workflow.
 System/process trust is the default for Steward discovery, Identity discovery,
 the exchange, and Steward API calls. `identity-exchange-url`,
 `identity-exchange-audience`, and `steward-ca-certificate-file` remain optional,
-empty-by-default compatibility inputs. Supplying an exchange URL bypasses
-discovery and preserves the existing explicit endpoint behavior; an explicit
-audience is valid only with that URL. Supplying a CA file extends the process
-trust roots for Steward and Identity. Each supplied compatibility input emits
-a value-free deprecation warning. Removal requires a separately reviewed
-major-version migration.
+empty-by-default inputs for the explicit compatibility path. Supplying an
+exchange URL bypasses discovery; its explicit audience is accepted only with
+that URL and is not required yet. Omitting the audience retains the historical
+`apelogic-github-identity-exchange` default and emits a value-free deprecation
+warning. Supplying a CA file extends the process trust roots for Steward and
+Identity. Removal of the default or making the audience required needs a
+separately reviewed major-version migration.
+
+The action honors standard upper- and lowercase `HTTP_PROXY`, `HTTPS_PROXY`,
+and `NO_PROXY` environment variables for GitHub OIDC, discovery, exchange, and
+Steward requests, including the private-CA path. The installation guide lists
+the exact operator-configured control-plane destinations and GitHub's required
+runner, artifact, registration, and package domains. Proxy credentials are
+deployment-owned and must not be committed or placed in chart values.
 
 Discovery and all remote production URLs require HTTPS. Metadata URLs are
 derived by the RFC well-known rules, not hostname conventions. The action
@@ -245,4 +257,7 @@ input/output paths and remove it with the disposable cluster.
 `portable-release.yml` publishes the public GHCR image, OCI chart, release
 manifest, checksums, verified embedded provenance/SBOM summary, tag-bound signatures, chart
 archive, and read-only ARC preflight without cloud-specific infrastructure
-inputs.
+inputs. Private-registry promotion is deployment-owned and absent from this
+repository. Before creating a GitHub release, the workflow stages an exact
+asset set and rejects AWS account/role coordinates, private registry hosts,
+and internal hostnames in both text assets and the packaged chart.

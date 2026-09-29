@@ -130,7 +130,6 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
 
 export const compatibilityInputNames = [
   "identity-exchange-url",
-  "identity-exchange-audience",
   "steward-ca-certificate-file",
 ] as const;
 
@@ -139,7 +138,6 @@ export function usedCompatibilityInputs(
 ): Array<(typeof compatibilityInputNames)[number]> {
   const variables: Record<(typeof compatibilityInputNames)[number], string> = {
     "identity-exchange-url": "STEWARD_RUN_IDENTITY_EXCHANGE_URL",
-    "identity-exchange-audience": "STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE",
     "steward-ca-certificate-file": "STEWARD_RUN_CA_CERTIFICATE_FILE",
   };
   return compatibilityInputNames.filter((name) => Boolean(environment[variables[name]]?.trim()));
@@ -150,8 +148,16 @@ export function compatibilityInputNotice(
 ): string {
   const guidance: Record<(typeof compatibilityInputNames)[number], string> = {
     "identity-exchange-url": "omit it to discover authentication from Steward",
-    "identity-exchange-audience": "omit it with the explicit endpoint to use its historical default, or omit both exchange inputs to use discovery",
     "steward-ca-certificate-file": "omit it to use normal process/system trust",
   };
   return `${name} is deprecated and retained for compatibility; ${guidance[name]}. Removal requires a separately reviewed major-version migration.`;
+}
+
+export function implicitIdentityExchangeAudienceNotice(
+  environment: NodeJS.ProcessEnv,
+): string | undefined {
+  const exchangeUrl = environment.STEWARD_RUN_IDENTITY_EXCHANGE_URL?.trim();
+  const audience = environment.STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE?.trim();
+  if (!exchangeUrl || audience) return undefined;
+  return "identity-exchange-audience was omitted; using the deprecated compatibility default apelogic-github-identity-exchange. Supply the exchange's exact GitHub OIDC audience explicitly.";
 }
