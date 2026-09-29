@@ -443,6 +443,7 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /printf 'tag=bootstrap-%s-%s/u);
   assert.match(release, /Verify patched amd64 bootstrap image[\s\S]*?3\.0\.13-0ubuntu3\.15/u);
   assert.match(release, /Verify patched arm64 bootstrap image[\s\S]*?3\.0\.13-0ubuntu3\.15/u);
+  assert.equal(release.match(/dpkg-query -W -f=\\\$\{Version\}/gu)?.length, 4);
   assert.match(release, /verify-runnable-image-platforms\.mjs[\s\\\n]*"\$RUNNER_TEMP\/bootstrap-index\.json" linux\/amd64 linux\/arm64/u);
   assert.match(release, /push:[\s\S]*?tags:[\s\S]*?v\[0-9\]\+/u);
   assert.match(release, /refs\/tags\/v\[0-9\]\+/u);

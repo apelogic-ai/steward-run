@@ -122,7 +122,7 @@ jobs:
           docker pull --platform linux/amd64 "$IMAGE@$DIGEST"
           # shellcheck disable=SC2016
           docker run --rm --platform linux/amd64 --entrypoint /bin/bash "$IMAGE@$DIGEST" -c \
-            'test "$(dpkg-query -W -f=${Version} openssl)" = "3.0.13-0ubuntu3.15" && test "$(dpkg-query -W -f=${Version} libssl3t64)" = "3.0.13-0ubuntu3.15"'
+            'test "$(dpkg-query -W -f=\${Version} openssl)" = "3.0.13-0ubuntu3.15" && test "$(dpkg-query -W -f=\${Version} libssl3t64)" = "3.0.13-0ubuntu3.15"'
 
   bootstrap-build-arm64:
     needs: bootstrap-preflight
@@ -167,7 +167,7 @@ jobs:
           docker pull --platform linux/arm64 "$IMAGE@$DIGEST"
           # shellcheck disable=SC2016
           docker run --rm --platform linux/arm64 --entrypoint /bin/bash "$IMAGE@$DIGEST" -c \
-            'test "$(dpkg-query -W -f=${Version} openssl)" = "3.0.13-0ubuntu3.15" && test "$(dpkg-query -W -f=${Version} libssl3t64)" = "3.0.13-0ubuntu3.15"'
+            'test "$(dpkg-query -W -f=\${Version} openssl)" = "3.0.13-0ubuntu3.15" && test "$(dpkg-query -W -f=\${Version} libssl3t64)" = "3.0.13-0ubuntu3.15"'
 
   bootstrap-publish:
     needs: [bootstrap-preflight, bootstrap-build-amd64, bootstrap-build-arm64]
