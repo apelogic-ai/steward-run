@@ -19,9 +19,13 @@ RUN test -n "$SOURCE_REPOSITORY" \
     && printf '%s' "$UBUNTU_SNAPSHOT" | grep -Eq '^[0-9]{8}T[0-9]{6}Z$' \
     && sed -i "s|^URIs: .*$|URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/|" \
        /etc/apt/sources.list.d/ubuntu.sources \
+    && grep -Fq "URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/" \
+       /etc/apt/sources.list.d/ubuntu.sources \
+    && ! grep -Eq '^URIs: .*https?://(archive|security|ports)\.ubuntu\.com' \
+       /etc/apt/sources.list.d/ubuntu.sources \
     && printf 'Acquire::Check-Valid-Until "false";\n' \
        > /etc/apt/apt.conf.d/99steward-run-snapshot \
-    && apt-get update \
+    && apt-get update --error-on=any \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --only-upgrade \
        libc6=2.39-0ubuntu8.9 \
        libc-bin=2.39-0ubuntu8.9 \

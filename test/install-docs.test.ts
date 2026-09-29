@@ -131,8 +131,9 @@ test("the public upstream and private-fork integration boundaries are explicit",
     assert.match(document, /job_workflow_ref/u);
   }
   assert.match(guide, /Private fork consumed by another repository/u);
-  assert.match(guide, /steward-task-self-hosted\.template\.yml/u);
-  assert.match(guide, /uses: \.\/\.github\/workflows\/steward-task-self-hosted\.yml/u);
+  assert.match(guide, /steward-task-vendored\.template\.yml/u);
+  assert.match(guide, /uses: \.\/\.github\/workflows\/steward-task-vendored\.yml/u);
+  assert.match(guide, /Steward issue[\s\S]*?#218/u);
   assert.match(guide, /no workflow-ref or workflow-SHA selector/u);
   assert.match(guide, /numeric GitHub owner and repository IDs/u);
   assert.match(guide, /github-oidc-exchange\/issues\/82/u);
@@ -209,7 +210,7 @@ test("current authentication, timeout, links, and examples cannot drift", async 
   assert.match(priorReleaseNotes, /proxy variables are newly honored/u);
   assert.match(priorReleaseNotes, /private-CA request path now follows redirects/u);
   assert.match(releaseNotes, /failure-category=authentication/u);
-  assert.match(releaseNotes, /steward-task-self-hosted\.yml/u);
+  assert.match(releaseNotes, /steward-task-vendored\.yml/u);
   assert.match(securityReleaseNotes, /CVE-2026-75803/u);
   assert.match(securityReleaseNotes, /v0\.7\.4 remains affected/u);
   assert.doesNotMatch(guide, /https:\/\/steward\.customer\.example\/api\b/u);

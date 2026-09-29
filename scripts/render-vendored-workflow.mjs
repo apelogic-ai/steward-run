@@ -16,7 +16,7 @@ if (!manifestArgument || !outputArgument) throw new Error(usage());
 const manifestPath = resolve(manifestArgument);
 const outputPath = resolve(outputArgument);
 const templatePath = resolve(
-  templateArgument ?? resolve(repository, "vendor/steward-task-self-hosted.yml"),
+  templateArgument ?? resolve(repository, "vendor/steward-task-vendored.yml"),
 );
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {

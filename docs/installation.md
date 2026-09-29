@@ -463,8 +463,8 @@ the caller:
 
 ```sh
 mkdir -p CALLER_REPOSITORY/.github/workflows
-cp steward-task-self-hosted.yml \
-  CALLER_REPOSITORY/.github/workflows/steward-task-self-hosted.yml
+cp steward-task-vendored.yml \
+  CALLER_REPOSITORY/.github/workflows/steward-task-vendored.yml
 ```
 
 The released file contains a direct immutable
@@ -475,18 +475,18 @@ file. Fork maintainers can reproduce it from the checked-in template:
 
 ```sh
 node ./render-vendored-workflow.mjs oss-release-manifest.json \
-  ./steward-task-self-hosted.rendered.yml \
-  ./steward-task-self-hosted.template.yml
-cmp ./steward-task-self-hosted.rendered.yml ./steward-task-self-hosted.yml
+  ./steward-task-vendored.rendered.yml \
+  ./steward-task-vendored.template.yml
+cmp ./steward-task-vendored.rendered.yml ./steward-task-vendored.yml
 ```
 
-The Steward-rendered caller references the local workflow, not the private
-fork workflow:
+Steward currently renders the remote private-fork workflow reference. After
+rendering, change only that caller `uses:` line to the verified local asset:
 
 ```yaml
 jobs:
   governed:
-    uses: ./.github/workflows/steward-task-self-hosted.yml
+    uses: ./.github/workflows/steward-task-vendored.yml
     permissions:
       contents: read
       id-token: write
@@ -497,6 +497,15 @@ jobs:
       output-artifact: result
       steward-api-url: https://steward.customer.example
 ```
+
+[Steward issue #218](https://github.com/apelogic-ai/steward/issues/218) tracks
+native rendering of this local reference. Until it lands, that one-line caller
+edit is required.
+
+The vendored workflow is strict by default: the governed task must write at
+least one file under `out/`. Otherwise it stops before artifact upload with
+`the task wrote nothing to out/`. A workflow that intentionally produces no
+files is not compatible with this handoff contract.
 
 Refresh the vendored file whenever release notes say it changed. Do not hand-
 patch its action owner or commit, and do not add a PAT.

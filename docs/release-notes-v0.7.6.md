@@ -19,7 +19,7 @@ job-container supply-chain gaps. The release manifest remains schema 3.
 ## Private-fork vendoring
 
 - Release assets now include a fully rendered
-  `steward-task-self-hosted.yml`, its source template, and the deterministic
+  `steward-task-vendored.yml`, its source template, and the deterministic
   renderer.
 - The rendered file calls the signed manifest's exact
   `workflowRepository@actionCommit` directly. It removes only the reusable
@@ -28,15 +28,24 @@ job-container supply-chain gaps. The release manifest remains schema 3.
 - CI proves the template remains structurally equivalent to the supported
   self-hosted workflow. Private-fork callers using the vendored file must
   refresh it for v0.7.6.
+- Steward does not yet render the local `uses:` reference natively. After
+  rendering, callers must change that one line to
+  `./.github/workflows/steward-task-vendored.yml`; [Steward issue
+  #218](https://github.com/apelogic-ai/steward/issues/218) tracks native
+  support.
+- The vendored workflow requires at least one output file. An empty `out/`
+  stops with the explicit `the task wrote nothing to out/` diagnostic.
 
 ## Image and release integrity
 
 - Exact Ubuntu package versions are resolved from the immutable
   `20260928T000000Z` snapshot, so the image remains rebuildable after archive
   rotation.
-- Pre-tag governed job-container images are keyless-signed and use
-  `job-container-*` tags. The guarded `retire-bootstrap` operation signs and
-  promotes the v0.7.5 bootstrap digest before deleting its legacy public tag.
+- Pre-tag governed job-container images are keyless-signed by immutable digest
+  and use `job-container-*` tags. Publication accepts only a normal bootstrap
+  signature bound to this version and source revision. The guarded
+  `retire-bootstrap` operation uses a distinct maintenance-only signature while
+  promoting the v0.7.5 digest and deleting its legacy public tag.
 - Release publication promotes the pre-tag digest unchanged. The schema-3
   manifest's existing `image` field is therefore both the signed release image
   consumed by Steward and the exact digest embedded in `steward-task.yml`.
@@ -49,7 +58,7 @@ job-container supply-chain gaps. The release manifest remains schema 3.
 Upgrade the workflow/action commit, image digest, chart, and released vendored
 workflow as one verified v0.7.6 unit. Re-run the read-only ARC preflight and one
 governed delivery test. For a private fork consumed from another repository,
-replace the caller's `.github/workflows/steward-task-self-hosted.yml` with the
+replace the caller's `.github/workflows/steward-task-vendored.yml` with the
 verified v0.7.6 release asset.
 
 ## Rollback

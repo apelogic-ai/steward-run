@@ -11,9 +11,11 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Added an official manifest-rendered, checksum-bound self-hosted reusable
+- Added an official manifest-rendered, checksum-bound
+  `steward-task-vendored.yml` reusable
   workflow for cross-repository consumers of private forks, with a structural
-  equivalence gate and no PAT or checkout-token input.
+  equivalence gate, an explicit empty-output diagnostic, and no PAT or
+  checkout-token input.
 - Added signed governed job-container publication. The pre-tag digest is
   promoted unchanged to the release version, so the schema-3 handoff's
   existing `image` field is the exact wrapper image and remains Steward's
@@ -28,8 +30,11 @@ This project follows [Semantic Versioning](https://semver.org/).
   keeping reviewed source rebuildable after moving archive packages are
   superseded.
 - Pre-tag job-container images use durable `job-container-*` tags and are
-  keyless-signed. A guarded maintenance operation promotes, signs, and removes
-  the legacy public `bootstrap-*` tag.
+  keyless-signed by immutable digest only after their exact native inputs are
+  verified. Release promotion binds the image version, repository, revision,
+  and Dockerfile to the tag. A guarded maintenance operation uses a distinct
+  non-release signature while promoting and removing the legacy public
+  `bootstrap-*` tag.
 - The release publisher installs its vendored-chart validator dependencies
   before packaging, closing the recovery-only gap observed during v0.7.5.
 

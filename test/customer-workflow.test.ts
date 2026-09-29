@@ -101,7 +101,9 @@ test("the current handoff documents the public workflow and published OSS artifa
   assert.match(rebuild, /snapshot\.ubuntu\.com/u);
   assert.match(rebuild, /manifest records it in[\s\S]*?existing `image` field/u);
   assert.match(rebuild, /retire-bootstrap/u);
-  assert.match(rebuild, /steward-task-self-hosted\.yml/u);
+  assert.match(rebuild, /steward-task-vendored\.yml/u);
+  assert.match(rebuild, /Steward issue[\s\S]*?#218/u);
+  assert.match(rebuild, /the task wrote nothing to out\//u);
   assert.match(rebuild, /Settings → Actions → General → Access/u);
   assert.match(rebuild, /artifacthub-repo\.yml` `repositoryID`/u);
   assert.match(rebuild, /supported publication target is the fork owner's GHCR namespace/u);
@@ -111,6 +113,9 @@ test("the current handoff documents the public workflow and published OSS artifa
   assert.match(guide, /oauth-protected-resource/u);
   assert.match(guide, /Direct consumption of the public upstream reusable workflow is supported/u);
   assert.match(guide, /Private fork consumed by another repository/u);
+  assert.match(guide, /steward-task-vendored\.yml/u);
+  assert.match(guide, /github\.com\/apelogic-ai\/steward\/issues\/218/u);
+  assert.match(guide, /the task wrote nothing to out\//u);
   assert.match(guide, /no workflow-ref or workflow-SHA selector/u);
   assert.match(guide, /numeric GitHub owner and repository IDs/u);
   assert.doesNotMatch(guide, /job_workflow_ref=apelogic-ai\/steward-run/u);

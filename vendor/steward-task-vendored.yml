@@ -111,12 +111,12 @@ jobs:
             exit 1
           fi
       - id: caller-source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: inputs.invocation-path != ''
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.input-artifact }}
           path: in
@@ -134,7 +134,15 @@ jobs:
           steward-ca-certificate-file: ${{ inputs.steward-ca-certificate-file }}
           agent-runtime: ${{ inputs.agent-runtime }}
           runtime-binding-timeout-minutes: ${{ inputs.runtime-binding-timeout-minutes }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - name: Require governed outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -d out ]] || ! find out -type f -print -quit | grep -q .; then
+            echo "::error::the task wrote nothing to out/"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.output-artifact }}
           path: out

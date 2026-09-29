@@ -209,21 +209,53 @@ jobs:
           ARM64_DIGEST: ${{ needs.bootstrap-build-arm64.outputs.digest }}
         run: |
           set -euo pipefail
+          docker buildx imagetools inspect "$IMAGE@$AMD64_DIGEST" --raw \
+            > "$RUNNER_TEMP/bootstrap-amd64-index.json"
+          docker buildx imagetools inspect "$IMAGE@$ARM64_DIGEST" --raw \
+            > "$RUNNER_TEMP/bootstrap-arm64-index.json"
           if docker buildx imagetools inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
-            printf 'resuming signature verification for existing %s:%s\n' "$IMAGE" "$TAG"
+            printf 'validating existing %s:%s against this run\x27s native build outputs\n' \
+              "$IMAGE" "$TAG"
+            docker buildx imagetools inspect "$IMAGE:$TAG" --raw \
+              > "$RUNNER_TEMP/bootstrap-index.json"
           else
-            docker buildx imagetools create --tag "$IMAGE:$TAG" \
+            staging_tag="candidate-$TAG-index-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            docker buildx imagetools create --tag "$IMAGE:$staging_tag" \
               "$IMAGE@$AMD64_DIGEST" "$IMAGE@$ARM64_DIGEST"
+            docker buildx imagetools inspect "$IMAGE:$staging_tag" --raw \
+              > "$RUNNER_TEMP/bootstrap-index.json"
           fi
-          docker buildx imagetools inspect "$IMAGE:$TAG" --raw > "$RUNNER_TEMP/bootstrap-index.json"
+          digest="$(node scripts/verify-combined-image-index.mjs \
+            "$RUNNER_TEMP/bootstrap-index.json" \
+            "$RUNNER_TEMP/bootstrap-amd64-index.json" "$AMD64_DIGEST" \
+            "$RUNNER_TEMP/bootstrap-arm64-index.json" "$ARM64_DIGEST")"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          docker buildx imagetools inspect "$IMAGE@$digest" --raw \
+            > "$RUNNER_TEMP/bootstrap-index-by-digest.json"
+          cmp "$RUNNER_TEMP/bootstrap-index.json" "$RUNNER_TEMP/bootstrap-index-by-digest.json"
           node scripts/verify-runnable-image-platforms.mjs \
             "$RUNNER_TEMP/bootstrap-index.json" linux/amd64 linux/arm64
-          digest="$(docker buildx imagetools inspect "$IMAGE:$TAG" | sed -n 's/^Digest:[[:space:]]*//p')"
-          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
           identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/portable-release.yml@$GITHUB_REF"
-          cosign sign --yes --registry-referrers-mode=oci-1-1 "$IMAGE@$digest"
-          cosign verify --experimental-oci11=true --certificate-identity "$identity" \
+          cosign sign --yes --registry-referrers-mode=oci-1-1 \
+            -a steward-run-operation=bootstrap \
+            -a "steward-run-version=${{ needs.bootstrap-preflight.outputs.version }}" \
+            -a "steward-run-revision=$GITHUB_SHA" "$IMAGE@$digest"
+          cosign verify --experimental-oci11=true \
+            -a steward-run-operation=bootstrap \
+            -a "steward-run-version=${{ needs.bootstrap-preflight.outputs.version }}" \
+            -a "steward-run-revision=$GITHUB_SHA" \
+            --certificate-identity "$identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE@$digest"
+          if docker buildx imagetools inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+            docker buildx imagetools inspect "$IMAGE:$TAG" --raw \
+              > "$RUNNER_TEMP/bootstrap-tag.json"
+            [[ "sha256:$(sha256sum "$RUNNER_TEMP/bootstrap-tag.json" | cut -d ' ' -f 1)" == "$digest" ]]
+          else
+            docker buildx imagetools create --tag "$IMAGE:$TAG" "$IMAGE@$digest"
+            docker buildx imagetools inspect "$IMAGE:$TAG" --raw \
+              > "$RUNNER_TEMP/bootstrap-tag.json"
+            [[ "sha256:$(sha256sum "$RUNNER_TEMP/bootstrap-tag.json" | cut -d ' ' -f 1)" == "$digest" ]]
+          fi
           {
             printf '## Signed governed job-container image\n\n'
             printf '\x60%s@%s\x60\n' "$IMAGE" "$digest"
@@ -283,8 +315,13 @@ jobs:
           [[ -z "$existing" || "$existing" == "$DIGEST" ]]
           oras tag "$image@$DIGEST" "$promoted_tag"
           identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/portable-release.yml@$GITHUB_REF"
-          cosign sign --yes --registry-referrers-mode=oci-1-1 "$image@$DIGEST"
-          cosign verify --experimental-oci11=true --certificate-identity "$identity" \
+          cosign sign --yes --registry-referrers-mode=oci-1-1 \
+            -a steward-run-operation=retire-bootstrap \
+            -a "steward-run-version=$VERSION" "$image@$DIGEST"
+          cosign verify --experimental-oci11=true \
+            -a steward-run-operation=retire-bootstrap \
+            -a "steward-run-version=$VERSION" \
+            --certificate-identity "$identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image@$DIGEST"
           jq -n --arg retired "$BOOTSTRAP_TAG" \
             '{schemaVersion:1,retiredTag:$retired}' > "$RUNNER_TEMP/retired-bootstrap.json"
@@ -414,6 +451,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.21.0
@@ -452,9 +490,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          docker buildx imagetools inspect "$JOB_CONTAINER_IMAGE" --format '{{json .Image}}' \
+            > "$RUNNER_TEMP/job-container-metadata.json"
+          image_revision="$(node scripts/verify-image-release-labels.mjs \
+            "$RUNNER_TEMP/job-container-metadata.json" "$VERSION" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY")"
+          git cat-file -e "$image_revision^{commit}"
+          git merge-base --is-ancestor "$image_revision" "$GITHUB_SHA"
+          git diff --quiet "$image_revision" "$GITHUB_SHA" -- Dockerfile
           default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)"
           bootstrap_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/portable-release.yml@refs/heads/$default_branch"
-          cosign verify --experimental-oci11=true --certificate-identity "$bootstrap_identity" \
+          cosign verify --experimental-oci11=true \
+            -a steward-run-operation=bootstrap \
+            -a "steward-run-version=$VERSION" \
+            -a "steward-run-revision=$image_revision" \
+            --certificate-identity "$bootstrap_identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com "$JOB_CONTAINER_IMAGE"
       - name: Validate version tag state
         run: |
@@ -475,6 +525,7 @@ jobs:
             helm pull "oci://$CHART" --version "$VERSION" --destination "$RUNNER_TEMP"
           else
             oras tag "$JOB_CONTAINER_IMAGE" "$VERSION"
+            npm run check:vendored-workflow
             npm run check:vendored-chart
             helm package charts/steward-run-arc --destination "$RUNNER_TEMP"
             helm push "$RUNNER_TEMP/steward-run-arc-$VERSION.tgz" \
@@ -523,7 +574,7 @@ jobs:
           cp scripts/arc-controller-identity.mjs "$RUNNER_TEMP/arc-controller-identity.mjs"
           cp scripts/steward-run-arc-preflight.mjs "$RUNNER_TEMP/steward-run-arc-preflight.mjs"
           cp scripts/render-vendored-workflow.mjs "$RUNNER_TEMP/render-vendored-workflow.mjs"
-          cp vendor/steward-task-self-hosted.yml "$RUNNER_TEMP/steward-task-self-hosted.template.yml"
+          cp vendor/steward-task-vendored.yml "$RUNNER_TEMP/steward-task-vendored.template.yml"
           chart_package="steward-run-arc-$VERSION.tgz"
           chart_sha256="$(sha256sum "$RUNNER_TEMP/$chart_package" | cut -d ' ' -f 1)"
           identity_sha256="$(sha256sum "$RUNNER_TEMP/arc-controller-identity.mjs" | cut -d ' ' -f 1)"
@@ -559,25 +610,25 @@ jobs:
             > "$RUNNER_TEMP/oss-release-manifest.json"
           node "$RUNNER_TEMP/render-vendored-workflow.mjs" \
             "$RUNNER_TEMP/oss-release-manifest.json" \
-            "$RUNNER_TEMP/steward-task-self-hosted.yml" \
-            "$RUNNER_TEMP/steward-task-self-hosted.template.yml"
+            "$RUNNER_TEMP/steward-task-vendored.yml" \
+            "$RUNNER_TEMP/steward-task-vendored.template.yml"
           renderer_sha256="$(sha256sum "$RUNNER_TEMP/render-vendored-workflow.mjs" | cut -d ' ' -f 1)"
-          template_sha256="$(sha256sum "$RUNNER_TEMP/steward-task-self-hosted.template.yml" | cut -d ' ' -f 1)"
-          vendored_sha256="$(sha256sum "$RUNNER_TEMP/steward-task-self-hosted.yml" | cut -d ' ' -f 1)"
+          template_sha256="$(sha256sum "$RUNNER_TEMP/steward-task-vendored.template.yml" | cut -d ' ' -f 1)"
+          vendored_sha256="$(sha256sum "$RUNNER_TEMP/steward-task-vendored.yml" | cut -d ' ' -f 1)"
           jq --arg renderer_sha256 "$renderer_sha256" \
             --arg template_sha256 "$template_sha256" --arg vendored_sha256 "$vendored_sha256" \
             '.assets += {
               "render-vendored-workflow.mjs":{sha256:$renderer_sha256},
-              "steward-task-self-hosted.template.yml":{sha256:$template_sha256},
-              "steward-task-self-hosted.yml":{sha256:$vendored_sha256}
+              "steward-task-vendored.template.yml":{sha256:$template_sha256},
+              "steward-task-vendored.yml":{sha256:$vendored_sha256}
             }' "$RUNNER_TEMP/oss-release-manifest.json" \
             > "$RUNNER_TEMP/oss-release-manifest.next.json"
           mv "$RUNNER_TEMP/oss-release-manifest.next.json" "$RUNNER_TEMP/oss-release-manifest.json"
           (
             cd "$RUNNER_TEMP"
             sha256sum "$chart_package" arc-controller-identity.mjs steward-run-arc-preflight.mjs \
-              render-vendored-workflow.mjs steward-task-self-hosted.template.yml \
-              steward-task-self-hosted.yml release-attestation-summary.json \
+              render-vendored-workflow.mjs steward-task-vendored.template.yml \
+              steward-task-vendored.yml release-attestation-summary.json \
               oss-release-manifest.json > SHA256SUMS
           )
           cosign sign-blob --yes --bundle "$RUNNER_TEMP/oss-release-manifest.sigstore.json" \
@@ -615,8 +666,8 @@ jobs:
             "$RUNNER_TEMP/arc-controller-identity.mjs" \
             "$RUNNER_TEMP/steward-run-arc-preflight.mjs" \
             "$RUNNER_TEMP/render-vendored-workflow.mjs" \
-            "$RUNNER_TEMP/steward-task-self-hosted.template.yml" \
-            "$RUNNER_TEMP/steward-task-self-hosted.yml" \
+            "$RUNNER_TEMP/steward-task-vendored.template.yml" \
+            "$RUNNER_TEMP/steward-task-vendored.yml" \
             "$RUNNER_TEMP/$chart_package" \
             "$release_assets/"
           node scripts/check-public-release-assets.mjs \
@@ -634,6 +685,6 @@ jobs:
             "$release_assets/arc-controller-identity.mjs" \
             "$release_assets/steward-run-arc-preflight.mjs" \
             "$release_assets/render-vendored-workflow.mjs" \
-            "$release_assets/steward-task-self-hosted.template.yml" \
-            "$release_assets/steward-task-self-hosted.yml" \
+            "$release_assets/steward-task-vendored.template.yml" \
+            "$release_assets/steward-task-vendored.yml" \
             "$release_assets/$chart_package"

@@ -133,8 +133,11 @@ rejects unchanged upstream chart/Artifact Hub identity.
 Repositories that published a legacy `bootstrap-*` tag can dispatch
 `retire-bootstrap` with the exact version, tag, and digest. The workflow checks
 the two runnable platforms, promotes the digest to `job-container-X.Y.Z`,
-keyless-signs and verifies it, then deletes only the named legacy tag. Never
-delete an unpromoted digest that a released wrapper still pins.
+keyless-signs and verifies it with the maintenance-only
+`steward-run-operation=retire-bootstrap` annotation, then deletes only the
+named legacy tag. Release publication rejects that annotation and accepts only
+normal `bootstrap` signatures bound to the released version and source
+revision. Never delete an unpromoted digest that a released wrapper still pins.
 
 Run `npm run check` again and merge that commit normally. Do not tag an
 unmerged pull-request commit.
@@ -225,13 +228,18 @@ A public fork's reusable workflow can be consumed directly from another
 repository at the manifest's exact `workflowCommit`. For a private fork used by
 another repository in the same organization, enable that caller under
 **Settings → Actions → General → Access**, then copy the verified release asset
-`steward-task-self-hosted.yml` to the caller's
-`.github/workflows/steward-task-self-hosted.yml`. The Steward-rendered caller
-uses `./.github/workflows/steward-task-self-hosted.yml`. That official file is
-generated from `vendor/steward-task-self-hosted.yml` and the signed manifest's
-`workflowRepository` and `actionCommit`; CI proves it differs from the supported
-self-hosted workflow only by removing the internal checkout boundary and using
-the immutable direct action reference. It accepts no PAT or checkout token.
+`steward-task-vendored.yml` to the caller's
+`.github/workflows/steward-task-vendored.yml`. Steward currently renders the
+remote reusable-workflow reference, so change only its `uses:` line to
+`./.github/workflows/steward-task-vendored.yml`; [Steward issue
+#218](https://github.com/apelogic-ai/steward/issues/218) tracks native local
+rendering. That official file is generated from
+`vendor/steward-task-vendored.yml` and the signed manifest's
+`workflowRepository` and `actionCommit`; CI proves it differs from the
+supported self-hosted workflow only by removing the internal checkout boundary
+and using the immutable direct action reference. It accepts no PAT or checkout
+token. The strict default requires at least one file under `out/`; an empty
+result stops with `the task wrote nothing to out/` before artifact upload.
 Release notes flag changes so callers know when to refresh the vendored file.
 
 Monitor Dependabot and vulnerability-gate results. GitHub requires

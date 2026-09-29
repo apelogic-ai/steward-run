@@ -9,12 +9,17 @@ export const vendoredActionPlaceholder =
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = resolve(repository, ".github/workflows/steward-task-self-hosted.yml");
-const vendoredPath = resolve(repository, "vendor/steward-task-self-hosted.yml");
+const vendoredPath = resolve(repository, "vendor/steward-task-vendored.yml");
 const header =
   "# Generated from .github/workflows/steward-task-self-hosted.yml.\n" +
   "# Render this template with scripts/render-vendored-workflow.mjs and a verified release manifest.\n";
 
 function expectedVendoredWorkflow(source) {
+  const pinComments = new Map(
+    [...source.matchAll(/^\s*(?:-\s*)?uses:\s*([^\s#]+)\s+(#\s*v[^\s]+)\s*$/gmu)].map(
+      ([, reference, comment]) => [reference, comment],
+    ),
+  );
   const workflow = parse(source);
   const steps = workflow?.jobs?.governed?.steps;
   if (!Array.isArray(steps)) throw new Error("self-hosted workflow has no governed steps");
@@ -32,7 +37,11 @@ function expectedVendoredWorkflow(source) {
       step?.id !== "workflow-source",
   );
   tasks[0].uses = vendoredActionPlaceholder;
-  return `${header}${stringify(workflow, { lineWidth: 0 })}`;
+  let rendered = `${header}${stringify(workflow, { lineWidth: 0 })}`;
+  for (const [reference, comment] of pinComments) {
+    rendered = rendered.replaceAll(`uses: ${reference}\n`, `uses: ${reference} ${comment}\n`);
+  }
+  return rendered;
 }
 
 const expected = expectedVendoredWorkflow(await readFile(sourcePath, "utf8"));

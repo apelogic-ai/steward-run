@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -13,7 +13,7 @@ test("the official private-fork workflow renders one immutable direct action", a
   const work = await mkdtemp(join(tmpdir(), "steward-run-vendored-workflow-"));
   try {
     const manifest = join(work, "oss-release-manifest.json");
-    const output = join(work, ".github/workflows/steward-task-self-hosted.yml");
+    const output = join(work, ".github/workflows/steward-task-vendored.yml");
     await writeFile(
       manifest,
       JSON.stringify({
@@ -48,6 +48,36 @@ test("the official private-fork workflow renders one immutable direct action", a
       assert.equal(workflow.on.workflow_call.inputs[forbidden], undefined, forbidden);
     }
     assert.doesNotMatch(rendered, /STEWARD_RUN_(?:OWNER|REPOSITORY|ACTION_COMMIT)/u);
+    assert.match(rendered, /actions\/checkout@[a-f0-9]{40} # v4\.4\.0/u);
+    assert.match(rendered, /actions\/upload-artifact@[a-f0-9]{40} # v4\.6\.2/u);
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
+});
+
+test("the vendored workflow reports an empty governed output explicitly", async () => {
+  const source = await readFile(
+    new URL("../vendor/steward-task-vendored.yml", import.meta.url),
+    "utf8",
+  );
+  const workflow = parse(source) as {
+    jobs: { governed: { steps: Array<{ name?: string; run?: string }> } };
+  };
+  const step = workflow.jobs.governed.steps.find(
+    (candidate) => candidate.name === "Require governed outputs",
+  );
+  assert.ok(step?.run);
+  assert.match(step.run, /the task wrote nothing to out\//u);
+
+  const work = await mkdtemp(join(tmpdir(), "steward-run-vendored-outputs-"));
+  try {
+    await assert.rejects(
+      execFileAsync("bash", ["-c", step.run], { cwd: work }),
+      /the task wrote nothing to out\//u,
+    );
+    await mkdir(join(work, "out"));
+    await writeFile(join(work, "out", "result.txt"), "result\n");
+    await assert.doesNotReject(execFileAsync("bash", ["-c", step.run], { cwd: work }));
   } finally {
     await rm(work, { recursive: true, force: true });
   }

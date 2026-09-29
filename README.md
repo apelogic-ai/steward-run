@@ -126,11 +126,12 @@ callers may consume this public upstream workflow directly at the exact
 40-character `workflowCommit` in the signed release manifest. A caller in a
 different repository cannot use its job token for the reusable workflow's
 internal checkout of a private fork. Release assets therefore ship an official
-rendered `steward-task-self-hosted.yml` for private-fork consumers; the caller
-vendors that file and GitHub resolves its immutable direct action reference
-under the organization's Actions access policy. No PAT or checkout-token input
-is added. See the installation guide for the exact flow and the Identity policy
-fields that actually exist.
+rendered `steward-task-vendored.yml` for private-fork consumers; the caller
+vendors that file, changes the Steward-rendered caller's one `uses:` line to
+the local path, and GitHub resolves its immutable direct action reference under
+the organization's Actions access policy. No PAT or checkout-token input is
+added. See the installation guide for the exact flow, strict output-file
+requirement, and the Identity policy fields that actually exist.
 Identity v6 binds numeric owner/repository IDs plus its configured subject,
 event, and ref selectors; it does not yet enforce `job_workflow_ref` or the
 workflow SHA.

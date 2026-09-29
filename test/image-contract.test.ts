@@ -24,6 +24,9 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
     /https:\/\/snapshot\.ubuntu\.com\/ubuntu\/\$\{UBUNTU_SNAPSHOT\}\//u,
   );
   assert.match(dockerfile, /Acquire::Check-Valid-Until "false"/u);
+  assert.match(dockerfile, /grep -Fq "URIs: https:\/\/snapshot\.ubuntu\.com\/ubuntu\/\$\{UBUNTU_SNAPSHOT\}\//u);
+  assert.match(dockerfile, /archive\|security\|ports/u);
+  assert.match(dockerfile, /apt-get update --error-on=any/u);
   assert.doesNotMatch(dockerfile, /org\.opencontainers\.image\.source="https:\/\/github\.com\/apelogic-ai/u);
   assert.match(dockerfile, /USER runner/);
   assert.doesNotMatch(dockerfile, /apt-get (?:dist-)?upgrade/u);
