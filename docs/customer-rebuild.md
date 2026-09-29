@@ -9,8 +9,10 @@ certificate identity.
 The release workflow uses only the fork's `GITHUB_TOKEN`. It does not require
 an ApeLogic GitHub App, AWS account, ECR repository, governed release job, or
 credential rewrite. The three reusable workflows check out the action from
-their own exact `job.workflow_repository` and `job.workflow_sha`, so no
-upstream owner or pre-existing action commit is embedded in a fork release.
+their own exact `job.workflow_repository` and `job.workflow_sha`, so the
+action source has no upstream owner or pre-existing action commit. The
+container-based wrapper separately carries an immutable job-container digest;
+a fork must replace it with a fork-owned digest as described below.
 
 ## 1. Prepare the fork
 
@@ -75,6 +77,43 @@ branch:
 - current installation and chart documentation when commands or compatibility
   change.
 
+A fork must also replace its distribution identity before the first tag:
+
+- update `charts/steward-run-arc/Chart.yaml` `home`, repository `sources`, and
+  Artifact Hub links, plus the release coordinates in the chart README;
+- replace `charts/steward-run-arc/artifacthub-repo.yml` `repositoryID` with the
+  ID assigned to the fork's Artifact Hub repository; and
+- publish or select an existing fork-owned multi-platform runner image, then
+  replace `jobs.governed.container.image` in
+  `.github/workflows/steward-task.yml` with its immutable index digest.
+
+For the first fork release, a trusted native multi-platform builder can create
+that bootstrap digest before the release tag. Authenticate Docker to GHCR with
+the fork owner's existing GitHub CLI session, then run:
+
+```sh
+set -euo pipefail
+FORK_OWNER=YOUR_FORK_OWNER
+VERSION=X.Y.Z
+REVISION="$(git rev-parse HEAD)"
+IMAGE="ghcr.io/$(printf '%s' "$FORK_OWNER" | tr '[:upper:]' '[:lower:]')/steward-run"
+gh auth token | docker login ghcr.io --username "$FORK_OWNER" --password-stdin
+docker buildx build --platform linux/amd64,linux/arm64 --push \
+  --build-arg VERSION="$VERSION-bootstrap" \
+  --build-arg REVISION="$REVISION" \
+  --build-arg SOURCE_REPOSITORY="https://github.com/$FORK_OWNER/steward-run" \
+  --tag "$IMAGE:bootstrap-$VERSION" .
+DIGEST="$(docker buildx imagetools inspect "$IMAGE:bootstrap-$VERSION" | \
+  awk '$1 == "Digest:" { print $2; exit }')"
+test "${#DIGEST}" -eq 71
+printf '%s@%s\n' "$IMAGE" "$DIGEST"
+```
+
+Commit the exact printed `IMAGE@sha256:...` value in the wrapper. The release
+preflight rejects a job-container owner that differs from the fork owner and
+rejects unchanged upstream chart/Artifact Hub identity. This bootstrap is only
+needed until the fork has a prior released image digest available to pin.
+
 Run `npm run check` again and merge that commit normally. Do not tag an
 unmerged pull-request commit.
 
@@ -101,6 +140,11 @@ inventory with the fork's tag-bound GitHub OIDC identity, and creates the
 GitHub release. The schema-3 manifest records the tag commit as both
 `workflowCommit` and `actionCommit` because the reusable workflows execute the
 action from that same immutable source tree.
+
+The supported publication target is the fork owner's GHCR namespace. Copying
+artifacts and their signature material to another OCI registry requires a
+separately reviewed mirroring and signing procedure and is outside this
+workflow's contract.
 
 Watch the run and stop on any failed preflight, build, attestation, signature,
 or public-asset check:

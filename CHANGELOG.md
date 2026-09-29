@@ -10,8 +10,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Added
 
 - Added a complete fork-owned rebuild and publication runbook, configurable
-  native release-runner labels, and self-pinned reusable workflows with no
-  upstream owner or pre-existing action-commit literal.
+  native release-runner labels, self-pinned reusable action sources, and
+  release preflights that reject an upstream job-container or chart identity
+  in a fork.
 - Vendored and checksum-locked ARC chart 0.14.2 so chart linting, rendering,
   and release packaging do not resolve the subchart from GHCR.
 
@@ -23,13 +24,17 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Clarified the v0.7.4 proxy upgrade boundary: lowercase variables take
   precedence, direct Steward/Identity hosts belong in `NO_PROXY`, and the
   private-CA path follows redirects under the same validation rules.
+- The schema-3 release manifest now records the tag commit as both
+  `workflowCommit` and `actionCommit`, matching the self-pinned reusable
+  workflow source.
 
 ### Security
 
 - Fixed the two v0.4.1 ECR critical occurrences of CVE-2026-75803 by pinning
   `openssl` and `libssl3t64` to Canonical's fixed `3.0.13-0ubuntu3.15` package
   version, verifying it in both native image jobs, and adding the CVE to the
-  registry-critical baseline. No vulnerability acceptance is used.
+  registry-critical baseline. v0.7.4 remains affected, so operators must
+  upgrade to v0.7.5; no vulnerability acceptance is used.
 
 ## [0.7.4] - 2026-09-28
 

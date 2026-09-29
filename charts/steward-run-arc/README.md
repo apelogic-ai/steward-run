@@ -13,8 +13,8 @@ its upstream OCI manifest digest plus local archive SHA-256 in
 `third-party-lock.json`. Normal lint, template, package, and release commands
 use that vendored archive and must not run `helm dependency build`. Run
 `npm run check:vendored-chart` before packaging. The controlled dependency
-refresh procedure is documented in the repository's
-[fork publication guide](../../docs/customer-rebuild.md).
+refresh procedure is documented in the
+[fork publication guide](https://github.com/apelogic-ai/steward-run/blob/main/docs/customer-rebuild.md).
 
 The supported Kubernetes window is 1.32 through 1.36 inclusive. CI renders
 every minor in that window and rejects versions outside it.

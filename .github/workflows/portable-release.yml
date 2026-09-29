@@ -77,6 +77,7 @@ jobs:
           # shellcheck disable=SC2016
           grep -Fq 'RELEASE_IDENTITY="https://github.com/$RELEASE_REPOSITORY/.github/workflows/portable-release.yml@refs/tags/$RELEASE_TAG"' docs/installation.md
           action_metadata="$(cat action.yml)"
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           grep -Fq "failure-category:" <<<"$action_metadata"
           grep -Fq "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020" <<<"$action_metadata"
           grep -Fq "if: steps.node24.outputs.available != 'true'" <<<"$action_metadata"
@@ -88,6 +89,15 @@ jobs:
           done
           grep -Fq "failure-category:" .github/workflows/steward-task.yml
           grep -Fq "failure-category:" .github/workflows/steward-task-self-hosted.yml
+          job_container_image="$(sed -n 's/^[[:space:]]*image: \(ghcr.io\/[^[:space:]]*\)$/\1/p' \
+            .github/workflows/steward-task.yml)"
+          [[ "$job_container_image" =~ ^ghcr\.io/$owner/steward-run@sha256:[a-f0-9]{64}$ ]]
+          if [[ "$owner" != "apelogic-ai" ]]; then
+            ! grep -Fq "github.com/apelogic-ai/steward-run" \
+              charts/steward-run-arc/Chart.yaml charts/steward-run-arc/README.md
+            ! grep -Fq "repositoryID: b580a641-1bdf-4ff1-ad22-8a64a6cc696a" \
+              charts/steward-run-arc/artifacthub-repo.yml
+          fi
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             printf 'release v%s already exists\n' "$VERSION" >&2
             exit 1
@@ -96,7 +106,6 @@ jobs:
             [[ "$RESUME_IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
             [[ "$RESUME_CHART_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
           fi
-          owner="${GITHUB_REPOSITORY_OWNER,,}"
           {
             printf 'version=%s\n' "$VERSION"
             printf 'image=ghcr.io/%s/steward-run\n' "$owner"
@@ -246,6 +255,7 @@ jobs:
             docker buildx imagetools create --tag "$IMAGE:$VERSION" \
               "$IMAGE@${{ needs.build-amd64.outputs.digest }}" \
               "$IMAGE@${{ needs.build-arm64.outputs.digest }}"
+            npm run check:vendored-chart
             helm package charts/steward-run-arc --destination "$RUNNER_TEMP"
             helm push "$RUNNER_TEMP/steward-run-arc-$VERSION.tgz" \
               "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFile, readdir } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
 
@@ -53,6 +55,63 @@ test("all external workflow actions are pinned to immutable commits", async () =
       assert.match(reference, /@[a-f0-9]{40}$/u, `${file}: ${reference}`);
     }
     assert.doesNotMatch(source, /:latest\b|@(?:main|master|v\d+)\b/u);
+  }
+});
+
+test("reusable workflows safely replace only their own stale action checkout", async () => {
+  for (const file of ["steward-task.yml", "steward-task-self-hosted.yml"]) {
+    const source = await readFile(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8");
+    const workflow = parse(source) as {
+      jobs: { governed: { steps: Array<{ name?: string; env?: Record<string, string>; run?: string }> } };
+    };
+    const step = workflow.jobs.governed.steps.find(
+      (candidate) => candidate.name === "Reserve the trusted action checkout path",
+    );
+    assert.ok(step?.run, file);
+    assert.equal(step.env?.ACTION_CHECKOUT_PATH, ".steward-run-action", file);
+    assert.equal(step.env?.WORKFLOW_REPOSITORY, "${{ job.workflow_repository }}", file);
+    assert.equal(step.env?.WORKFLOW_SERVER_URL, "${{ github.server_url }}", file);
+
+    const directory = await mkdtemp(join(tmpdir(), "steward-run-action-checkout-"));
+    const actionPath = join(directory, ".steward-run-action");
+    const environment = {
+      ...process.env,
+      ACTION_CHECKOUT_PATH: ".steward-run-action",
+      WORKFLOW_REPOSITORY: "apelogic-ai/steward-run",
+      WORKFLOW_SERVER_URL: "https://github.com",
+    };
+    const runReserve = () => execFileSync("bash", ["-c", step.run ?? ""], {
+      cwd: directory,
+      env: environment,
+      stdio: "pipe",
+    });
+
+    try {
+      assert.doesNotThrow(runReserve, `${file}: empty workspace`);
+
+      await mkdir(actionPath);
+      execFileSync("git", ["init", "-q"], { cwd: actionPath });
+      execFileSync(
+        "git",
+        ["remote", "add", "origin", "https://github.com/apelogic-ai/steward-run"],
+        { cwd: actionPath },
+      );
+      assert.doesNotThrow(runReserve, `${file}: stale owned checkout`);
+      await assert.rejects(access(actionPath), `${file}: stale checkout removed`);
+
+      await mkdir(join(directory, "symlink-target"));
+      await symlink(join(directory, "symlink-target"), actionPath);
+      assert.throws(runReserve, `${file}: symlink rejected`);
+      await rm(actionPath);
+
+      execFileSync("git", ["init", "-q"], { cwd: directory });
+      await mkdir(actionPath);
+      await writeFile(join(actionPath, "caller-owned.txt"), "tracked\n");
+      execFileSync("git", ["add", ".steward-run-action/caller-owned.txt"], { cwd: directory });
+      assert.throws(runReserve, `${file}: caller-tracked path rejected`);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   }
 });
 
@@ -405,6 +464,12 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /RELEASE_IDENTITY=.*refs\/tags\/\$RELEASE_TAG/u);
   assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task\.yml/u);
   assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task-self-hosted\.yml/u);
+  assert.match(release, /job_container_image=[\s\S]*?steward-task\.yml/u);
+  assert.match(release, /job_container_image.*\^ghcr\\\.io\/\$owner\/steward-run@sha256/u);
+  assert.match(release, /github\.com\/apelogic-ai\/steward-run[\s\S]*?artifacthub-repo\.yml/u);
+  const vendoredChartCheck = release.indexOf("npm run check:vendored-chart");
+  const chartPackage = release.indexOf("helm package charts/steward-run-arc");
+  assert.ok(vendoredChartCheck >= 0 && vendoredChartCheck < chartPackage);
   assert.match(release, /schemaVersion:3/u);
   assert.match(release, /workflowRepository:\$workflow_repository/u);
   assert.match(release, /workflowCommit:\$workflow_commit/u);

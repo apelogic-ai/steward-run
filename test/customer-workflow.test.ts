@@ -94,6 +94,10 @@ test("the current handoff documents the public workflow and published OSS artifa
   assert.match(rebuild, /must not run `helm dependency build`/u);
   assert.match(rebuild, /GHCR package visibility is independent/u);
   assert.match(rebuild, /workflowCommit` and `actionCommit`/u);
+  assert.match(rebuild, /jobs\.governed\.container\.image/u);
+  assert.match(rebuild, /bootstrap digest/u);
+  assert.match(rebuild, /artifacthub-repo\.yml` `repositoryID`/u);
+  assert.match(rebuild, /supported publication target is the fork owner's GHCR namespace/u);
   assert.match(guide, /job\.workflow_repository/u);
   assert.match(guide, /job\.workflow_sha/u);
   assert.match(guide, /GitHub Enterprise Server is not covered/u);
