@@ -54,7 +54,7 @@ outputs:
     description: Bounded steward-run failure category; empty on success
     value: ${{ steps.steward-run.outputs.failure-category }}
   http-status:
-    description: HTTP status for a classified Steward request failure; empty otherwise
+    description: HTTP status for a classified Steward or Identity exchange failure; empty otherwise
     value: ${{ steps.steward-run.outputs.http-status }}
   status:
     description: Terminal Steward Task phase

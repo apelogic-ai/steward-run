@@ -4,7 +4,7 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-The [v0.7.5 installation, setup, and integration guide](docs/installation.md)
+The [v0.7.6 installation, setup, and integration guide](docs/installation.md)
 describes the current release contract. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
 authoritative guide for v0.5.0, which predates authentication discovery and
 requires the explicit Identity exchange inputs.
@@ -19,10 +19,10 @@ The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. Release `v0.7.5` publishes the standalone
-multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.5` and the
+long-running Steward API service. Release `v0.7.6` publishes the standalone
+multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.6` and the
 application chart in
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.5`; the
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.6`; the
 [Artifact Hub package](https://artifacthub.io/packages/helm/steward-run/steward-run-arc)
 indexes the same OCI repository. The
 attached `oss-release-manifest.json` records both immutable OCI digests, the
@@ -30,9 +30,10 @@ pinned reusable-workflow and action commits, workflow repository, ARC
 compatibility version, release-asset checksums, embedded BuildKit SLSA
 provenance and SPDX SBOM evidence, and keyless signature bundles.
 These embedded OCI attestations are not GitHub artifact attestations and are
-not consumed by `gh attestation verify`. The manifest's schema-3
-`image` field identifies the same signed public image for both the ARC runner
-and governed job-container roles, as detailed in the installation guide.
+not consumed by `gh attestation verify`. The manifest's schema-3 `image` field
+is the signed public image mapped into Steward's `governedJobContainerImage`
+and the exact digest embedded in the container-based reusable workflow. The
+pre-tag image is promoted unchanged to the release version tag.
 
 The client implements Steward's six-operation `/v1/tasks` lifecycle documented in
 `contracts/steward-run-v1.openapi.yaml`. It submits, uploads a workspace-relative tar archive,
@@ -61,6 +62,14 @@ when the response supplies them. Submit failures distinguish validation (400/422
 (401), authorization (403), conflict (409), dependency failures (including 503), timeout,
 transport, and malformed successful responses. Failure response bodies and all other headers are
 ignored.
+
+An Identity exchange 400, 401, or 403 is attempted once and reported at the
+bounded `exchange` request stage. A 401 is `authentication`, a 403 is
+`authorization`, and `http-status` retains the exact status. The fixed
+`steward-run.identity-exchange/v1` diagnostic tells operators to check the
+Identity policy repository, subject, event, and ref selectors; it never emits
+the OAuth response body or token. Exchange 429, 5xx, and network failures
+remain retryable.
 
 Governed smoke workflows may use the exact agent exit codes 70–75 for
 `provider-connection`, `provider-token-grant`, `provider-authorization`, `provider-upstream`,
@@ -115,11 +124,13 @@ checks out its own action from the exact reusable-workflow repository and
 commit reported by GitHub, not from a caller-selected action ref. GitHub.com
 callers may consume this public upstream workflow directly at the exact
 40-character `workflowCommit` in the signed release manifest. A caller in a
-different repository cannot assume its `GITHUB_TOKEN` can read a private fork;
-that topology is unsupported because the workflow deliberately accepts no
-PAT or checkout-token input. Use the public upstream workflow, the same
-private repository, or a reviewed vendored copy. See the installation guide
-for the exact caller pin and the Identity policy fields that actually exist.
+different repository cannot use its job token for the reusable workflow's
+internal checkout of a private fork. Release assets therefore ship an official
+rendered `steward-task-self-hosted.yml` for private-fork consumers; the caller
+vendors that file and GitHub resolves its immutable direct action reference
+under the organization's Actions access policy. No PAT or checkout-token input
+is added. See the installation guide for the exact flow and the Identity policy
+fields that actually exist.
 Identity v6 binds numeric owner/repository IDs plus its configured subject,
 event, and ref selectors; it does not yet enforce `job_workflow_ref` or the
 workflow SHA.

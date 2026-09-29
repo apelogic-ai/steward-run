@@ -92,16 +92,16 @@ Configure proxy environment and any intercepting CA on the runner/job boundary;
 do not put proxy credentials in Helm values. The complete destination inventory
 and proxy behavior are in the installation guide.
 
-The v0.7.5 chart and runner include the optional exact User Envelope selector,
+The v0.7.6 chart and runner include the optional exact User Envelope selector,
 authentication discovery, and system trust by default. Follow the
 [current installation guide](../../docs/installation.md)
 and pull the chart from the public repository with:
 
 ```sh
-helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.7.5
+helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.7.6
 ```
 
-The matching runner tag is `ghcr.io/apelogic-ai/steward-run:0.7.5`. Tags are
+The matching runner tag is `ghcr.io/apelogic-ai/steward-run:0.7.6`. Tags are
 for discovery only: resolve and pin the image digest from the release's
 `oss-release-manifest.json`.
 

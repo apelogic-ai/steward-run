@@ -183,14 +183,16 @@ test("CI, round-trip, and portable release workflows enforce the product contrac
     jobs: Record<string, { permissions?: Record<string, string> }>;
   };
   assert.deepEqual(release.permissions, { contents: "read" });
-  assert.deepEqual(release.jobs["build-amd64"]!.permissions, {
+  assert.deepEqual(release.jobs["bootstrap-build-amd64"]!.permissions, {
     contents: "read",
     packages: "write",
   });
-  assert.deepEqual(release.jobs["build-arm64"]!.permissions, {
+  assert.deepEqual(release.jobs["bootstrap-build-arm64"]!.permissions, {
     contents: "read",
     packages: "write",
   });
+  assert.equal(release.jobs["build-amd64"], undefined);
+  assert.equal(release.jobs["build-arm64"], undefined);
   assert.deepEqual(release.jobs.publish!.permissions, {
     contents: "write",
     packages: "write",
@@ -429,7 +431,7 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /provenance: mode=max,builder-id=\$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\/actions\/runs\/\$\{\{ github\.run_id \}\}/u);
   assert.match(release, /sbom: generator=docker\.io\/docker\/buildkit-syft-scanner@sha256:[a-f0-9]{64}/u);
   const sbomGeneratorDigests = [...release.matchAll(/sbom: generator=docker\.io\/docker\/buildkit-syft-scanner@sha256:([a-f0-9]+)/gu)];
-  assert.equal(sbomGeneratorDigests.length, 4);
+  assert.equal(sbomGeneratorDigests.length, 2);
   for (const [, digest] of sbomGeneratorDigests) assert.equal(digest?.length, 64);
   assert.match(release, /verify-release-attestations\.mjs/u);
   assert.match(
@@ -438,16 +440,20 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   );
   assert.match(release, /resume_image_digest:/u);
   assert.match(release, /resume_chart_digest:/u);
-  assert.match(release, /operation:[\s\S]*?- release[\s\S]*?- bootstrap/u);
+  assert.match(release, /operation:[\s\S]*?- release[\s\S]*?- bootstrap[\s\S]*?- retire-bootstrap/u);
   assert.match(release, /bootstrap-preflight:/u);
   assert.match(release, /bootstrap-build-amd64:/u);
   assert.match(release, /bootstrap-build-arm64:/u);
   assert.match(release, /bootstrap-publish:/u);
-  assert.match(release, /printf 'tag=bootstrap-%s-%s/u);
+  assert.match(release, /printf 'tag=job-container-%s-%s/u);
   assert.match(release, /Verify patched amd64 bootstrap image[\s\S]*?3\.0\.13-0ubuntu3\.15/u);
   assert.match(release, /Verify patched arm64 bootstrap image[\s\S]*?3\.0\.13-0ubuntu3\.15/u);
   assert.equal(release.match(/dpkg-query -W -f=\\\$\{Version\}/gu)?.length, 4);
   assert.match(release, /verify-runnable-image-platforms\.mjs[\s\\\n]*"\$RUNNER_TEMP\/bootstrap-index\.json" linux\/amd64 linux\/arm64/u);
+  assert.match(release, /Publish and sign immutable multi-platform job container/u);
+  assert.match(release, /retire-bootstrap:/u);
+  assert.match(release, /oras push --artifact-type application\/vnd\.apelogic\.steward-run\.retired\.v1/u);
+  assert.match(release, /oras manifest delete --force "\$image@\$tombstone_digest"/u);
   assert.doesNotMatch(release, /awk '\$1 == "Digest:" \{ print \$2; exit \}'/u);
   assert.match(release, /push:[\s\S]*?tags:[\s\S]*?v\[0-9\]\+/u);
   assert.match(release, /refs\/tags\/v\[0-9\]\+/u);
@@ -457,15 +463,21 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /"\$main_status" == "identical"[\s\S]*?"\$main_status" == "ahead"/u);
   assert.match(release, /identity="https:\/\/github\.com\/\$GITHUB_REPOSITORY\/\.github\/workflows\/portable-release\.yml@\$GITHUB_REF"/u);
   assert.equal(
-    release.match(/VERSION=\$\{\{ needs\.preflight\.outputs\.version \}\}/gu)?.length,
+    release.match(/VERSION=\$\{\{ needs\.bootstrap-preflight\.outputs\.version \}\}/gu)?.length,
     2,
   );
+  assert.match(release, /VERSION: \$\{\{ needs\.preflight\.outputs\.version \}\}/u);
   assert.match(release, /helm pull "oci:\/\/\$CHART"/u);
   assert.match(release, /"\$image_digest" == "\$RESUME_IMAGE_DIGEST"/u);
   assert.match(release, /"\$chart_digest" == "\$RESUME_CHART_DIGEST"/u);
   assert.match(release, /release-attestation-summary\.json/u);
   assert.match(release, /cosign sign --yes[\s\S]*?\$IMAGE@\$IMAGE_DIGEST/u);
   assert.match(release, /cosign sign --yes[\s\S]*?\$CHART@\$CHART_DIGEST/u);
+  assert.match(release, /cosign sign --yes[\s\S]*?\$IMAGE@\$digest/u);
+  const jobContainerVerification = release.indexOf("Verify signed governed job container");
+  const releaseImagePromotion = release.indexOf('oras tag "$JOB_CONTAINER_IMAGE" "$VERSION"');
+  assert.ok(jobContainerVerification >= 0 && jobContainerVerification < releaseImagePromotion);
+  assert.match(release, /resuming signature verification for existing/u);
   assert.match(release, /COSIGN_EXPERIMENTAL: "1"/u);
   assert.match(release, /SHA256SUMS/u);
   assert.match(release, /steward-run-arc-preflight\.mjs/u);
@@ -493,7 +505,14 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /actionCommit:\$action_commit/u);
   assert.match(release, /--arg action_commit "\$GITHUB_SHA"/u);
   assert.match(release, /image:\$image/u);
+  assert.doesNotMatch(release, /workflowJobContainerImage/u);
+  assert.match(release, /oras tag "\$JOB_CONTAINER_IMAGE" "\$VERSION"/u);
+  assert.match(release, /"\$image_digest" == "\$\{JOB_CONTAINER_IMAGE##\*@\}"/u);
   assert.doesNotMatch(release, /governedJobContainerImage/u);
+  assert.match(release, /render-vendored-workflow\.mjs/u);
+  assert.match(release, /steward-task-self-hosted\.template\.yml/u);
+  assert.match(release, /steward-task-self-hosted\.yml/u);
+  assert.match(release, /npm ci --ignore-scripts/u);
   assert.match(release, /format:"buildkit-embedded-oci"/u);
   assert.match(release, /githubArtifactAttestations:false/u);
   assert.match(release, /embedded OCI attestations, not[\s\S]*?GitHub artifact attestations/u);

@@ -139,3 +139,89 @@ test("submit diagnostics never disclose a file-backed bearer or response body", 
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("an Identity exchange 401 is attempted once and reported as authentication", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "steward-run-exchange-denial-"));
+  const outputFile = join(workspace, "github-output");
+  const summaryFile = join(workspace, "github-summary");
+  const sourceToken = testJwt(Math.floor(Date.now() / 1_000));
+  const privateDescription = "private-policy-denial-detail";
+  let oidcAttempts = 0;
+  let exchangeAttempts = 0;
+  let stewardAttempts = 0;
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (pathname === "/oidc") {
+      oidcAttempts += 1;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ value: sourceToken }));
+      return;
+    }
+    if (pathname === "/v1/exchange") {
+      exchangeAttempts += 1;
+      response.writeHead(401, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "invalid_token", error_description: privateDescription }));
+      return;
+    }
+    stewardAttempts += 1;
+    response.writeHead(500).end();
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    await mkdir(join(workspace, "in"));
+    await writeFile(join(workspace, "in", "request.txt"), "bounded request");
+    await writeFile(outputFile, "");
+    await writeFile(summaryFile, "");
+
+    const child = spawn(process.execPath, ["--import", "tsx", "src/main.ts"], {
+      cwd: new URL("..", import.meta.url),
+      env: {
+        ...process.env,
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "github-request-secret",
+        ACTIONS_ID_TOKEN_REQUEST_URL: `http://127.0.0.1:${address.port}/oidc`,
+        GITHUB_JOB: "agent",
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_REPOSITORY: "apelogic-ai/example",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_RUN_ID: "123",
+        GITHUB_STEP_SUMMARY: summaryFile,
+        GITHUB_WORKSPACE: workspace,
+        STEWARD_RUN_API_URL: `http://127.0.0.1:${address.port}`,
+        STEWARD_RUN_IDENTITY_EXCHANGE_URL: `http://127.0.0.1:${address.port}/v1/exchange`,
+        STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE: "customer-exchange",
+        STEWARD_RUN_INPUTS: "in",
+        STEWARD_RUN_OUTPUTS: "out",
+        STEWARD_RUN_WORKFLOW: "repository-review@1",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += String(chunk)));
+    child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
+    const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+    const summary = await readFile(summaryFile, "utf8");
+    const outputs = await readFile(outputFile, "utf8");
+    const rendered = `${stdout}\n${stderr}\n${summary}\n${outputs}`;
+
+    assert.equal(code, 1);
+    assert.equal(oidcAttempts, 1);
+    assert.equal(exchangeAttempts, 1);
+    assert.equal(stewardAttempts, 0);
+    assert.match(rendered, /failure-category=authentication/u);
+    assert.match(rendered, /http-status=401/u);
+    assert.match(rendered, /request-failure\/v1 stage=exchange category=authentication status=401/u);
+    assert.match(rendered, /identity-exchange\/v1 result=denied operator-action=check-policy-subject-event-ref/u);
+    for (const forbidden of [sourceToken, "github-request-secret", privateDescription, "invalid_token"]) {
+      assert.doesNotMatch(rendered, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    }
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

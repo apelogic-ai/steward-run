@@ -72,7 +72,7 @@ on:
         description: Bounded steward-run failure category; empty on success
         value: ${{ jobs.governed.outputs.failure-category }}
       http-status:
-        description: HTTP status for a classified Steward request failure; empty otherwise
+        description: HTTP status for a classified Steward or Identity exchange failure; empty otherwise
         value: ${{ jobs.governed.outputs.http-status }}
       status:
         description: Terminal Steward Task phase

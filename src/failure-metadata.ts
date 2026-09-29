@@ -1,5 +1,6 @@
 export const FAILURE_METADATA_VERSION = "steward-run.failure/v1" as const;
 export const REQUEST_FAILURE_METADATA_VERSION = "steward-run.request-failure/v1" as const;
+export const IDENTITY_EXCHANGE_FAILURE_METADATA_VERSION = "steward-run.identity-exchange/v1" as const;
 export const ASSERTION_STAGE_METADATA_VERSION = "steward-run.assertion-stage/v1" as const;
 export const PROVIDER_CONNECTION_STAGE_METADATA_VERSION = "steward-run.provider-connection-stage/v1" as const;
 // v1 remains stable for the already-published coarse signal. v2 distinguishes
@@ -39,7 +40,7 @@ export const failureCategories = [
 ] as const;
 export type FailureCategory = (typeof failureCategories)[number];
 
-export const requestStages = ["submit", "upload", "execute", "poll", "output", "finalize"] as const;
+export const requestStages = ["exchange", "submit", "upload", "execute", "poll", "output", "finalize"] as const;
 export type RequestStage = (typeof requestStages)[number];
 
 export const requestFailureCategories = [
@@ -308,6 +309,14 @@ export async function publishFailureMetadata(
         `${safe.httpStatus === undefined ? "" : ` status=${safe.httpStatus}`}` +
         `${safe.correlationId === undefined ? "" : ` correlation-id=${safe.correlationId}`}`,
     );
+    if (
+      safe.requestStage === "exchange" &&
+      (safe.httpStatus === 400 || safe.httpStatus === 401 || safe.httpStatus === 403)
+    ) {
+      await sink.writeAnnotation(
+        `${IDENTITY_EXCHANGE_FAILURE_METADATA_VERSION} result=denied operator-action=check-policy-subject-event-ref`,
+      );
+    }
   }
   if (safe.assertionStage !== undefined) {
     await sink.writeAnnotation(
@@ -343,6 +352,15 @@ export async function publishFailureMetadata(
       "| --- | --- | --- | --- | --- |",
       `| ${REQUEST_FAILURE_METADATA_VERSION} | ${safe.requestStage} | ${safe.failureCategory} | ${safe.httpStatus ?? "-"} | ${safe.correlationId ?? "-"} |`,
     );
+    if (
+      safe.requestStage === "exchange" &&
+      (safe.httpStatus === 400 || safe.httpStatus === 401 || safe.httpStatus === 403)
+    ) {
+      summary.push(
+        "",
+        "Identity exchange denied this job. Check the policy repository, subject, event, and ref selectors.",
+      );
+    }
   }
   if (safe.assertionStage !== undefined) {
     summary.push(

@@ -14,7 +14,16 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
     /FROM ghcr\.io\/actions\/actions-runner:2\.337\.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4/,
   );
   assert.match(dockerfile, /COPY --from=node-runtime \/usr\/local\/bin\/node/);
-  assert.match(dockerfile, /ARG SOURCE_REPOSITORY/u);
+  assert.match(
+    dockerfile,
+    /ARG SOURCE_REPOSITORY=https:\/\/github\.com\/apelogic-ai\/steward-run/u,
+  );
+  assert.match(dockerfile, /ARG UBUNTU_SNAPSHOT=20260928T000000Z/u);
+  assert.match(
+    dockerfile,
+    /https:\/\/snapshot\.ubuntu\.com\/ubuntu\/\$\{UBUNTU_SNAPSHOT\}\//u,
+  );
+  assert.match(dockerfile, /Acquire::Check-Valid-Until "false"/u);
   assert.doesNotMatch(dockerfile, /org\.opencontainers\.image\.source="https:\/\/github\.com\/apelogic-ai/u);
   assert.match(dockerfile, /USER runner/);
   assert.doesNotMatch(dockerfile, /apt-get (?:dist-)?upgrade/u);
@@ -107,21 +116,21 @@ test("the package metadata identifies the in-cluster integration release", async
     await readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   ) as { version: string; packages: Record<string, { version?: string }> };
 
-  assert.equal(packageJson.version, "0.7.5");
+  assert.equal(packageJson.version, "0.7.6");
   assert.equal(packageJson.license, "MIT");
-  assert.equal(packageLock.version, "0.7.5");
-  assert.equal(packageLock.packages[""]?.version, "0.7.5");
+  assert.equal(packageLock.version, "0.7.6");
+  assert.equal(packageLock.packages[""]?.version, "0.7.6");
   for (const chart of ["steward-run", "steward-run-arc"]) {
     const metadata = await readFile(
       new URL(`../charts/${chart}/Chart.yaml`, import.meta.url),
       "utf8",
     );
-    assert.match(metadata, /^appVersion: 0\.7\.5$/mu);
+    assert.match(metadata, /^appVersion: 0\.7\.6$/mu);
   }
   const libraryChart = await readFile(new URL("../charts/steward-run/Chart.yaml", import.meta.url), "utf8");
   const applicationChart = await readFile(new URL("../charts/steward-run-arc/Chart.yaml", import.meta.url), "utf8");
   assert.match(libraryChart, /^version: 0\.1\.1$/mu);
-  assert.match(applicationChart, /^version: 0\.7\.5$/mu);
+  assert.match(applicationChart, /^version: 0\.7\.6$/mu);
 });
 
 test("Docker base images receive updates inside the runner support window", async () => {

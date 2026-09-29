@@ -1,10 +1,11 @@
-name: Governed Steward task (customer ARC)
-
+# Generated from .github/workflows/steward-task-self-hosted.yml.
+# Render this template with scripts/render-vendored-workflow.mjs and a verified release manifest.
+name: Governed Steward task (self-hosted)
 on:
   workflow_call:
     inputs:
       runner-label:
-        description: Dedicated ARC scale-set runner label for the governed job
+        description: Dedicated self-hosted runner label for the governed job
         required: true
         type: string
       job-timeout-minutes:
@@ -83,7 +84,6 @@ on:
       runtime-uid:
         description: AgentRuntime UID
         value: ${{ jobs.governed.outputs.runtime-uid }}
-
 jobs:
   governed:
     runs-on: ${{ inputs.runner-label }}
@@ -111,27 +111,17 @@ jobs:
             exit 1
           fi
       - id: caller-source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         if: inputs.invocation-path != ''
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Reserve the trusted action checkout path
-        shell: bash
-        run: test ! -L .steward-run-action && test ! -e .steward-run-action
-      - id: workflow-source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
-          path: .steward-run-action
-          persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: ./.steward-run-action
+        uses: STEWARD_RUN_OWNER/STEWARD_RUN_REPOSITORY@STEWARD_RUN_ACTION_COMMIT
         with:
           workflow: ${{ inputs.workflow }}
           envelope-digest: ${{ inputs.envelope-digest }}
@@ -144,7 +134,7 @@ jobs:
           steward-ca-certificate-file: ${{ inputs.steward-ca-certificate-file }}
           agent-runtime: ${{ inputs.agent-runtime }}
           runtime-binding-timeout-minutes: ${{ inputs.runtime-binding-timeout-minutes }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ inputs.output-artifact }}
           path: out

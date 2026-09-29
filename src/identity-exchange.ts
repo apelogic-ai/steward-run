@@ -8,6 +8,23 @@ const minimumRemainingLifetimeSeconds = 30;
 const allowedClockSkewSeconds = 60;
 const maximumExchangeUrlLength = 2_048;
 const maximumExchangeResponseBytes = 64 * 1_024;
+const oauthErrorCodePattern = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/u;
+
+export class IdentityExchangeHttpError extends Error {
+  readonly httpStatus: number;
+  readonly oauthErrorCode: string | undefined;
+  readonly retryable: boolean;
+
+  constructor(httpStatus: number, oauthErrorCode?: string) {
+    super(`identity exchange request failed with status ${httpStatus}`);
+    this.name = "IdentityExchangeHttpError";
+    this.httpStatus = httpStatus;
+    this.oauthErrorCode = oauthErrorCodePattern.test(oauthErrorCode ?? "")
+      ? oauthErrorCode
+      : undefined;
+    this.retryable = httpStatus === 429 || (httpStatus >= 500 && httpStatus <= 599);
+  }
+}
 
 function isLoopback(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
@@ -62,6 +79,21 @@ async function exchangePayload(response: Response): Promise<unknown> {
     return JSON.parse(Buffer.concat(chunks, length).toString("utf8")) as unknown;
   } catch {
     throw new Error("identity exchange response was incompatible");
+  }
+}
+
+async function exchangeErrorCode(response: Response): Promise<string | undefined> {
+  try {
+    const payload = await exchangePayload(response);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+    const candidate = (payload as Record<string, unknown>).error;
+    return typeof candidate === "string" && oauthErrorCodePattern.test(candidate)
+      ? candidate
+      : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    await response.body?.cancel().catch(() => undefined);
   }
 }
 
@@ -137,7 +169,10 @@ export function identityExchangeTokenProvider(
       throw new Error("identity exchange request failed");
     }
     if (!response.ok) {
-      throw new Error(`identity exchange request failed with status ${response.status}`);
+      throw new IdentityExchangeHttpError(
+        response.status,
+        await exchangeErrorCode(response),
+      );
     }
 
     const payload: unknown = await exchangePayload(response);
