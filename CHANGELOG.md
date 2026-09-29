@@ -7,6 +7,26 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added standard HTTP(S) proxy and `NO_PROXY` support across GitHub OIDC,
+  authentication discovery, Identity exchange, and Steward API traffic,
+  including the private-CA compatibility path; documented the complete egress
+  destination inventory.
+- Added an explicit optional Identity exchange audience contract. Omitting it
+  remains backward compatible with the historical audience and now emits a
+  targeted deprecation warning.
+
+### Changed
+
+- Removed the obsolete AWS/ECR release workflow and its role assumption,
+  registry variables, promotion, scan handoff, and dead release helpers. Public
+  tag releases now stage a fixed asset set and reject private registry
+  references before GitHub publication.
+- Tightened the ARC chart to reject unsupported GitHub Enterprise account URLs
+  and documented its deliberate scale-to-zero, direct-mode, single-container,
+  and GitHub App-only registration boundaries.
+
 ## [0.7.3] - 2026-09-28
 
 ### Added

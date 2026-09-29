@@ -106,6 +106,24 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.githubConfigUrl=https://git.example.com/customer/example"),
       /githubConfigUrl/u,
     );
+    for (const enterpriseUrl of [
+      "https://github.com/enterprises/customer",
+      "https://github.com/Enterprises/customer",
+    ]) {
+      assert.throws(
+        () => template(
+          "steward-run",
+          chart,
+          "--namespace",
+          "arc-runners",
+          "--values",
+          fixture,
+          "--set",
+          `gha-runner-scale-set.githubConfigUrl=${enterpriseUrl}`,
+        ),
+        /githubConfigUrl|Must not validate/u,
+      );
+    }
     assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.controllerServiceAccount.name="),
       /controllerServiceAccount\.name/u,

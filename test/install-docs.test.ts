@@ -26,7 +26,8 @@ test("the v0.7.3 guide is one self-contained operator runbook", async () => {
     "Installation",
     "Authentication discovery contract",
     "Integration and object inventory",
-    "Deprecated compatibility inputs",
+    "Explicit exchange compatibility inputs",
+    "Network egress and proxies",
     "Post-install",
     "Delivery tests",
     "Upgrade",
@@ -74,6 +75,13 @@ test("the v0.7.3 guide is one self-contained operator runbook", async () => {
   assert.match(guide, /pod-security\.kubernetes\.io\/enforce=restricted/u);
   assert.match(guide, /runner Pod spec is a closed\s+allowlist/u);
   assert.match(guide, /does not create or alter GitHub App credentials/u);
+  assert.match(guide, /PAT\s+registration[\s\S]*?unsupported/u);
+  assert.match(guide, /github\.com\/enterprises/u);
+  assert.match(guide, /minRunners: 0[\s\S]*?containerMode\.type: `?""`?[\s\S]*?named `runner`/u);
+  assert.match(guide, /HTTP_PROXY[\s\S]*?HTTPS_PROXY[\s\S]*?NO_PROXY/u);
+  assert.match(guide, /ACTIONS_ID_TOKEN_REQUEST_URL/u);
+  assert.match(guide, /results-receiver\.actions\.githubusercontent\.com/u);
+  assert.match(guide, /private-CA[\s\S]*?same proxy path/u);
   assert.doesNotMatch(guide, /kubectl[^\n]*create secret|--from-file=github_app/iu);
   assert.match(guide, /Uninstalling steward-run does not remove[\s\S]*?shared ARC controller/u);
 
@@ -174,7 +182,9 @@ test("current authentication, timeout, links, and examples cannot drift", async 
     assert.equal(task?.with?.["runtime-binding-timeout-minutes"], "${{ inputs.runtime-binding-timeout-minutes }}");
   }
 
-  assert.match(guide, /audience without an explicit URL is rejected/u);
+  assert.match(guide, /rejected without that URL/u);
+  assert.match(guide, /not required yet/u);
+  assert.match(guide, /apelogic-github-identity-exchange/u);
   assert.match(guide, /Non-empty bypasses discovery/u);
   assert.match(guide, /system trust/u);
   assert.match(guide, /64 KiB/u);

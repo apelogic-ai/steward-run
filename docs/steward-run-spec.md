@@ -125,7 +125,7 @@ the resumed invocation (a new job, new token).
 | `steward-api-url` | The control-plane API base (env-supplied; not hardcoded) |
 | `steward-ca-certificate-file` *(deprecated compatibility, default `""`)* | Filesystem path to a public PEM CA bundle extending process trust for Steward and Identity |
 | `identity-exchange-url` *(deprecated compatibility, default `""`)* | Explicit HTTPS exchange endpoint; when absent, discover from Steward |
-| `identity-exchange-audience` *(deprecated compatibility, default `""`)* | Exact GitHub OIDC audience for the explicit exchange URL only |
+| `identity-exchange-audience` *(optional compatibility, default `""`)* | Exact GitHub OIDC audience for the explicit exchange URL only; omission retains a deprecated default |
 | `oidc-audience` *(test authentication choice)* | Direct GitHub OIDC audience; allowed only with a loopback Steward API |
 | `bearer-token-file` *(authentication choice)* | Filesystem path to a rotating JWT with a maximum one-hour lifetime |
 | `agent-runtime` *(optional)* | Adopt an existing `AgentRuntime` id for the existing Workflow path only (D2) |
@@ -162,12 +162,20 @@ An explicit `identity-exchange-url` takes precedence and bypasses discovery;
 `identity-exchange-audience` is rejected without it. A CA is supplied only as
 a file path, never inline PEM, and extends rather than replaces system trust.
 An explicit URL with an empty audience retains the historical
-`apelogic-github-identity-exchange` audience.
-All three compatibility inputs are optional with empty defaults and emit
-sanitized deprecation notices when used. They cannot be removed without a
-separately reviewed major-version contract and migration. `oidc-audience` and
+`apelogic-github-identity-exchange` audience and emits a sanitized deprecation
+warning. An explicit audience is accepted and is not required yet. The URL and
+CA-file compatibility inputs remain deprecated; removing the audience default
+or requiring the input needs a separately reviewed major-version contract and
+migration. `oidc-audience` and
 `bearer-token-file` remain test/internal modes and are not public reusable-
 workflow inputs. Tokens are never action inputs.
+
+All HTTP clients honor upper- and lowercase `HTTP_PROXY`, `HTTPS_PROXY`, and
+`NO_PROXY` environment variables. This includes GitHub OIDC, protected-resource
+and authorization-server discovery, explicit or discovered Identity exchange,
+and the Steward lifecycle. Proxy routing does not disable hostname or
+certificate verification, and the optional public CA bundle extends trust for
+both direct and proxied TLS connections.
 
 | Output | Meaning |
 |---|---|

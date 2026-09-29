@@ -39,6 +39,19 @@ The image digest may identify the supported multi-platform OCI index with
 architecture selector; Kubernetes selects the matching image on each runner
 node.
 
+Registration is deliberately limited to GitHub.com organization or repository
+URLs. `https://github.com/enterprises/...` is rejected because GitHub Enterprise
+account scope is not supported. The existing `githubConfigSecret` must contain
+the three GitHub App keys documented in the installation guide; PAT registration
+through a `github_token` key is unsupported. Because this chart never reads
+Secret data, operators verify that key inventory before installation.
+
+The remaining narrow values are intentional security and capacity boundaries:
+`minRunners` is fixed at `0` for scale-to-zero, `containerMode.type` is fixed at
+the empty direct-runner mode (no DinD or Kubernetes job-container mode), and the
+single container is named `runner`. Forks that relax those constraints own the
+resulting privilege, capacity, and compatibility contract.
+
 Default behavior is zero idle runners, five maximum, direct execution in the
 digest-pinned runner image, a non-root Pod UID/GID, no privilege escalation,
 no added capabilities, `RuntimeDefault` seccomp, no init or ephemeral
@@ -63,6 +76,13 @@ requires one non-empty ConfigMap name, one projected key at `ca.crt`, one
 mount, and one environment entry. It fails incomplete or altered shapes. The
 environment variable adds the bundle to Node's normal system roots before the
 action starts. Never place PEM content or a private key in values.
+
+The action HTTP client honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`, plus
+their lowercase equivalents, for GitHub OIDC, discovery, exchange, and Steward
+API requests. Lowercase values take precedence when both forms are present.
+Configure proxy environment and any intercepting CA on the runner/job boundary;
+do not put proxy credentials in Helm values. The complete destination inventory
+and proxy behavior are in the installation guide.
 
 The v0.7.3 chart and runner include the optional exact User Envelope selector,
 authentication discovery, and system trust by default. Follow the

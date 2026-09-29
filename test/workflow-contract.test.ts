@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parse } from "yaml";
 
-const workflowFiles = ["ci.yml", "roundtrip.yml", "release.yml", "steward-task.yml", "steward-task-self-hosted.yml", "steward-task-customer.yml"];
+const workflowFiles = ["ci.yml", "portable-release.yml", "roundtrip.yml", "steward-task.yml", "steward-task-self-hosted.yml", "steward-task-customer.yml"];
 const governedJobContainer =
   "ghcr.io/apelogic-ai/steward-run@" +
   "sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4";
@@ -13,10 +13,6 @@ const directPackageActionCommit = actionCommit;
 const buildkitImage =
   "docker.io/moby/buildkit@" +
   "sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8";
-const sbomGeneratorImage =
-  "docker.io/docker/buildkit-syft-scanner@" +
-  "sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9";
-
 test("reusable workflow job timeouts are configurable and bounded", async () => {
   for (const file of ["steward-task.yml", "steward-task-self-hosted.yml", "steward-task-customer.yml"]) {
     const source = await readFile(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8");
@@ -72,10 +68,10 @@ test("public workflows and security evidence contain no private cloud account co
   }
 });
 
-test("CI, round-trip, and release workflows enforce the product contract", async () => {
+test("CI, round-trip, and portable release workflows enforce the product contract", async () => {
   const ci = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
   const releaseSource = await readFile(
-    new URL("../.github/workflows/release.yml", import.meta.url),
+    new URL("../.github/workflows/portable-release.yml", import.meta.url),
     "utf8",
   );
   assert.match(ci, /npm run check/);
@@ -83,10 +79,8 @@ test("CI, round-trip, and release workflows enforce the product contract", async
   assert.match(ci, /aquasec\/trivy:0\.72\.0@sha256:/);
   assert.match(ci, /docker build/);
   assert.match(ci, /docker\/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f/);
-  for (const source of [ci, releaseSource]) {
-    assert.ok(source.includes(`driver-opts: image=${buildkitImage}`));
-    assert.doesNotMatch(source, /moby\/buildkit:buildx-stable-1/u);
-  }
+  assert.ok(ci.includes(`driver-opts: image=${buildkitImage}`));
+  assert.doesNotMatch(ci, /moby\/buildkit:buildx-stable-1/u);
   assert.match(ci, /architecture:\s*amd64[\s\S]+?runner:\s*ubuntu-24\.04/u);
   assert.match(ci, /architecture:\s*arm64[\s\S]+?runner:\s*ubuntu-24\.04-arm/u);
   assert.match(ci, /runs-on:\s*\$\{\{ matrix\.runner \}\}/u);
@@ -128,145 +122,28 @@ test("CI, round-trip, and release workflows enforce the product contract", async
     permissions?: Record<string, string>;
     jobs: Record<string, { permissions?: Record<string, string> }>;
   };
-  assert.deepEqual(release.permissions ?? {}, {});
-  assert.deepEqual(release.jobs.prepare!.permissions, {
-    contents: "read",
-    "id-token": "write",
-  });
-  assert.deepEqual(release.jobs["build-children"]!.permissions, {
-    contents: "read",
-    "id-token": "write",
-  });
+  assert.deepEqual(release.permissions, { contents: "write", packages: "write" });
   assert.deepEqual(release.jobs.publish!.permissions, {
     contents: "write",
+    packages: "write",
     "id-token": "write",
   });
   const releaseCheckouts = releaseSource.match(/uses: actions\/checkout@[a-f0-9]{40}/gu) ?? [];
   const nonPersistingCheckouts = releaseSource.match(/persist-credentials:\s*false/gu) ?? [];
   assert.equal(nonPersistingCheckouts.length, releaseCheckouts.length);
-  assert.match(releaseSource, /AWS_ROLE_ARN/);
-  assert.match(
+  assert.doesNotMatch(
     releaseSource,
-    /sigstore\/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6/,
+    /aws-actions\/configure-aws-credentials|AWS_ROLE_ARN|ECR_REGISTRY|ECR_REPOSITORY|aws ecr/iu,
   );
   assert.match(releaseSource, /workflow_dispatch:/);
-  assert.doesNotMatch(releaseSource, /types:\s*\[published\]/);
-  assert.doesNotMatch(releaseSource, /^\s+environment:/mu);
-  assert.match(releaseSource, /group:\s*release-\$\{\{ inputs\.version \}\}/);
+  assert.match(releaseSource, /push:[\s\S]*?tags:/u);
+  assert.match(releaseSource, /group:\s*portable-release-\$\{\{ github\.ref \}\}/);
   assert.match(releaseSource, /cancel-in-progress:\s*false/);
-  assert.match(releaseSource, /cosign-release:\s*v3\.1\.2/);
-  assert.match(
-    releaseSource,
-    /--attest "type=provenance,mode=max,builder-id=\$GITHUB_SERVER_URL\/\$GITHUB_REPOSITORY\/actions\/runs\/\$GITHUB_RUN_ID"/u,
-  );
-  assert.ok(releaseSource.includes(`--attest "type=sbom,generator=${sbomGeneratorImage}"`));
-  assert.doesNotMatch(releaseSource, /--sbom=true|buildkit-syft-scanner:stable-1/u);
-  assert.match(releaseSource, /--platform linux\/\$\{\{ matrix\.architecture \}\}/u);
-  assert.match(releaseSource, /architecture:\s*amd64[\s\S]+?runner:\s*ubuntu-24\.04/u);
-  assert.match(releaseSource, /architecture:\s*arm64[\s\S]+?runner:\s*ubuntu-24\.04-arm/u);
-  assert.match(releaseSource, /Require the native worker architecture/u);
-  assert.match(releaseSource, /needs:\s*\[prepare, build-children\]/u);
-  assert.match(releaseSource, /verify-runnable-image-platforms\.mjs/u);
-  assert.match(releaseSource, /--output type=registry/u);
-  assert.match(releaseSource, /--output type=oci,dest=release-image\.oci\.tar/u);
-  assert.doesNotMatch(releaseSource, /\s--push\s/u);
-  assert.match(releaseSource, /verify-release-attestations\.mjs[\s\S]+?linux\/amd64 linux\/arm64/u);
-  assert.match(releaseSource, /release-attestation-summary\.json/u);
-  assert.match(releaseSource, /release-attestation-summary\.sigstore\.json/u);
-  assert.match(releaseSource, /for architecture in amd64 arm64/u);
-  assert.match(releaseSource, /ecr-image-scan-summary-arm64\.json/u);
-  assert.match(releaseSource, /ecr-image-scan-summary-arm64\.sigstore\.json/u);
-  assert.match(releaseSource, /containerimage\.digest/);
-  assert.match(
-    releaseSource,
-    /candidate-\$REQUESTED_VERSION-\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT/,
-  );
-  assert.match(releaseSource, /cosign sign --yes/);
-  assert.doesNotMatch(releaseSource, /--registry-referrers-mode=legacy/);
-  assert.match(releaseSource, /COSIGN_EXPERIMENTAL:\s*"1"/);
-  assert.match(releaseSource, /cosign sign --yes[\s\S]+?--bundle image-signature\.sigstore\.json[\s\S]+?--registry-referrers-mode=oci-1-1/u);
-  assert.match(releaseSource, /cosign verify --experimental-oci11=true/u);
-  assert.doesNotMatch(releaseSource, /--upload=false/);
-  assert.doesNotMatch(releaseSource, /--new-bundle-format=false/);
-  assert.doesNotMatch(releaseSource, /--use-signing-config=false/);
-  assert.doesNotMatch(
-    releaseSource,
-    /cosign verify-blob --bundle image-signature\.sigstore\.json/u,
-  );
-  assert.match(releaseSource, /for attempt in \{1\.\.6\}/);
-  assert.match(releaseSource, /sleep 10/);
-  assert.match(releaseSource, /cosign sign-blob --yes/);
-  assert.match(releaseSource, /release-manifest\.json/);
-  assert.match(releaseSource, /release-manifest\.sigstore\.json/);
-  assert.match(releaseSource, /GITHUB_SHA/);
-  assert.match(releaseSource, /assemble-release-index\.mjs/u);
-  assert.match(releaseSource, /aws ecr put-image/u);
-  assert.match(releaseSource, /aws ecr batch-get-image/);
-  assert.doesNotMatch(releaseSource, /aws ecr list-images/);
-  assert.doesNotMatch(releaseSource, /aws ecr describe-images/);
-  assert.doesNotMatch(releaseSource, /gh release create "v\$VERSION"/);
-  assert.match(releaseSource, /\[\[ "\$GITHUB_REF" == refs\/heads\/main \]\]/);
-  assert.match(releaseSource, /git\/matching-refs\/tags\/v\$REQUESTED_VERSION/);
-  assert.match(releaseSource, /require\("\.\/package\.json"\)\.version/);
-  const releaseValidation = releaseSource.indexOf("- name: Validate release request");
-  const awsCredentials = releaseSource.indexOf("aws-actions/configure-aws-credentials@");
-  assert.ok(releaseValidation >= 0);
-  assert.ok(releaseValidation < awsCredentials);
-  const candidateBuild = releaseSource.indexOf('--tag "$IMAGE_REPOSITORY:$CANDIDATE_TAG"');
-  const indexAssembly = releaseSource.indexOf("assemble-release-index.mjs");
-  const attestationValidation = releaseSource.lastIndexOf("verify-release-attestations.mjs");
-  const bundleSign = releaseSource.indexOf("--bundle image-signature.sigstore.json");
-  const registryVerification = releaseSource.indexOf("--experimental-oci11=true");
-  const signatureVerification = releaseSource.indexOf('[[ "$verified" == true ]]');
-  const finalImageTag = releaseSource.indexOf("- name: Promote verified candidate to semantic image tag");
-  const finalReleaseTag = releaseSource.indexOf("- name: Publish the exact staged release");
-  assert.ok(candidateBuild >= 0);
-  assert.ok(candidateBuild < indexAssembly);
-  assert.ok(indexAssembly < attestationValidation);
-  assert.ok(attestationValidation < bundleSign);
-  assert.ok(candidateBuild < bundleSign);
-  assert.ok(bundleSign < registryVerification);
-  assert.ok(registryVerification < signatureVerification);
-  assert.ok(signatureVerification < finalImageTag);
-  assert.ok(finalImageTag < finalReleaseTag);
-  assert.match(
-    releaseSource,
-    /uses: actions\/upload-artifact@[a-f0-9]{40}[\s\S]+?if:\s*\$\{\{ always\(\) && hashFiles\('release-metadata\.json'\) != '' \}\}/,
-  );
-  assert.doesNotMatch(releaseSource, /--tag[^\n]*latest/);
-  assert.doesNotMatch(
-    releaseSource,
-    /steward-run-release-child-[^\n]+github\.run_attempt/u,
-  );
-  assert.match(
-    releaseSource,
-    /name: steward-run-release-child-\$\{\{ matrix\.architecture \}\}-\$\{\{ github\.run_id \}\}[\s\S]+?overwrite:\s*true/u,
-  );
-  assert.match(
-    releaseSource,
-    /name: steward-run-release-child-amd64-\$\{\{ github\.run_id \}\}/u,
-  );
-  assert.match(
-    releaseSource,
-    /name: steward-run-release-child-arm64-\$\{\{ github\.run_id \}\}/u,
-  );
-
-  const stageDraft = releaseSource.indexOf("Stage exact draft release assets");
-  const promoteSemantic = releaseSource.indexOf("Promote verified candidate to semantic image tag");
-  const publishDraft = releaseSource.indexOf("Publish the exact staged release");
-  assert.ok(stageDraft > signatureVerification);
-  assert.ok(stageDraft < promoteSemantic);
-  assert.ok(promoteSemantic < publishDraft);
-  assert.match(releaseSource, /GITHUB_RUN_ATTEMPT.*==.*1/u);
-  assert.match(
-    releaseSource,
-    /releases\/tags\/v\$REQUESTED_VERSION[\s\S]+?release v\$REQUESTED_VERSION already exists/u,
-  );
-  assert.match(releaseSource, /existing.*==.*\$IMAGE_DIGEST/u);
-  assert.match(releaseSource, /draft=true/u);
-  assert.match(releaseSource, /draft=false/u);
-  assert.match(releaseSource, /target_commitish[\s\S]+?GITHUB_SHA/u);
-  assert.match(releaseSource, /digest[\s\S]+?sha256/u);
+  assert.match(releaseSource, /check-public-release-assets\.mjs/u);
+  const assetCheck = releaseSource.indexOf("check-public-release-assets.mjs");
+  const publication = releaseSource.indexOf('gh release create "v$VERSION"');
+  assert.ok(assetCheck >= 0);
+  assert.ok(assetCheck < publication);
 });
 
 test("the reusable ARC workflow transfers artifacts around an immutable remote action", async () => {
@@ -457,12 +334,8 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   assert.doesNotMatch(source, /amazonaws\.com|container:|bearer-token|identity\.dev|cluster|secret/iu);
 });
 
-test("CI and release execute the governed job-container runtime contract", async () => {
+test("CI executes the governed job-container runtime contract", async () => {
   const ci = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
-  const release = await readFile(
-    new URL("../.github/workflows/release.yml", import.meta.url),
-    "utf8",
-  );
 
   for (const capability of ["/bin/bash", "command -v node", "command -v git", "command -v tar"])
     assert.match(ci, new RegExp(capability.replaceAll("/", "\\/"), "u"));
@@ -475,33 +348,6 @@ test("CI and release execute the governed job-container runtime contract", async
   assert.ok(ciContainerProbe.indexOf('-v "${{ github.workspace }}:/workspace:ro"') >= 0);
   assert.ok(ciContainerProbe.indexOf('-v "${{ github.workspace }}:/workspace:ro"') <
     ciContainerProbe.indexOf("steward-run:ci"));
-  assert.match(release, new RegExp(governedJobContainer.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
-  assert.match(release, /Verify governed job-container image/u);
-  assert.match(release, /node \/workspace\/dist\/index\.cjs/u);
-});
-
-test("release gates semantic tags on signed scan evidence for every runnable image", async () => {
-  const release = await readFile(
-    new URL("../.github/workflows/release.yml", import.meta.url),
-    "utf8",
-  );
-  const scanGate = release.indexOf("- name: Scan the native runnable child");
-  const scanBinding = release.indexOf("- name: Bind completed scans to the release index");
-  const signing = release.indexOf("- name: Sign and verify immutable release artifacts");
-  const semanticPromotion = release.indexOf("- name: Promote verified candidate to semantic image tag");
-
-  assert.ok(scanGate >= 0);
-  assert.ok(scanGate < scanBinding);
-  assert.ok(scanBinding < signing);
-  assert.ok(signing < semanticPromotion);
-  assert.match(release, /aws ecr wait image-scan-complete/u);
-  assert.match(release, /scripts\/resolve-runnable-image-digest\.mjs/u);
-  assert.match(release, /scripts\/write-ecr-scan-summary\.mjs/u);
-  assert.match(release, /ecr-image-scan-summary\.sigstore\.json/u);
-  assert.doesNotMatch(
-    release.slice(scanGate, semanticPromotion),
-    /imageTag=\$VERSION|:\$VERSION/u,
-  );
 });
 
 test("portable OSS release publishes verified attestations, signatures, checksums, and preflight", async () => {
@@ -561,12 +407,18 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /embedded OCI attestations, not[\s\S]*?GitHub artifact attestations/u);
   assert.match(release, /docs\/release-notes-v\$VERSION\.md/u);
   assert.match(release, /cp "docs\/release-notes-v\$VERSION\.md" "\$RUNNER_TEMP\/release-notes\.md"/u);
+  assert.match(release, /check-public-release-assets\.mjs/u);
+  assert.match(release, /public-release-assets/u);
+  assert.doesNotMatch(
+    release,
+    /aws-actions\/configure-aws-credentials|AWS_ROLE_ARN|ECR_REGISTRY|ECR_REPOSITORY|aws ecr/iu,
+  );
   assert.doesNotMatch(release, /provenance: false|sbom: false/u);
 });
 
 test("mock OIDC routing is isolated from production workflows", async () => {
   const productionSources = await Promise.all(
-    ["../action.yml", "../.github/workflows/ci.yml", "../.github/workflows/release.yml", "../.github/workflows/steward-task.yml"].map(
+    ["../action.yml", "../.github/workflows/ci.yml", "../.github/workflows/portable-release.yml", "../.github/workflows/steward-task.yml"].map(
       (path) => readFile(new URL(path, import.meta.url), "utf8"),
     ),
   );
@@ -582,7 +434,7 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
     "utf8",
   );
   const releaseWorkflow = await readFile(
-    new URL("../.github/workflows/release.yml", import.meta.url),
+    new URL("../.github/workflows/portable-release.yml", import.meta.url),
     "utf8",
   );
   const productionHandoffs = `${readme}\n${specification}\n${releaseWorkflow}`;
@@ -600,11 +452,8 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
       ),
     );
   }
-  assert.match(
-    releaseWorkflow,
-    /Reusable workflow:.*steward-task\.yml@\$GITHUB_SHA/u,
-  );
-  assert.match(releaseWorkflow, /Action commit:.*\$ACTION_COMMIT/u);
+  assert.match(releaseWorkflow, /workflowCommit:\$workflow_commit/u);
+  assert.match(releaseWorkflow, /actionCommit:\$action_commit/u);
 });
 
 test("failure diagnostics are versioned, bounded, and GitHub-visible", async () => {
