@@ -26,11 +26,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Security
 
-- Disposed the old v0.4.1 count-only ECR result by superseding that image, not
-  by accepting its two unidentified critical occurrences. The v0.7.4 native
-  amd64 and arm64 replacement summaries each report zero critical and the
-  policy retains no acceptance; every future fixable or unaccepted critical
-  remains release-blocking.
+- Fixed the two v0.4.1 ECR critical occurrences of CVE-2026-75803 by pinning
+  `openssl` and `libssl3t64` to Canonical's fixed `3.0.13-0ubuntu3.15` package
+  version, verifying it in both native image jobs, and adding the CVE to the
+  registry-critical baseline. No vulnerability acceptance is used.
 
 ## [0.7.4] - 2026-09-28
 
