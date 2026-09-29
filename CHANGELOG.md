@@ -7,6 +7,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-09-28
+
 ### Added
 
 - Added a complete fork-owned rebuild and publication runbook, configurable
@@ -249,7 +251,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.4...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.5...HEAD
+[0.7.5]: https://github.com/apelogic-ai/steward-run/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/apelogic-ai/steward-run/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/apelogic-ai/steward-run/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/apelogic-ai/steward-run/compare/v0.7.1...v0.7.2
