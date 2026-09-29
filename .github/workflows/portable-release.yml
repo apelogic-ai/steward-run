@@ -26,7 +26,7 @@ permissions:
   packages: write
 
 env:
-  ACTION_COMMIT: d5e3021a0aae21f5d847daa053e84868c458477d
+  ACTION_COMMIT: ddce1d5607ea4c23f45171ca7999f2644c134b82
 
 concurrency:
   group: portable-release-${{ github.ref }}

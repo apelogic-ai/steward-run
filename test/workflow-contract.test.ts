@@ -8,7 +8,7 @@ const workflowFiles = ["ci.yml", "portable-release.yml", "roundtrip.yml", "stewa
 const governedJobContainer =
   "ghcr.io/apelogic-ai/steward-run@" +
   "sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4";
-const actionCommit = "d5e3021a0aae21f5d847daa053e84868c458477d";
+const actionCommit = "ddce1d5607ea4c23f45171ca7999f2644c134b82";
 const directPackageActionCommit = actionCommit;
 const buildkitImage =
   "docker.io/moby/buildkit@" +
