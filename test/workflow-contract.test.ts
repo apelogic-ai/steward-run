@@ -489,7 +489,8 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /verify-image-release-labels\.mjs/u);
   assert.match(release, /git merge-base --is-ancestor "\$image_revision" "\$GITHUB_SHA"/u);
   assert.match(release, /git diff --quiet "\$image_revision" "\$GITHUB_SHA" -- Dockerfile/u);
-  assert.match(release, /COSIGN_EXPERIMENTAL: "1"/u);
+  const releaseWorkflow = parse(release) as { env?: Record<string, string> };
+  assert.equal(releaseWorkflow.env?.COSIGN_EXPERIMENTAL, "1");
   assert.match(release, /SHA256SUMS/u);
   assert.match(release, /steward-run-arc-preflight\.mjs/u);
   assert.match(release, /arc-controller-identity\.mjs/u);
