@@ -26,7 +26,43 @@ async function filesUnder(path) {
   return files;
 }
 
+function decodedSigstorePayloads(value, decoded = []) {
+  if (Array.isArray(value)) {
+    for (const entry of value) decodedSigstorePayloads(entry, decoded);
+    return decoded;
+  }
+  if (!value || typeof value !== "object") return decoded;
+  for (const [key, entry] of Object.entries(value)) {
+    if (
+      typeof entry === "string" &&
+      ["payload", "canonicalizedBody", "body"].includes(key) &&
+      /^[A-Za-z0-9+/]+={0,2}$/u.test(entry)
+    ) {
+      const payload = Buffer.from(entry, "base64").toString("utf8");
+      decoded.push(payload);
+      try {
+        decodedSigstorePayloads(JSON.parse(payload), decoded);
+      } catch {
+        // The signed payload may be text rather than nested JSON.
+      }
+    } else {
+      decodedSigstorePayloads(entry, decoded);
+    }
+  }
+  return decoded;
+}
+
 async function artifactText(path) {
+  if (extname(path) === ".json" && path.endsWith(".sigstore.json")) {
+    const content = await readFile(path, "utf8");
+    let bundle;
+    try {
+      bundle = JSON.parse(content);
+    } catch {
+      throw new Error(`Sigstore bundle is not valid JSON: ${path}`);
+    }
+    return [content, ...decodedSigstorePayloads(bundle)].join("\n");
+  }
   if (extname(path) !== ".tgz") return readFile(path, "utf8");
   const { stdout } = await execFileAsync("tar", ["-xOzf", path], {
     encoding: "utf8",

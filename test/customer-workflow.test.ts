@@ -87,7 +87,20 @@ test("the current handoff documents the public workflow and published OSS artifa
     assert.match(document, /steward-task-customer\.yml/u);
     assert.doesNotMatch(document, /customer reusable workflow is pending|customer workflow artifact is not approved|fork-self-pinned OIDC workflow and live governed-job evidence are still open/u);
   }
-  assert.match(rebuild, /current installation guide/u);
+  assert.match(rebuild, /# Fork, rebuild, and publish/u);
+  assert.match(rebuild, /STEWARD_RUN_RELEASE_AMD64_RUNNER/u);
+  assert.match(rebuild, /STEWARD_RUN_RELEASE_ARM64_RUNNER/u);
+  assert.match(rebuild, /third-party-lock\.json/u);
+  assert.match(rebuild, /must not run `helm dependency build`/u);
+  assert.match(rebuild, /GHCR package visibility is independent/u);
+  assert.match(rebuild, /workflowCommit` and `actionCommit`/u);
+  assert.match(rebuild, /jobs\.governed\.container\.image/u);
+  assert.match(rebuild, /bootstrap digest/u);
+  assert.match(rebuild, /Before every release[\s\S]*?silently trail the release/u);
+  assert.match(rebuild, /portable release workflow's `bootstrap` operation/u);
+  assert.match(rebuild, /previous release's signed image digest/u);
+  assert.match(rebuild, /artifacthub-repo\.yml` `repositoryID`/u);
+  assert.match(rebuild, /supported publication target is the fork owner's GHCR namespace/u);
   assert.match(guide, /job\.workflow_repository/u);
   assert.match(guide, /job\.workflow_sha/u);
   assert.match(guide, /GitHub Enterprise Server is not covered/u);
@@ -97,5 +110,5 @@ test("the current handoff documents the public workflow and published OSS artifa
   assert.match(guide, /no workflow-ref or workflow-SHA selector/u);
   assert.match(guide, /numeric GitHub owner and repository IDs/u);
   assert.doesNotMatch(guide, /job_workflow_ref=apelogic-ai\/steward-run/u);
-  assert.match(rebuild, /does not define or support a customer-fork build/u);
+  assert.doesNotMatch(rebuild, /unsupported legacy|does not define or support/u);
 });

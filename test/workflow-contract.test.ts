@@ -1,15 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
 
-const workflowFiles = ["ci.yml", "portable-release.yml", "roundtrip.yml", "steward-task.yml", "steward-task-self-hosted.yml", "steward-task-customer.yml"];
 const governedJobContainer =
   "ghcr.io/apelogic-ai/steward-run@" +
-  "sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4";
-const actionCommit = "ddce1d5607ea4c23f45171ca7999f2644c134b82";
-const directPackageActionCommit = actionCommit;
+  "sha256:e2ebfb7f3da3fec3ce2dc61eb45a631493282c6359dd4ac8df00a6ee182c8f9e";
 const buildkitImage =
   "docker.io/moby/buildkit@" +
   "sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8";
@@ -46,6 +45,8 @@ test("reusable workflow job timeouts are configurable and bounded", async () => 
 });
 
 test("all external workflow actions are pinned to immutable commits", async () => {
+  const workflowFiles = (await readdir(new URL("../.github/workflows", import.meta.url)))
+    .filter((file) => /\.ya?ml$/iu.test(file));
   for (const file of workflowFiles) {
     const source = await readFile(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8");
     for (const match of source.matchAll(/^\s*uses:\s*([^\s#]+)/gmu)) {
@@ -57,7 +58,66 @@ test("all external workflow actions are pinned to immutable commits", async () =
   }
 });
 
+test("reusable workflows safely replace only their own stale action checkout", async () => {
+  for (const file of ["steward-task.yml", "steward-task-self-hosted.yml"]) {
+    const source = await readFile(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8");
+    const workflow = parse(source) as {
+      jobs: { governed: { steps: Array<{ name?: string; env?: Record<string, string>; run?: string }> } };
+    };
+    const step = workflow.jobs.governed.steps.find(
+      (candidate) => candidate.name === "Reserve the trusted action checkout path",
+    );
+    assert.ok(step?.run, file);
+    assert.equal(step.env?.ACTION_CHECKOUT_PATH, ".steward-run-action", file);
+    assert.equal(step.env?.WORKFLOW_REPOSITORY, "${{ job.workflow_repository }}", file);
+    assert.equal(step.env?.WORKFLOW_SERVER_URL, "${{ github.server_url }}", file);
+
+    const directory = await mkdtemp(join(tmpdir(), "steward-run-action-checkout-"));
+    const actionPath = join(directory, ".steward-run-action");
+    const environment = {
+      ...process.env,
+      ACTION_CHECKOUT_PATH: ".steward-run-action",
+      WORKFLOW_REPOSITORY: "apelogic-ai/steward-run",
+      WORKFLOW_SERVER_URL: "https://github.com",
+    };
+    const runReserve = () => execFileSync("bash", ["-c", step.run ?? ""], {
+      cwd: directory,
+      env: environment,
+      stdio: "pipe",
+    });
+
+    try {
+      assert.doesNotThrow(runReserve, `${file}: empty workspace`);
+
+      await mkdir(actionPath);
+      execFileSync("git", ["init", "-q"], { cwd: actionPath });
+      execFileSync(
+        "git",
+        ["remote", "add", "origin", "https://github.com/apelogic-ai/steward-run"],
+        { cwd: actionPath },
+      );
+      assert.doesNotThrow(runReserve, `${file}: stale owned checkout`);
+      await assert.rejects(access(actionPath), `${file}: stale checkout removed`);
+
+      await mkdir(join(directory, "symlink-target"));
+      await symlink(join(directory, "symlink-target"), actionPath);
+      assert.throws(runReserve, `${file}: symlink rejected`);
+      await rm(actionPath);
+
+      execFileSync("git", ["init", "-q"], { cwd: directory });
+      await mkdir(actionPath);
+      await writeFile(join(actionPath, "caller-owned.txt"), "tracked\n");
+      execFileSync("git", ["add", ".steward-run-action/caller-owned.txt"], { cwd: directory });
+      assert.throws(runReserve, `${file}: caller-tracked path rejected`);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
 test("public workflows and security evidence contain no private cloud account coordinates", async () => {
+  const workflowFiles = (await readdir(new URL("../.github/workflows", import.meta.url)))
+    .filter((file) => /\.ya?ml$/iu.test(file));
   const files = [
     ...workflowFiles.map((file) => new URL(`../.github/workflows/${file}`, import.meta.url)),
     new URL("../security/ecr-v0.1.0-critical-findings.json", import.meta.url),
@@ -122,7 +182,15 @@ test("CI, round-trip, and portable release workflows enforce the product contrac
     permissions?: Record<string, string>;
     jobs: Record<string, { permissions?: Record<string, string> }>;
   };
-  assert.deepEqual(release.permissions, { contents: "write", packages: "write" });
+  assert.deepEqual(release.permissions, { contents: "read" });
+  assert.deepEqual(release.jobs["build-amd64"]!.permissions, {
+    contents: "read",
+    packages: "write",
+  });
+  assert.deepEqual(release.jobs["build-arm64"]!.permissions, {
+    contents: "read",
+    packages: "write",
+  });
   assert.deepEqual(release.jobs.publish!.permissions, {
     contents: "write",
     packages: "write",
@@ -244,15 +312,15 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.match(source, /if:\s*inputs\.invocation-path != ''/u);
   assert.match(source, /ref:\s*\$\{\{ github\.sha \}\}/u);
   assert.match(source, /persist-credentials:\s*false/u);
-  assert.doesNotMatch(source, /inputs\.action-commit|\.steward-run-action/u);
+  assert.doesNotMatch(source, /inputs\.action-commit/u);
+  assert.match(source, /repository:\s*\$\{\{ job\.workflow_repository \}\}/u);
+  assert.match(source, /ref:\s*\$\{\{ job\.workflow_sha \}\}/u);
+  assert.match(source, /path:\s*\.steward-run-action/u);
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /name:\s*\$\{\{ inputs\.input-artifact \}\}/);
   assert.match(source, /path:\s*in/);
-  assert.match(
-    source,
-    new RegExp(`uses:\\s*apelogic-ai/steward-run@${actionCommit}`, "u"),
-  );
-  assert.doesNotMatch(source, /uses:\s*apelogic-ai\/steward-run@\$\{\{/u);
+  assert.match(source, /uses:\s*\.\/\.steward-run-action/u);
+  assert.doesNotMatch(source, /uses:\s*apelogic-ai\/steward-run@/u);
   assert.match(source, /identity-exchange-url:\s*\$\{\{ inputs\.identity-exchange-url \}\}/);
   assert.match(
     source,
@@ -269,9 +337,9 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.match(source, /path:\s*out/);
   assert.doesNotMatch(source, /oidc-audience|bearer-token|identity\.dev|cluster|secret/iu);
 
-  const checkout = source.indexOf("actions/checkout@");
+  const checkout = source.indexOf("path: .steward-run-action");
   const download = source.indexOf("actions/download-artifact@");
-  const action = source.indexOf(`uses: apelogic-ai/steward-run@${actionCommit}`);
+  const action = source.indexOf("uses: ./.steward-run-action");
   const upload = source.indexOf("actions/upload-artifact@");
   assert.ok(checkout >= 0 && checkout < download && download < action && action < upload);
 });
@@ -316,10 +384,10 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   }
   assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
-  assert.match(
-    source,
-    new RegExp(`uses:\\s*apelogic-ai/steward-run@${directPackageActionCommit}`, "u"),
-  );
+  assert.match(source, /repository:\s*\$\{\{ job\.workflow_repository \}\}/u);
+  assert.match(source, /ref:\s*\$\{\{ job\.workflow_sha \}\}/u);
+  assert.match(source, /uses:\s*\.\/\.steward-run-action/u);
+  assert.doesNotMatch(source, /uses:\s*apelogic-ai\/steward-run@/u);
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /actions\/upload-artifact@/);
   assert.match(source, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/u);
@@ -341,6 +409,9 @@ test("CI executes the governed job-container runtime contract", async () => {
     assert.match(ci, new RegExp(capability.replaceAll("/", "\\/"), "u"));
   assert.match(ci, /\/home\/runner\/externals\/node20\/bin\/node --version/u);
   assert.match(ci, /node \/workspace\/dist\/index\.cjs/u);
+  assert.match(ci, /Verify pinned governed job-container image/u);
+  assert.match(ci, /steward-task\.yml/u);
+  assert.equal(ci.match(/dpkg-query -W -f=\\\$\{Version\}/gu)?.length, 4);
   const ciContainerProbe = ci.slice(
     ci.indexOf("- name: Smoke-test ARC and governed job-container contracts"),
     ci.indexOf("- name: Export image vulnerability report"),
@@ -357,6 +428,9 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   );
   assert.match(release, /provenance: mode=max,builder-id=\$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\/actions\/runs\/\$\{\{ github\.run_id \}\}/u);
   assert.match(release, /sbom: generator=docker\.io\/docker\/buildkit-syft-scanner@sha256:[a-f0-9]{64}/u);
+  const sbomGeneratorDigests = [...release.matchAll(/sbom: generator=docker\.io\/docker\/buildkit-syft-scanner@sha256:([a-f0-9]+)/gu)];
+  assert.equal(sbomGeneratorDigests.length, 4);
+  for (const [, digest] of sbomGeneratorDigests) assert.equal(digest?.length, 64);
   assert.match(release, /verify-release-attestations\.mjs/u);
   assert.match(
     release,
@@ -364,10 +438,22 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   );
   assert.match(release, /resume_image_digest:/u);
   assert.match(release, /resume_chart_digest:/u);
+  assert.match(release, /operation:[\s\S]*?- release[\s\S]*?- bootstrap/u);
+  assert.match(release, /bootstrap-preflight:/u);
+  assert.match(release, /bootstrap-build-amd64:/u);
+  assert.match(release, /bootstrap-build-arm64:/u);
+  assert.match(release, /bootstrap-publish:/u);
+  assert.match(release, /printf 'tag=bootstrap-%s-%s/u);
+  assert.match(release, /Verify patched amd64 bootstrap image[\s\S]*?3\.0\.13-0ubuntu3\.15/u);
+  assert.match(release, /Verify patched arm64 bootstrap image[\s\S]*?3\.0\.13-0ubuntu3\.15/u);
+  assert.equal(release.match(/dpkg-query -W -f=\\\$\{Version\}/gu)?.length, 4);
+  assert.match(release, /verify-runnable-image-platforms\.mjs[\s\\\n]*"\$RUNNER_TEMP\/bootstrap-index\.json" linux\/amd64 linux\/arm64/u);
+  assert.doesNotMatch(release, /awk '\$1 == "Digest:" \{ print \$2; exit \}'/u);
   assert.match(release, /push:[\s\S]*?tags:[\s\S]*?v\[0-9\]\+/u);
   assert.match(release, /refs\/tags\/v\[0-9\]\+/u);
   assert.doesNotMatch(release, /\[\[ "\$GITHUB_REF" == refs\/heads\/main \]\]/u);
-  assert.match(release, /compare\/\$GITHUB_SHA\.\.\.refs\/heads\/main/u);
+  assert.match(release, /default_branch=.*\.default_branch/u);
+  assert.match(release, /compare\/\$GITHUB_SHA\.\.\.refs\/heads\/\$default_branch/u);
   assert.match(release, /"\$main_status" == "identical"[\s\S]*?"\$main_status" == "ahead"/u);
   assert.match(release, /identity="https:\/\/github\.com\/\$GITHUB_REPOSITORY\/\.github\/workflows\/portable-release\.yml@\$GITHUB_REF"/u);
   assert.equal(
@@ -386,9 +472,8 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /arc-controller-identity\.mjs/u);
   assert.match(release, /artifacthub-repo\.yml:application\/vnd\.cncf\.artifacthub\.repository-metadata\.layer\.v1\.yaml/u);
   assert.match(release, /oras manifest fetch --descriptor "\$CHART:artifacthub\.io"/u);
-  assert.match(release, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));
-  assert.match(release, /compare\/\$ACTION_COMMIT\.\.\.\$GITHUB_SHA[\s\S]*?== ahead/u);
-  assert.match(release, /contents\/action\.yml\?ref=\$ACTION_COMMIT/u);
+  assert.doesNotMatch(release, /ACTION_COMMIT/u);
+  assert.match(release, /action_metadata="\$\(cat action\.yml\)"/u);
   assert.match(release, /grep -Fq "failure-category:" <<<"\$action_metadata"/u);
   assert.match(release, /grep -Fq "actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020" <<<"\$action_metadata"/u);
   assert.match(release, /grep -Fq "if: steps\.node24\.outputs\.available != 'true'" <<<"\$action_metadata"/u);
@@ -396,10 +481,17 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /RELEASE_IDENTITY=.*refs\/tags\/\$RELEASE_TAG/u);
   assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task\.yml/u);
   assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task-self-hosted\.yml/u);
+  assert.match(release, /job_container_image=[\s\S]*?steward-task\.yml/u);
+  assert.match(release, /job_container_image.*\^ghcr\\\.io\/\$owner\/steward-run@sha256/u);
+  assert.match(release, /github\.com\/apelogic-ai\/steward-run[\s\S]*?artifacthub-repo\.yml/u);
+  const vendoredChartCheck = release.indexOf("npm run check:vendored-chart");
+  const chartPackage = release.indexOf("helm package charts/steward-run-arc");
+  assert.ok(vendoredChartCheck >= 0 && vendoredChartCheck < chartPackage);
   assert.match(release, /schemaVersion:3/u);
   assert.match(release, /workflowRepository:\$workflow_repository/u);
   assert.match(release, /workflowCommit:\$workflow_commit/u);
   assert.match(release, /actionCommit:\$action_commit/u);
+  assert.match(release, /--arg action_commit "\$GITHUB_SHA"/u);
   assert.match(release, /image:\$image/u);
   assert.doesNotMatch(release, /governedJobContainerImage/u);
   assert.match(release, /format:"buildkit-embedded-oci"/u);
@@ -414,6 +506,10 @@ test("portable OSS release publishes verified attestations, signatures, checksum
     /aws-actions\/configure-aws-credentials|AWS_ROLE_ARN|ECR_REGISTRY|ECR_REPOSITORY|aws ecr/iu,
   );
   assert.doesNotMatch(release, /provenance: false|sbom: false/u);
+  assert.doesNotMatch(release, /helm dependency build/u);
+  assert.match(release, /DOCKER_BUILD_RECORD_UPLOAD:\s*"false"/u);
+  assert.match(release, /STEWARD_RUN_RELEASE_AMD64_RUNNER/u);
+  assert.match(release, /STEWARD_RUN_RELEASE_ARM64_RUNNER/u);
 });
 
 test("mock OIDC routing is isolated from production workflows", async () => {
@@ -443,12 +539,11 @@ test("production handoffs pin the reusable workflow to the release commit", asyn
   assert.match(readme, /docs\/installation-v0\.5\.0\.md/u);
   assert.doesNotMatch(readme, /uses:\s*apelogic-ai\/steward-run\/\.github\/workflows\/steward-task\.yml/u);
   assert.doesNotMatch(readme, /action-commit:/u);
-  assert.match(releaseWorkflow, new RegExp(`ACTION_COMMIT:\\s*${actionCommit}`, "u"));
-  assert.match(releaseWorkflow, /compare\/\$ACTION_COMMIT\.\.\.\$GITHUB_SHA[\s\S]*?== ahead/u);
+  assert.doesNotMatch(releaseWorkflow, /ACTION_COMMIT/u);
   for (const workflow of ["steward-task.yml", "steward-task-self-hosted.yml"]) {
     assert.ok(
       releaseWorkflow.includes(
-        `grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/${workflow}`,
+        `grep -Fq 'uses: ./.steward-run-action' ".github/workflows/$workflow"`,
       ),
     );
   }

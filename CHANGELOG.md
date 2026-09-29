@@ -7,6 +7,41 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-09-28
+
+### Added
+
+- Added a complete fork-owned rebuild and publication runbook, configurable
+  native release-runner labels, self-pinned reusable action sources, and
+  release preflights that reject an upstream job-container or chart identity
+  in a fork.
+- Vendored and checksum-locked ARC chart 0.14.2 so chart linting, rendering,
+  and release packaging do not resolve the subchart from GHCR.
+
+### Changed
+
+- Expanded the public workflow boundary gate to every YAML workflow and
+  decoded Sigstore payloads, narrowed release permissions to publishing jobs,
+  and disabled Docker build-record uploads.
+- Clarified the v0.7.4 proxy upgrade boundary: lowercase variables take
+  precedence, direct Steward/Identity hosts belong in `NO_PROXY`, and the
+  private-CA path follows redirects under the same validation rules.
+- The schema-3 release manifest now records the tag commit as both
+  `workflowCommit` and `actionCommit`, matching the self-pinned reusable
+  workflow source.
+- Added a native pre-tag runner-image bootstrap operation and made deliberate
+  governed job-container review/re-pinning part of every release. CI verifies
+  the wrapper's immutable digest on both supported architectures.
+
+### Security
+
+- Fixed the two v0.4.1 ECR critical occurrences of CVE-2026-75803 by pinning
+  `openssl` and `libssl3t64` to Canonical's fixed `3.0.13-0ubuntu3.15` package
+  version, verifying it in both native image jobs and the pinned governed
+  job-container image, and adding the CVE to the registry-critical baseline.
+  v0.7.4 remains affected, so operators must upgrade to v0.7.5; no
+  vulnerability acceptance is used.
+
 ## [0.7.4] - 2026-09-28
 
 ### Added
@@ -220,7 +255,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.4...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.5...HEAD
+[0.7.5]: https://github.com/apelogic-ai/steward-run/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/apelogic-ai/steward-run/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/apelogic-ai/steward-run/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/apelogic-ai/steward-run/compare/v0.7.1...v0.7.2

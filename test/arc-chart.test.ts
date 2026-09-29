@@ -21,11 +21,23 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       ...process.env,
       HELM_CACHE_HOME: join(work, "cache"),
       HELM_CONFIG_HOME: join(work, "config"),
+      HELM_DATA_HOME: join(work, "data"),
+      HELM_REGISTRY_CONFIG: join(work, "registry", "config.json"),
+      HELM_REPOSITORY_CACHE: join(work, "repository-cache"),
     };
     const helm = (...args: string[]) => execFileSync("helm", args, { encoding: "utf8", env });
     const template = (...args: string[]) => helm("template", ...args, "--kube-version", "1.34.0");
-    helm("dependency", "build", chart);
     helm("lint", chart, "--strict", "--values", fixture);
+    helm("package", chart, "--destination", work);
+    const packagedEntries = execFileSync(
+      "tar",
+      ["-tzf", join(work, "steward-run-arc-0.7.5.tgz")],
+      { encoding: "utf8" },
+    );
+    assert.match(
+      packagedEntries,
+      /steward-run-arc\/charts\/gha-runner-scale-set\/Chart\.yaml/u,
+    );
     const rendered = template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture);
     for (const version of ["1.32.0", "1.33.0", "1.34.0", "1.35.0", "1.36.0"]) {
       assert.match(helm("template", "steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--kube-version", version), /kind: AutoscalingRunnerSet/u);

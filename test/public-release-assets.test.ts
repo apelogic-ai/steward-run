@@ -43,6 +43,25 @@ test("public release asset check rejects private references in text and packaged
   }
 });
 
+test("public release asset check scans decoded Sigstore payloads", async () => {
+  const root = await mkdtemp(join(tmpdir(), "steward-run-sigstore-assets-"));
+  try {
+    const bundle = {
+      mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
+      dsseEnvelope: {
+        payloadType: "application/vnd.in-toto+json",
+        payload: Buffer.from(JSON.stringify({ subject: privateRegistry })).toString("base64"),
+        signatures: [],
+      },
+    };
+    const path = join(root, "image-signature.sigstore.json");
+    await writeFile(path, `${JSON.stringify(bundle)}\n`);
+    await assert.rejects(checkPublicReleaseAssets([path]), /AWS ECR registry/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("public release asset check rejects symlink indirection", async () => {
   const root = await mkdtemp(join(tmpdir(), "steward-run-public-symlink-"));
   try {

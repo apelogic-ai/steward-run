@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "historicalEvidence": {
+    "release": "v0.4.1",
+    "imageIndexDigest": "sha256:3cc9d32be4a251fda3b6a79c104e797263fe11e513b21df670b13afa78f18f02",
+    "scanner": "aws-ecr",
+    "completedAt": "2026-09-21T23:44:42Z",
+    "architectures": {
+      "linux/amd64": { "criticalCount": 2 },
+      "linux/arm64": { "criticalCount": 2 }
+    },
+    "findingIdentifiersPublishedInReleaseSummary": false,
+    "retainedChildArtifactFinding": {
+      "architecture": "linux/amd64",
+      "vulnerabilityId": "CVE-2026-75803",
+      "severity": "CRITICAL",
+      "cvssScore": 9.1,
+      "occurrences": [
+        { "packageName": "openssl", "installedVersion": "3.0.13-0ubuntu3.11" },
+        { "packageName": "libssl3t64", "installedVersion": "3.0.13-0ubuntu3.11" }
+      ]
+    }
+  },
+  "disposition": {
+    "status": "fixed",
+    "acceptedCriticalFindings": 0,
+    "reason": "CVE-2026-75803 is remediated by upgrading both affected packages to Canonical's fixed Ubuntu 24.04 version and retaining the ECR classification in the critical-ID baseline. No vulnerability acceptance is used."
+  },
+  "remediation": {
+    "targetRelease": "v0.7.5",
+    "vulnerabilityId": "CVE-2026-75803",
+    "affectedPackages": ["openssl", "libssl3t64"],
+    "v0.4.1InstalledVersion": "3.0.13-0ubuntu3.11",
+    "v0.7.4InstalledVersion": "3.0.13-0ubuntu3.12",
+    "fixedVersion": "3.0.13-0ubuntu3.15",
+    "advisory": "https://ubuntu.com/security/CVE-2026-75803",
+    "policyGate": "security/vulnerability-policy.json"
+  }
+}

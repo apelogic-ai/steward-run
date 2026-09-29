@@ -21,6 +21,8 @@ RUN apt-get update \
        libc-bin=2.39-0ubuntu8.9 \
        libcurl3t64-gnutls=8.5.0-2ubuntu10.15 \
        libperl5.38t64=5.38.2-3.2ubuntu0.6 \
+       libssl3t64=3.0.13-0ubuntu3.15 \
+       openssl=3.0.13-0ubuntu3.15 \
        perl=5.38.2-3.2ubuntu0.6 \
        perl-base=5.38.2-3.2ubuntu0.6 \
        perl-modules-5.38=5.38.2-3.2ubuntu0.6 \

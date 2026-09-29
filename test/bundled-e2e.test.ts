@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import test from "node:test";
 import { startMockSteward } from "./support/mock-steward.ts";
 
@@ -121,21 +121,21 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
   }
 });
 
-test("both supported wrappers pin and execute the discovery-capable action bundle", async () => {
+test("both supported wrappers execute their own immutable discovery-capable action bundle", async () => {
   const repository = new URL("..", import.meta.url);
   const workflowPaths = [
     ".github/workflows/steward-task.yml",
     ".github/workflows/steward-task-self-hosted.yml",
   ];
-  const pins = await Promise.all(
+  await Promise.all(
     workflowPaths.map(async (workflowPath) => {
       const source = await readFile(new URL(workflowPath, repository), "utf8");
-      const match = source.match(/uses:\s*apelogic-ai\/steward-run@([a-f0-9]{40})/u);
-      assert.ok(match, `${workflowPath} must pin the action to an immutable commit`);
-      return match[1]!;
+      assert.match(source, /repository:\s*\$\{\{ job\.workflow_repository \}\}/u);
+      assert.match(source, /ref:\s*\$\{\{ job\.workflow_sha \}\}/u);
+      assert.match(source, /uses:\s*\.\/\.steward-run-action/u);
+      assert.doesNotMatch(source, /uses:\s*apelogic-ai\/steward-run@/u);
     }),
   );
-  assert.equal(pins[0], pins[1], "supported wrappers must execute the same action commit");
 
   const workspace = await mkdtemp(join(tmpdir(), "steward-run-pinned-bundle-"));
   const bundlePath = join(workspace, "pinned-index.cjs");
@@ -143,11 +143,7 @@ test("both supported wrappers pin and execute the discovery-capable action bundl
   const summaryFile = join(workspace, "github-summary");
   const mock = await startMockSteward();
   try {
-    const bundle = execFileSync("git", ["show", `${pins[0]}:dist/index.cjs`], {
-      cwd: repository,
-      encoding: "utf8",
-      maxBuffer: 4 * 1024 * 1024,
-    });
+    const bundle = await readFile(new URL("dist/index.cjs", repository), "utf8");
     await mkdir(join(workspace, "in"));
     await writeFile(join(workspace, "in", "payload.bin"), "fixture");
     await writeFile(bundlePath, bundle);

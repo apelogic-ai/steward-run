@@ -22,6 +22,7 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
     "libc6=2.39-0ubuntu8.9", "libc-bin=2.39-0ubuntu8.9",
     "libcurl3t64-gnutls=8.5.0-2ubuntu10.15",
     "libperl5.38t64=5.38.2-3.2ubuntu0.6", "perl=5.38.2-3.2ubuntu0.6",
+    "libssl3t64=3.0.13-0ubuntu3.15", "openssl=3.0.13-0ubuntu3.15",
     "perl-base=5.38.2-3.2ubuntu0.6", "perl-modules-5.38=5.38.2-3.2ubuntu0.6",
   ]) {
     assert.ok(dockerfile.includes(pinnedPackage), pinnedPackage);
@@ -81,6 +82,12 @@ test("the final runner image excludes the build-only GLib package chain", async 
   }
   assert.match(dockerfile, /apt-get check/);
   assert.match(ciWorkflow, /sudo -n apt-get check/);
+  for (const packageName of ["openssl", "libssl3t64"]) {
+    assert.match(
+      ciWorkflow,
+      new RegExp(`dpkg-query -W -f=\\\\\\$\\{Version\\} ${packageName}\\)" = "3\\.0\\.13-0ubuntu3\\.15"`),
+    );
+  }
   assert.match(ciWorkflow, /Runner\.Listener --version/);
   assert.match(ciWorkflow, /ldd \/home\/runner\/bin\/Runner\.Listener/);
   for (const command of ["git", "jq", "python3", "unzip"]) {
@@ -100,21 +107,21 @@ test("the package metadata identifies the in-cluster integration release", async
     await readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   ) as { version: string; packages: Record<string, { version?: string }> };
 
-  assert.equal(packageJson.version, "0.7.4");
+  assert.equal(packageJson.version, "0.7.5");
   assert.equal(packageJson.license, "MIT");
-  assert.equal(packageLock.version, "0.7.4");
-  assert.equal(packageLock.packages[""]?.version, "0.7.4");
+  assert.equal(packageLock.version, "0.7.5");
+  assert.equal(packageLock.packages[""]?.version, "0.7.5");
   for (const chart of ["steward-run", "steward-run-arc"]) {
     const metadata = await readFile(
       new URL(`../charts/${chart}/Chart.yaml`, import.meta.url),
       "utf8",
     );
-    assert.match(metadata, /^appVersion: 0\.7\.4$/mu);
+    assert.match(metadata, /^appVersion: 0\.7\.5$/mu);
   }
   const libraryChart = await readFile(new URL("../charts/steward-run/Chart.yaml", import.meta.url), "utf8");
   const applicationChart = await readFile(new URL("../charts/steward-run-arc/Chart.yaml", import.meta.url), "utf8");
   assert.match(libraryChart, /^version: 0\.1\.1$/mu);
-  assert.match(applicationChart, /^version: 0\.7\.4$/mu);
+  assert.match(applicationChart, /^version: 0\.7\.5$/mu);
 });
 
 test("Docker base images receive updates inside the runner support window", async () => {

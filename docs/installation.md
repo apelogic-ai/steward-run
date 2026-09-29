@@ -1,4 +1,4 @@
-# steward-run v0.7.4 installation, setup, and integration
+# steward-run v0.7.5 installation, setup, and integration
 
 This is the complete operator runbook for the standalone OSS release. Use one
 tagged release as a unit: reusable workflow, action commit, runner image, and
@@ -19,7 +19,7 @@ manifest field is required.
 
 The [v0.5.0 guide](installation-v0.5.0.md) is historical and applies only to
 that release. Do not use its versions, paths, or explicit-authentication
-defaults for v0.7.4.
+defaults for v0.7.5.
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ the signed manifest.
 
 ```sh
 set -euo pipefail
-RELEASE_VERSION=0.7.4
+RELEASE_VERSION=0.7.5
 RELEASE_TAG="v$RELEASE_VERSION"
 RELEASE_REPOSITORY=apelogic-ai/steward-run
 RELEASE_IDENTITY="https://github.com/$RELEASE_REPOSITORY/.github/workflows/portable-release.yml@refs/tags/$RELEASE_TAG"
@@ -117,9 +117,9 @@ is therefore not the verification command for this handoff. The Cosign
 commands above verify the image, chart, manifest, and checksum inventory
 against the exact release-workflow identity. `RELEASE_REPOSITORY` keeps that
 repository binding explicit; this maintained path sets it to the public
-upstream. An independent fork distribution needs its own complete release
-policy and verification guide and must not reuse the upstream manifest or
-certificate identity.
+upstream. An independent distribution must follow the complete
+[fork, rebuild, and publish procedure](customer-rebuild.md) and must not reuse
+the upstream manifest or certificate identity.
 
 ### 2. Select the cluster and verify ARC 0.14.2
 
@@ -339,7 +339,15 @@ precedence when both cases are present. `NO_PROXY` is a comma- or space-separate
 host list; an entry can include a port, a leading dot or `*.` for subdomains, or
 `*` to bypass all proxies. The same routing applies to GitHub OIDC, both metadata
 requests, Identity exchange, and every Steward API request. The private-CA
-compatibility transport uses the same proxy path and keeps TLS verification on.
+compatibility transport uses the same proxy path, follows redirects under the
+same safe-origin and HTTPS checks as system trust, and keeps TLS verification
+on.
+
+For upgrades from versions before v0.7.4, proxy variables are newly honored.
+Lowercase variables win over uppercase variables. Add the exact Steward and
+Identity hosts to `NO_PROXY`/`no_proxy` when those services must be reached
+directly; otherwise they will use the configured proxy. This applies equally
+to the private-CA path, including redirected requests.
 
 Set proxy variables before the action's Node process starts. For self-hosted
 runners, follow GitHub's
@@ -397,8 +405,8 @@ budget. Metadata responses must be exactly HTTP 200.
 | Purpose | Object or claim | Owner |
 | --- | --- | --- |
 | ARC registration | Existing `Opaque` Secret in `arc-runners` with `github_app_id`, `github_app_installation_id`, and `github_app_private_key` | GitHub App / cluster operator |
-| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.7.4 release |
-| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.7.4 release |
+| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.7.5 release |
+| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.7.5 release |
 | Steward authentication | Job-scoped GitHub OIDC token from `id-token: write`; no static token Secret | GitHub / Identity |
 | Optional public CA | Existing ConfigMap key `ca.crt`, mounted at `/etc/steward-run/trust/ca.crt` | PKI / cluster operator |
 | ARC controller | Separate 0.14.2 controller and CRDs | Cluster platform operator |
@@ -579,6 +587,10 @@ Restore the previous release as one coherent unit: previous chart package,
 image digest, and reusable-workflow commit. Restore Identity policy only when
 the release migration actually changed a supported policy field.
 Do not roll back only the image or only the workflow.
+
+The v0.7.4 image contains the affected OpenSSL packages described in the
+v0.7.5 release notes. Rolling back to it reintroduces CVE-2026-75803; do so
+only under an explicit incident/security decision and upgrade again promptly.
 
 ```sh
 helm --kubeconfig "$KUBECONFIG_FILE" --kube-context "$KUBE_CONTEXT" \

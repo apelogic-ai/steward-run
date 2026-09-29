@@ -8,6 +8,14 @@ an existing GitHub App Secret reference, a GitHub registration URL, and an
 operator-selected runner image pinned by `sha256` digest. No credential value is
 accepted in Helm values.
 
+The exact upstream chart archive is committed under `charts/` and bound to
+its upstream OCI manifest digest plus local archive SHA-256 in
+`third-party-lock.json`. Normal lint, template, package, and release commands
+use that vendored archive and must not run `helm dependency build`. Run
+`npm run check:vendored-chart` before packaging. The controlled dependency
+refresh procedure is documented in the
+[fork publication guide](https://github.com/apelogic-ai/steward-run/blob/main/docs/customer-rebuild.md).
+
 The supported Kubernetes window is 1.32 through 1.36 inclusive. CI renders
 every minor in that window and rejects versions outside it.
 
@@ -84,16 +92,16 @@ Configure proxy environment and any intercepting CA on the runner/job boundary;
 do not put proxy credentials in Helm values. The complete destination inventory
 and proxy behavior are in the installation guide.
 
-The v0.7.4 chart and runner include the optional exact User Envelope selector,
+The v0.7.5 chart and runner include the optional exact User Envelope selector,
 authentication discovery, and system trust by default. Follow the
 [current installation guide](../../docs/installation.md)
 and pull the chart from the public repository with:
 
 ```sh
-helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.7.4
+helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.7.5
 ```
 
-The matching runner tag is `ghcr.io/apelogic-ai/steward-run:0.7.4`. Tags are
+The matching runner tag is `ghcr.io/apelogic-ai/steward-run:0.7.5`. Tags are
 for discovery only: resolve and pin the image digest from the release's
 `oss-release-manifest.json`.
 

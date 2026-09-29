@@ -89,7 +89,7 @@ jobs:
     runs-on: ${{ inputs.runner-label }}
     timeout-minutes: ${{ inputs.job-timeout-minutes }}
     container:
-      image: ghcr.io/apelogic-ai/steward-run@sha256:7b2d9b13b83567ba8a9558c2a0cd275b7aec972efc88c122c95e8b54400df5b4
+      image: ghcr.io/apelogic-ai/steward-run@sha256:e2ebfb7f3da3fec3ce2dc61eb45a631493282c6359dd4ac8df00a6ee182c8f9e
     permissions:
       contents: read
       id-token: write
@@ -112,17 +112,56 @@ jobs:
             echo "::error::job-timeout-minutes must be an integer from 1 through 360"
             exit 1
           fi
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: caller-source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: inputs.invocation-path != ''
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Reserve the trusted action checkout path
+        shell: bash
+        env:
+          ACTION_CHECKOUT_PATH: .steward-run-action
+          WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          WORKFLOW_SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          if [[ -L "$ACTION_CHECKOUT_PATH" ]]; then
+            echo "::error::trusted action checkout path must not be a symlink"
+            exit 1
+          fi
+          if [[ ! -e "$ACTION_CHECKOUT_PATH" ]]; then
+            exit 0
+          fi
+          if [[ ! -d "$ACTION_CHECKOUT_PATH" ]]; then
+            echo "::error::trusted action checkout path exists but is not a directory"
+            exit 1
+          fi
+          if git rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+             git ls-files --error-unmatch -- "$ACTION_CHECKOUT_PATH" "$ACTION_CHECKOUT_PATH/**" >/dev/null 2>&1; then
+            echo "::error::trusted action checkout path is tracked by the caller repository"
+            exit 1
+          fi
+          expected_origin="$WORKFLOW_SERVER_URL/$WORKFLOW_REPOSITORY"
+          actual_origin="$(git -C "$ACTION_CHECKOUT_PATH" remote get-url origin 2>/dev/null || true)"
+          if [[ "$actual_origin" != "$expected_origin" && "$actual_origin" != "$expected_origin.git" ]]; then
+            echo "::error::refusing to remove an action checkout path not owned by this reusable workflow"
+            exit 1
+          fi
+          rm -rf -- "$ACTION_CHECKOUT_PATH"
+      - id: workflow-source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .steward-run-action
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.input-artifact }}
           path: in
       - id: task
-        uses: apelogic-ai/steward-run@ddce1d5607ea4c23f45171ca7999f2644c134b82
+        uses: ./.steward-run-action
         with:
           workflow: ${{ inputs.workflow }}
           envelope-digest: ${{ inputs.envelope-digest }}
