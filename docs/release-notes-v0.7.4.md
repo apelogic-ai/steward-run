@@ -19,6 +19,11 @@ chart package.
 
 ## Network and authentication integration
 
+- **Upgrade note:** proxy variables are newly honored in v0.7.4, and lowercase
+  `http_proxy`, `https_proxy`, and `no_proxy` take precedence over uppercase
+  forms. Put the exact Steward and Identity hosts in `NO_PROXY`/`no_proxy` when
+  they must bypass the proxy. The private-CA request path now follows redirects
+  while retaining HTTPS/origin validation and certificate verification.
 - GitHub OIDC, authentication discovery, Identity exchange, and Steward API
   traffic honor upper- and lowercase `HTTP_PROXY`, `HTTPS_PROXY`, and
   `NO_PROXY` settings. The private-CA compatibility path keeps certificate

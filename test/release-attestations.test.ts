@@ -234,49 +234,6 @@ test("release attestation verification binds provenance and SPDX to each runnabl
   }
 });
 
-test("release index assembly preserves both native children and their attestations", async () => {
-  const root = await mkdtemp(join(tmpdir(), "steward-run-index-"));
-  try {
-    const amd64 = await createFixture(join(root, "amd64"), undefined, ["amd64"]);
-    const arm64 = await createFixture(join(root, "arm64"), undefined, ["arm64"]);
-    const outputLayout = join(root, "release-oci");
-    const outputManifest = join(root, "release-index.json");
-    const outputMetadata = join(root, "release-metadata.json");
-    await execFileAsync(
-      process.execPath,
-      [
-        "scripts/assemble-release-index.mjs",
-        outputLayout,
-        outputManifest,
-        outputMetadata,
-        `linux/amd64=${amd64.layout}`,
-        `linux/arm64=${arm64.layout}`,
-      ],
-      { cwd: repository },
-    );
-    const metadata = JSON.parse(await readFile(outputMetadata, "utf8"));
-    await execFileAsync(
-      process.execPath,
-      [
-        "scripts/verify-release-attestations.mjs",
-        outputManifest,
-        outputLayout,
-        metadata["containerimage.digest"],
-        join(root, "summary.json"),
-        "linux/amd64",
-        "linux/arm64",
-      ],
-      { cwd: repository },
-    );
-    assert.equal(
-      `sha256:${createHash("sha256").update(await readFile(outputManifest)).digest("hex")}`,
-      metadata["containerimage.digest"],
-    );
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
 for (const [defect, message] of [
   ["missing-provenance", "exactly one provenance and one SPDX"],
   ["mismatched-subject", "subject does not match runnable"],

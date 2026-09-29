@@ -22,11 +22,10 @@ on:
         type: string
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 env:
-  ACTION_COMMIT: ddce1d5607ea4c23f45171ca7999f2644c134b82
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
 
 concurrency:
   group: portable-release-${{ github.ref }}
@@ -34,7 +33,9 @@ concurrency:
 
 jobs:
   preflight:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.refs.outputs.version }}
       image: ${{ steps.refs.outputs.image }}
@@ -63,8 +64,10 @@ jobs:
           else
             [[ -z "$INPUT_VERSION" ]]
           fi
+          default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)"
+          [[ "$default_branch" =~ ^[A-Za-z0-9._/-]+$ ]]
           main_status="$(gh api \
-            "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...refs/heads/main" --jq .status)"
+            "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...refs/heads/$default_branch" --jq .status)"
           [[ "$main_status" == "identical" || "$main_status" == "ahead" ]]
           [[ "$(node -p 'require("./package.json").version')" == "$VERSION" ]]
           [[ "$(sed -n 's/^version: //p' charts/steward-run-arc/Chart.yaml | head -1)" == "$VERSION" ]]
@@ -73,17 +76,16 @@ jobs:
           # The installation example must retain these two literal variable names.
           # shellcheck disable=SC2016
           grep -Fq 'RELEASE_IDENTITY="https://github.com/$RELEASE_REPOSITORY/.github/workflows/portable-release.yml@refs/tags/$RELEASE_TAG"' docs/installation.md
-          [[ "$ACTION_COMMIT" =~ ^[0-9a-f]{40}$ && "$ACTION_COMMIT" != "$GITHUB_SHA" ]]
-          gh api "repos/$GITHUB_REPOSITORY/commits/$ACTION_COMMIT" --silent
-          [[ "$(gh api "repos/$GITHUB_REPOSITORY/compare/$ACTION_COMMIT...$GITHUB_SHA" --jq .status)" == ahead ]]
-          action_metadata="$(gh api -H "Accept: application/vnd.github.raw+json" \
-            "repos/$GITHUB_REPOSITORY/contents/action.yml?ref=$ACTION_COMMIT")"
+          action_metadata="$(cat action.yml)"
           grep -Fq "failure-category:" <<<"$action_metadata"
           grep -Fq "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020" <<<"$action_metadata"
           grep -Fq "if: steps.node24.outputs.available != 'true'" <<<"$action_metadata"
           grep -Fq "package-manager-cache: false" <<<"$action_metadata"
-          grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task.yml
-          grep -Fq "uses: apelogic-ai/steward-run@$ACTION_COMMIT" .github/workflows/steward-task-self-hosted.yml
+          for workflow in steward-task.yml steward-task-self-hosted.yml steward-task-customer.yml; do
+            grep -Fq 'repository: $''{{ job.workflow_repository }}' ".github/workflows/$workflow"
+            grep -Fq 'ref: $''{{ job.workflow_sha }}' ".github/workflows/$workflow"
+            grep -Fq 'uses: ./.steward-run-action' ".github/workflows/$workflow"
+          done
           grep -Fq "failure-category:" .github/workflows/steward-task.yml
           grep -Fq "failure-category:" .github/workflows/steward-task-self-hosted.yml
           if gh release view "v$VERSION" >/dev/null 2>&1; then
@@ -104,7 +106,10 @@ jobs:
   build-amd64:
     if: ${{ inputs.resume_image_digest == '' && inputs.resume_chart_digest == '' }}
     needs: preflight
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      packages: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -134,7 +139,10 @@ jobs:
   build-arm64:
     if: ${{ inputs.resume_image_digest == '' && inputs.resume_chart_digest == '' }}
     needs: preflight
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ vars.STEWARD_RUN_RELEASE_ARM64_RUNNER || 'ubuntu-24.04-arm' }}
+    permissions:
+      contents: read
+      packages: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -176,7 +184,7 @@ jobs:
       packages: write
       id-token: write
     needs: [preflight, build-amd64, build-arm64]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.STEWARD_RUN_RELEASE_AMD64_RUNNER || 'ubuntu-24.04' }}
     env:
       VERSION: ${{ needs.preflight.outputs.version }}
       IMAGE: ${{ needs.preflight.outputs.image }}
@@ -238,7 +246,6 @@ jobs:
             docker buildx imagetools create --tag "$IMAGE:$VERSION" \
               "$IMAGE@${{ needs.build-amd64.outputs.digest }}" \
               "$IMAGE@${{ needs.build-arm64.outputs.digest }}"
-            helm dependency build charts/steward-run-arc
             helm package charts/steward-run-arc --destination "$RUNNER_TEMP"
             helm push "$RUNNER_TEMP/steward-run-arc-$VERSION.tgz" \
               "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
@@ -291,7 +298,7 @@ jobs:
           attestation_sha256="$(sha256sum "$RUNNER_TEMP/release-attestation-summary.json" | cut -d ' ' -f 1)"
           jq -n --arg version "$VERSION" --arg commit "$GITHUB_SHA" \
             --arg workflow_repository "$GITHUB_REPOSITORY" \
-            --arg workflow_commit "$GITHUB_SHA" --arg action_commit "$ACTION_COMMIT" \
+            --arg workflow_commit "$GITHUB_SHA" --arg action_commit "$GITHUB_SHA" \
             --arg image "$IMAGE@$IMAGE_DIGEST" --arg chart "$CHART@$CHART_DIGEST" \
             --arg chart_package "$chart_package" --arg chart_sha256 "$chart_sha256" \
             --arg identity_sha256 "$identity_sha256" --arg preflight_sha256 "$preflight_sha256" \

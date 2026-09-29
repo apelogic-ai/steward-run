@@ -8,6 +8,10 @@ The [v0.7.4 installation, setup, and integration guide](docs/installation.md)
 describes the current release contract. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
 authoritative guide for v0.5.0, which predates authentication discovery and
 requires the explicit Identity exchange inputs.
+Operators publishing an independent distribution should follow the
+[fork, rebuild, and publish procedure](docs/customer-rebuild.md); it defines
+the separate workflow identity, OCI coordinates, package visibility, and
+verification handoff a fork must own.
 Before registration or scale-set installation, run the released
 [read-only ARC controller preflight](docs/arc-controller-preflight.md) to verify
 the exact controller release, ServiceAccount, and supported ARC version.
@@ -171,6 +175,8 @@ never enabled merely because reserved files are present.
 The installable [`steward-run-arc` application chart](charts/steward-run-arc/)
 pins upstream ARC scale-set chart 0.14.2 and creates the runner scale set,
 listener, service accounts, and RBAC using its upstream templates. The ARC
+dependency archive is vendored and checksum-locked, so chart linting,
+rendering, and packaging do not pull a subchart from GHCR. The ARC
 controller remains an external shared prerequisite. The chart requires a
 customer-owned runner image at a full `sha256` digest and a GitHub registration
 URL plus existing App Secret reference. It defaults to zero idle runners and

@@ -14,4 +14,3 @@ coverage/
 *.pfx
 kubeconfig
 kubeconfig.*
-charts/steward-run-arc/charts/

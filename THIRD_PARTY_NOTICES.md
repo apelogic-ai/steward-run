@@ -48,8 +48,9 @@ The released runner image additionally contains or derives from:
   [third-party notices](https://github.com/nodejs/node/blob/v24.18.1/LICENSE);
 - Ubuntu packages and the explicitly pinned security updates listed in the
   `Dockerfile`, governed by their package-specific copyright files; and
-- `gha-runner-scale-set` 0.14.2, packaged into the application chart from the
-  Apache-2.0-licensed
+- `gha-runner-scale-set` 0.14.2, vendored as the checksum-locked archive
+  recorded in `charts/steward-run-arc/third-party-lock.json` and packaged into
+  the application chart from the Apache-2.0-licensed
   [Actions Runner Controller](https://github.com/actions/actions-runner-controller).
 
 Container redistributors must retain the license and copyright files shipped

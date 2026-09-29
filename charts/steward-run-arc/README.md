@@ -8,6 +8,14 @@ an existing GitHub App Secret reference, a GitHub registration URL, and an
 operator-selected runner image pinned by `sha256` digest. No credential value is
 accepted in Helm values.
 
+The exact upstream chart archive is committed under `charts/` and bound to
+its upstream OCI manifest digest plus local archive SHA-256 in
+`third-party-lock.json`. Normal lint, template, package, and release commands
+use that vendored archive and must not run `helm dependency build`. Run
+`npm run check:vendored-chart` before packaging. The controlled dependency
+refresh procedure is documented in the repository's
+[fork publication guide](../../docs/customer-rebuild.md).
+
 The supported Kubernetes window is 1.32 through 1.36 inclusive. CI renders
 every minor in that window and rejects versions outside it.
 

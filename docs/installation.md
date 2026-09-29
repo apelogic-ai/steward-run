@@ -117,9 +117,9 @@ is therefore not the verification command for this handoff. The Cosign
 commands above verify the image, chart, manifest, and checksum inventory
 against the exact release-workflow identity. `RELEASE_REPOSITORY` keeps that
 repository binding explicit; this maintained path sets it to the public
-upstream. An independent fork distribution needs its own complete release
-policy and verification guide and must not reuse the upstream manifest or
-certificate identity.
+upstream. An independent distribution must follow the complete
+[fork, rebuild, and publish procedure](customer-rebuild.md) and must not reuse
+the upstream manifest or certificate identity.
 
 ### 2. Select the cluster and verify ARC 0.14.2
 
@@ -339,7 +339,15 @@ precedence when both cases are present. `NO_PROXY` is a comma- or space-separate
 host list; an entry can include a port, a leading dot or `*.` for subdomains, or
 `*` to bypass all proxies. The same routing applies to GitHub OIDC, both metadata
 requests, Identity exchange, and every Steward API request. The private-CA
-compatibility transport uses the same proxy path and keeps TLS verification on.
+compatibility transport uses the same proxy path, follows redirects under the
+same safe-origin and HTTPS checks as system trust, and keeps TLS verification
+on.
+
+For upgrades from versions before v0.7.4, proxy variables are newly honored.
+Lowercase variables win over uppercase variables. Add the exact Steward and
+Identity hosts to `NO_PROXY`/`no_proxy` when those services must be reached
+directly; otherwise they will use the configured proxy. This applies equally
+to the private-CA path, including redirected requests.
 
 Set proxy variables before the action's Node process starts. For self-hosted
 runners, follow GitHub's

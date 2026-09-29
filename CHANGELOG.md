@@ -7,6 +7,31 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added a complete fork-owned rebuild and publication runbook, configurable
+  native release-runner labels, and self-pinned reusable workflows with no
+  upstream owner or pre-existing action-commit literal.
+- Vendored and checksum-locked ARC chart 0.14.2 so chart linting, rendering,
+  and release packaging do not resolve the subchart from GHCR.
+
+### Changed
+
+- Expanded the public workflow boundary gate to every YAML workflow and
+  decoded Sigstore payloads, narrowed release permissions to publishing jobs,
+  and disabled Docker build-record uploads.
+- Clarified the v0.7.4 proxy upgrade boundary: lowercase variables take
+  precedence, direct Steward/Identity hosts belong in `NO_PROXY`, and the
+  private-CA path follows redirects under the same validation rules.
+
+### Security
+
+- Disposed the old v0.4.1 count-only ECR result by superseding that image, not
+  by accepting its two unidentified critical occurrences. The v0.7.4 native
+  amd64 and arm64 replacement summaries each report zero critical and the
+  policy retains no acceptance; every future fixable or unaccepted critical
+  remains release-blocking.
+
 ## [0.7.4] - 2026-09-28
 
 ### Added

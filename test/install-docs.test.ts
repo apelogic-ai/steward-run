@@ -82,6 +82,9 @@ test("the v0.7.4 guide is one self-contained operator runbook", async () => {
   assert.match(guide, /ACTIONS_ID_TOKEN_REQUEST_URL/u);
   assert.match(guide, /results-receiver\.actions\.githubusercontent\.com/u);
   assert.match(guide, /private-CA[\s\S]*?same proxy path/u);
+  assert.match(guide, /Lowercase variables win over uppercase/u);
+  assert.match(guide, /Steward and[\s\S]*?Identity hosts to `NO_PROXY`/u);
+  assert.match(guide, /private-CA path, including redirected requests/u);
   assert.doesNotMatch(guide, /kubectl[^\n]*create secret|--from-file=github_app/iu);
   assert.match(guide, /Uninstalling steward-run does not remove[\s\S]*?shared ARC controller/u);
 
@@ -197,6 +200,8 @@ test("current authentication, timeout, links, and examples cannot drift", async 
   assert.match(guide, /"resource": "https:\/\/steward\.customer\.example"/u);
   assert.match(guide, /"issuer": "https:\/\/identity\.customer\.example"/u);
   assert.match(guide, /Discovery compares raw strings[\s\S]*?taskIdentity\.resource[\s\S]*?Identity's `issuer` exactly/u);
+  assert.match(releaseNotes, /proxy variables are newly honored/u);
+  assert.match(releaseNotes, /private-CA request path now follows redirects/u);
   assert.doesNotMatch(guide, /https:\/\/steward\.customer\.example\/api\b/u);
   assert.doesNotMatch(guide, /"https:\/\/identity\.customer\.example\/"/u);
 
