@@ -178,12 +178,12 @@ test("the checked-in bundle executes a package-path request with full diagnostic
   }
 });
 
-test("package-path rejects an unsupported Steward before token exchange", async () => {
+test("package-path rejects the old direct-package capability before token exchange", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "steward-run-package-unsupported-"));
   const outputFile = join(workspace, "github-output");
   const summaryFile = join(workspace, "github-summary");
   const packagePath = ".steward/packages/release-summary/task-definition.json";
-  const mock = await startMockSteward({ directPackagesSupported: false });
+  const mock = await startMockSteward({ packagePathSupported: null });
   try {
     await mkdir(join(workspace, "in"));
     await mkdir(join(workspace, ".steward", "packages", "release-summary"), {

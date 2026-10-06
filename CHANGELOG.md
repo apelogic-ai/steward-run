@@ -16,7 +16,7 @@ This project follows [Semantic Versioning](https://semver.org/).
   invocation.
 - Added `execution-log` (`off` by default or `full`) for `package-path`, sent
   in the exact Steward Task v2 diagnostics request.
-- Added a pre-exchange discovery gate for Steward's advertised direct-package
+- Added a pre-exchange discovery gate for Steward's distinct package-path
   capability and clear Steward 0.3.9-or-later guidance when it is absent.
 
 ### Changed

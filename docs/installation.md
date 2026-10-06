@@ -376,7 +376,8 @@ The first JSON document must identify the exact resource and one issuer:
 {
   "resource": "https://steward.customer.example",
   "authorization_servers": ["https://identity.customer.example"],
-  "steward_direct_packages_supported": true
+  "steward_direct_packages_supported": true,
+  "steward_package_path_supported": true
 }
 ```
 
@@ -557,7 +558,9 @@ Supply exactly one Task source:
   same-repository package with an implicit invocation.
 
 `package-path` requires Steward 0.3.9 or later and
-`steward_direct_packages_supported: true` in the protected-resource metadata.
+`steward_package_path_supported: true` in the protected-resource metadata.
+The older `steward_direct_packages_supported` flag covers `invocation-path`
+only and does not satisfy this gate.
 The action checks that capability before requesting a GitHub OIDC token. It
 sends only `{contractVersion:"steward.task/v2", packagePath,
 diagnostics:{executionLog}}`; package bytes remain in the caller repository for

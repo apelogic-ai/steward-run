@@ -112,9 +112,9 @@ export async function main(): Promise<void> {
           controller.signal,
         )
       : undefined;
-    if (discovered && !discovered.directPackagesSupported) {
+    if (discovered && !discovered.packagePathSupported) {
       process.stdout.write(
-        "::error title=Unsupported Steward capability::package-path requires Steward 0.3.9 or later with advertised direct-package support\n",
+        "::error title=Unsupported Steward capability::package-path requires Steward 0.3.9 or later with advertised package-path support\n",
       );
       throw new Error("Steward does not advertise package-path support");
     }

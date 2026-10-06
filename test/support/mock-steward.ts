@@ -54,7 +54,7 @@ export interface MockStewardOptions {
     stdout?: string;
     stderr?: string;
   };
-  directPackagesSupported?: boolean;
+  packagePathSupported?: boolean | null;
 }
 
 type MockDirectTask =
@@ -214,7 +214,10 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         json(response, 200, {
           resource: baseUrl,
           authorization_servers: [`${baseUrl}/identity`],
-          steward_direct_packages_supported: options.directPackagesSupported ?? true,
+          steward_direct_packages_supported: true,
+          ...(options.packagePathSupported === null
+            ? {}
+            : { steward_package_path_supported: options.packagePathSupported ?? true }),
         });
         return;
       }

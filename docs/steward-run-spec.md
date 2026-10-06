@@ -156,10 +156,12 @@ exact issuer URL when the field is absent. The action never derives an exchange
 endpoint from a hostname convention.
 
 Before any token exchange, `package-path` also requires the protected-resource
-metadata boolean `steward_direct_packages_supported: true`. Missing or false
-fails with a fixed Steward 0.3.9-or-later compatibility message. A non-boolean
-value makes the discovery document incompatible. Other Task-source modes do
-not require that additive field.
+metadata boolean `steward_package_path_supported: true`. Missing or false
+fails with a fixed Steward 0.3.9-or-later compatibility message. The existing
+`steward_direct_packages_supported` flag continues to describe
+`invocation-path`; it is not sufficient for implicit invocation. A non-boolean
+capability makes the discovery document incompatible. Other Task-source modes
+do not require the package-path field.
 
 Discovery allows no redirects, caps each JSON document at 64 KiB, permits at
 most two metadata requests, limits each request to five seconds and the total

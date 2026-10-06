@@ -206,7 +206,7 @@ test("current authentication, task sources, timeout, links, and examples cannot 
   assert.match(guide, /five-second timeout/u);
   assert.match(guide, /ten-second\s+budget/u);
   assert.match(guide, /Metadata responses must be exactly HTTP 200/u);
-  assert.match(guide, /steward_direct_packages_supported/u);
+  assert.match(guide, /steward_package_path_supported/u);
   assert.match(guide, /Steward 0\.3\.9 or later/u);
   assert.match(guide, /job-timeout-minutes[\s\S]*?whole minutes from 1[\s\S]*?through 360/u);
   assert.match(guide, /within that window/u);

@@ -95,7 +95,7 @@ and proxy behavior are in the installation guide.
 The v0.8.0 chart and runner include same-repository `package-path` submissions,
 the optional exact User Envelope selector, authentication discovery, and
 system trust by default. `package-path` requires Steward 0.3.9 or later and its
-advertised direct-package capability. Follow the
+distinct advertised package-path capability. Follow the
 [current installation guide](../../docs/installation.md)
 and pull the chart from the public repository with:
 

@@ -13,6 +13,7 @@ export interface DiscoveredTaskAuthentication {
   exchangeUrl: string;
   githubOidcAudience: string;
   directPackagesSupported: boolean;
+  packagePathSupported: boolean;
 }
 
 export interface DiscoveryOptions {
@@ -206,12 +207,14 @@ export async function discoverTaskAuthentication(
   const authorizationServers = protectedResourcePayload?.authorization_servers;
   const directPackagesSupported =
     protectedResourcePayload?.steward_direct_packages_supported;
+  const packagePathSupported = protectedResourcePayload?.steward_package_path_supported;
   if (
     protectedResourcePayload?.resource !== stewardApiUrl ||
     !Array.isArray(authorizationServers) ||
     authorizationServers.length !== 1 ||
     typeof authorizationServers[0] !== "string" ||
-    (directPackagesSupported !== undefined && typeof directPackagesSupported !== "boolean")
+    (directPackagesSupported !== undefined && typeof directPackagesSupported !== "boolean") ||
+    (packagePathSupported !== undefined && typeof packagePathSupported !== "boolean")
   ) {
     throw new Error("Steward protected-resource metadata was incompatible");
   }
@@ -244,6 +247,7 @@ export async function discoverTaskAuthentication(
     exchangeUrl: identityPayload.token_endpoint,
     githubOidcAudience: advertisedAudience ?? issuerIdentifier,
     directPackagesSupported: directPackagesSupported === true,
+    packagePathSupported: packagePathSupported === true,
   };
 }
 

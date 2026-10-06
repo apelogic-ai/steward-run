@@ -28899,7 +28899,8 @@ async function discoverTaskAuthentication(stewardApiUrl, fetchImplementation = f
   );
   const authorizationServers = protectedResourcePayload?.authorization_servers;
   const directPackagesSupported = protectedResourcePayload?.steward_direct_packages_supported;
-  if (protectedResourcePayload?.resource !== stewardApiUrl || !Array.isArray(authorizationServers) || authorizationServers.length !== 1 || typeof authorizationServers[0] !== "string" || directPackagesSupported !== void 0 && typeof directPackagesSupported !== "boolean") {
+  const packagePathSupported = protectedResourcePayload?.steward_package_path_supported;
+  if (protectedResourcePayload?.resource !== stewardApiUrl || !Array.isArray(authorizationServers) || authorizationServers.length !== 1 || typeof authorizationServers[0] !== "string" || directPackagesSupported !== void 0 && typeof directPackagesSupported !== "boolean" || packagePathSupported !== void 0 && typeof packagePathSupported !== "boolean") {
     throw new Error("Steward protected-resource metadata was incompatible");
   }
   const issuerIdentifier = authorizationServers[0];
@@ -28927,7 +28928,8 @@ async function discoverTaskAuthentication(stewardApiUrl, fetchImplementation = f
     issuer: issuerIdentifier,
     exchangeUrl: identityPayload.token_endpoint,
     githubOidcAudience: advertisedAudience ?? issuerIdentifier,
-    directPackagesSupported: directPackagesSupported === true
+    directPackagesSupported: directPackagesSupported === true,
+    packagePathSupported: packagePathSupported === true
   };
 }
 function discoveredIdentityExchangeTokenProvider(environment, stewardApiUrl, sourceFetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3), discoveryAndExchangeFetchImplementation = sourceFetchImplementation, options = {}) {
@@ -30770,9 +30772,9 @@ async function main() {
       stewardFetch,
       controller.signal
     ) : void 0;
-    if (discovered && !discovered.directPackagesSupported) {
+    if (discovered && !discovered.packagePathSupported) {
       process.stdout.write(
-        "::error title=Unsupported Steward capability::package-path requires Steward 0.3.9 or later with advertised direct-package support\n"
+        "::error title=Unsupported Steward capability::package-path requires Steward 0.3.9 or later with advertised package-path support\n"
       );
       throw new Error("Steward does not advertise package-path support");
     }

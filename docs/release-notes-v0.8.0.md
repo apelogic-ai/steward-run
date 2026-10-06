@@ -24,8 +24,10 @@ chart, checksums, SBOM, provenance, and signature bundles.
 
 `package-path` requires Steward 0.3.9 or later. Before requesting a GitHub OIDC
 token, steward-run requires
-`steward_direct_packages_supported: true` in Steward's RFC 9728 metadata. An
-older Steward fails with a fixed upgrade message rather than receiving an
+`steward_package_path_supported: true` in Steward's RFC 9728 metadata. The
+older `steward_direct_packages_supported` flag remains the signal for
+`invocation-path` and does not pass this gate. An older Steward fails with a
+fixed upgrade message rather than receiving an
 unknown request field. Steward's `packagePathInvocation` compatibility record
 sets its minimum steward-run version to exactly 0.8.0.
 

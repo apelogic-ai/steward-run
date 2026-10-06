@@ -177,7 +177,7 @@ also supply `envelope-digest` as an exact
 envelopes. Omitting it remains valid only when that owner has exactly one active envelope.
 `package-path` also accepts `execution-log: off|full` (default `off`); the input is rejected with
 the other two source modes. Steward 0.3.9 or later must advertise
-`steward_direct_packages_supported: true` in protected-resource metadata before the action requests
+`steward_package_path_supported: true` in protected-resource metadata before the action requests
 a GitHub OIDC token. The `package-path` request is exactly
 `{contractVersion:"steward.task/v2", packagePath, diagnostics:{executionLog}}`.
 Reusable workflows expose `job-timeout-minutes` (default 15) and
