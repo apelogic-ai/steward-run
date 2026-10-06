@@ -3,15 +3,22 @@ description: Run a governed coding-agent workflow in a Steward sandbox
 
 inputs:
   workflow:
-    description: Existing governed Workflow reference; mutually exclusive with invocation-path
+    description: Existing governed Workflow reference; mutually exclusive with invocation-path and package-path
     required: false
   envelope-digest:
-    description: Optional exact active User Envelope selector for either Task source
+    description: Optional exact active User Envelope selector for any Task source
     required: false
     default: ""
   invocation-path:
-    description: Repository-relative direct-package invocation manifest path; mutually exclusive with workflow
+    description: Repository-relative direct-package invocation manifest path; mutually exclusive with workflow and package-path
     required: false
+  package-path:
+    description: Repository-relative direct-package task-definition.json path; mutually exclusive with workflow and invocation-path
+    required: false
+  execution-log:
+    description: Execution transcript mode for package-path only; off or full
+    required: false
+    default: "off"
   inputs:
     description: Newline-delimited workspace-relative input paths
     required: true
@@ -91,6 +98,8 @@ runs:
         STEWARD_RUN_WORKFLOW: ${{ inputs.workflow }}
         STEWARD_RUN_ENVELOPE_DIGEST: ${{ inputs.envelope-digest }}
         STEWARD_RUN_INVOCATION_PATH: ${{ inputs.invocation-path }}
+        STEWARD_RUN_PACKAGE_PATH: ${{ inputs.package-path }}
+        STEWARD_RUN_EXECUTION_LOG: ${{ inputs.execution-log }}
         STEWARD_RUN_INPUTS: ${{ inputs.inputs }}
         STEWARD_RUN_OUTPUTS: ${{ inputs.outputs }}
         STEWARD_RUN_API_URL: ${{ inputs.steward-api-url }}

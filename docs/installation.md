@@ -1,4 +1,4 @@
-# steward-run v0.7.6 installation, setup, and integration
+# steward-run v0.8.0 installation, setup, and integration
 
 This is the complete operator runbook for the standalone OSS release. Use one
 tagged release as a unit: reusable workflow, action commit, runner image, and
@@ -19,7 +19,7 @@ projects `image` to `governedJobContainerImage`.
 
 The [v0.5.0 guide](installation-v0.5.0.md) is historical and applies only to
 that release. Do not use its versions, paths, or explicit-authentication
-defaults for v0.7.6.
+defaults for v0.8.0.
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ the signed manifest.
 
 ```sh
 set -euo pipefail
-RELEASE_VERSION=0.7.6
+RELEASE_VERSION=0.8.0
 RELEASE_TAG="v$RELEASE_VERSION"
 RELEASE_REPOSITORY=apelogic-ai/steward-run
 RELEASE_IDENTITY="https://github.com/$RELEASE_REPOSITORY/.github/workflows/portable-release.yml@refs/tags/$RELEASE_TAG"
@@ -375,7 +375,9 @@ The first JSON document must identify the exact resource and one issuer:
 ```json
 {
   "resource": "https://steward.customer.example",
-  "authorization_servers": ["https://identity.customer.example"]
+  "authorization_servers": ["https://identity.customer.example"],
+  "steward_direct_packages_supported": true,
+  "steward_package_path_supported": true
 }
 ```
 
@@ -405,8 +407,8 @@ budget. Metadata responses must be exactly HTTP 200.
 | Purpose | Object or claim | Owner |
 | --- | --- | --- |
 | ARC registration | Existing `Opaque` Secret in `arc-runners` with `github_app_id`, `github_app_installation_id`, and `github_app_private_key` | GitHub App / cluster operator |
-| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.7.6 release |
-| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.7.6 release |
+| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.8.0 release |
+| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.8.0 release |
 | Steward authentication | Job-scoped GitHub OIDC token from `id-token: write`; no static token Secret | GitHub / Identity |
 | Optional public CA | Existing ConfigMap key `ca.crt`, mounted at `/etc/steward-run/trust/ca.crt` | PKI / cluster operator |
 | ARC controller | Separate 0.14.2 controller and CRDs | Cluster platform operator |
@@ -452,6 +454,19 @@ The reusable workflow checks out its action from the immutable
 `job.workflow_repository` and `job.workflow_sha` supplied by GitHub. It accepts
 no PAT or checkout-token input, and it does not accept an action repository,
 action ref, container image, or job-container image from the caller.
+
+For a same-repository package, commit its `task-definition.json` and replace
+the `workflow` input above with these inputs:
+
+```yaml
+      package-path: .steward/packages/release-summary/task-definition.json
+      execution-log: "off"
+```
+
+The reusable workflow checks out the caller's exact triggered commit because
+`package-path` is set. Do not also supply `workflow` or `invocation-path`.
+Choose `execution-log: full` only when successful task stdout/stderr should be
+replayed into the GitHub job log as sensitive output.
 
 ### Private fork consumed by another repository
 
@@ -538,7 +553,20 @@ as `authorization`; only exchange 429, 5xx, and network failures are retried.
 Supply exactly one Task source:
 
 - `workflow`: an existing governed Workflow reference; or
-- `invocation-path`: a canonical checked-in direct-package manifest path.
+- `invocation-path`: a canonical checked-in direct-package invocation-manifest path; or
+- `package-path`: a canonical checked-in `task-definition.json` path for a
+  same-repository package with an implicit invocation.
+
+`package-path` requires Steward 0.3.9 or later and
+`steward_package_path_supported: true` in the protected-resource metadata.
+The older `steward_direct_packages_supported` flag covers `invocation-path`
+only and does not satisfy this gate.
+The action checks that capability before requesting a GitHub OIDC token. It
+sends only `{contractVersion:"steward.task/v2", packagePath,
+diagnostics:{executionLog}}`; package bytes remain in the caller repository for
+Steward's authenticated exact-commit retrieval. Set `execution-log` to `off`
+(the default) or `full`. Any non-default `execution-log` with `workflow` or
+`invocation-path` is rejected before exchange.
 
 `envelope-digest` is optional and must be
 `steward:sha256:<64 lowercase hex>`. Omit it only when the authenticated owner

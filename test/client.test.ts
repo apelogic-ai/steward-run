@@ -110,6 +110,8 @@ const directTaskStatus = {
       },
     },
     diagnostics: { executionLog: "full" as const },
+    invocationKind: "implicit" as const,
+    promptSource: "inline" as const,
   },
 };
 
@@ -197,6 +199,35 @@ test("direct-package submission accepts Steward's complete v2 Task status", asyn
   assert.equal(created.evidence?.taskUid, created.taskUid);
   assert.deepEqual(created.evidence?.diagnostics, created.diagnostics);
   assert.equal(created.contractVersion, "steward.task/v2");
+  assert.equal(created.evidence?.invocationKind, "implicit");
+  assert.equal(created.evidence?.promptSource, "inline");
+});
+
+test("package-path submission sends the exact v2 diagnostics contract", async () => {
+  let request: Request | undefined;
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async (input, init) => {
+      request = new Request(input, init);
+      return jsonResponse(directTaskStatus, 201);
+    },
+  });
+
+  await client.submitTask(
+    {
+      contractVersion: "steward.task/v2",
+      packagePath: ".steward/packages/release-summary/task-definition.json",
+      diagnostics: { executionLog: "full" },
+    },
+    "b".repeat(64),
+  );
+
+  assert.deepEqual(await request?.json(), {
+    contractVersion: "steward.task/v2",
+    packagePath: ".steward/packages/release-summary/task-definition.json",
+    diagnostics: { executionLog: "full" },
+  });
 });
 
 test("direct Task evidence fails closed when malformed or inconsistent with status", async () => {

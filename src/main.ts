@@ -1,5 +1,8 @@
 import { appendFile } from "node:fs/promises";
-import { discoveredIdentityExchangeTokenProvider } from "./auth-discovery.js";
+import {
+  discoverTaskAuthentication,
+  discoveredIdentityExchangeTokenProvider,
+} from "./auth-discovery.js";
 import { shortLivedBearerTokenFileProvider } from "./auth.js";
 import {
   compatibilityInputNotice,
@@ -102,9 +105,32 @@ export async function main(): Promise<void> {
     transports.add(githubFetch);
     const stewardFetch = await createStewardFetch(config.caCertificateFile);
     transports.add(stewardFetch);
+    const discovered = "packagePath" in config
+      ? await discoverTaskAuthentication(
+          config.apiUrl,
+          stewardFetch,
+          controller.signal,
+        )
+      : undefined;
+    if (discovered && !discovered.packagePathSupported) {
+      process.stdout.write(
+        "::error title=Unsupported Steward capability::package-path requires Steward 0.3.9 or later with advertised package-path support\n",
+      );
+      throw new Error("Steward does not advertise package-path support");
+    }
     const getToken = (() => {
       switch (config.authentication.kind) {
         case "github-oidc-discovery":
+          if (discovered) {
+            return identityExchangeTokenProvider(
+              process.env,
+              discovered.exchangeUrl,
+              githubFetch,
+              undefined,
+              discovered.githubOidcAudience,
+              stewardFetch,
+            );
+          }
           return discoveredIdentityExchangeTokenProvider(
             process.env,
             config.apiUrl,
@@ -155,7 +181,8 @@ export async function main(): Promise<void> {
 
 if (
   process.env.STEWARD_RUN_WORKFLOW !== undefined ||
-  process.env.STEWARD_RUN_INVOCATION_PATH !== undefined
+  process.env.STEWARD_RUN_INVOCATION_PATH !== undefined ||
+  process.env.STEWARD_RUN_PACKAGE_PATH !== undefined
 ) {
   main().catch((error: unknown) => {
     process.stderr.write(`steward-run: ${safeFailure(error).message}\n`);

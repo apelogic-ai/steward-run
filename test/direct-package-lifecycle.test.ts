@@ -21,6 +21,19 @@ function directConfig(invocationPath = ".steward/tasks/release-summary.json"): W
   } as unknown as WorkflowConfig;
 }
 
+function packageConfig(
+  packagePath = ".steward/packages/release-summary/task-definition.json",
+  executionLog: "off" | "full" = "full",
+): WorkflowConfig {
+  return {
+    packagePath,
+    executionLog,
+    inputPaths: "in",
+    outputPaths: "results",
+    apiUrl: "https://steward.example.test",
+  } as unknown as WorkflowConfig;
+}
+
 function task(
   phase: Task["phase"],
   executionLog: "off" | "full" = "full",
@@ -99,6 +112,11 @@ async function workspace(): Promise<string> {
   await writeFile(join(root, "in", "request.json"), "{}\n");
   await mkdir(join(root, ".steward", "tasks"), { recursive: true });
   await writeFile(join(root, ".steward", "tasks", "release-summary.json"), "private manifest bytes");
+  await mkdir(join(root, ".steward", "packages", "release-summary"), { recursive: true });
+  await writeFile(
+    join(root, ".steward", "packages", "release-summary", "task-definition.json"),
+    "private package bytes",
+  );
   return root;
 }
 
@@ -153,6 +171,46 @@ test("direct invocation transports only the path and replays successful transcri
     assert.match(stderr, /agent stderr/u);
   } finally {
     await chmod(join(root, ".steward", "tasks", "release-summary.json"), 0o600).catch(() => undefined);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("package-path submits the exact implicit-package contract and diagnostics", async () => {
+  const root = await workspace();
+  const client = new DirectClient();
+  try {
+    await chmod(
+      join(root, ".steward", "packages", "release-summary", "task-definition.json"),
+      0o000,
+    );
+    await runWorkflow(packageConfig(), root, dependencies(client));
+    assert.deepEqual(client.request, {
+      contractVersion: "steward.task/v2",
+      packagePath: ".steward/packages/release-summary/task-definition.json",
+      diagnostics: { executionLog: "full" },
+    });
+  } finally {
+    await chmod(
+      join(root, ".steward", "packages", "release-summary", "task-definition.json"),
+      0o600,
+    ).catch(() => undefined);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("invalid package paths fail before submission", async () => {
+  const root = await workspace();
+  try {
+    for (const packagePath of [
+      ".steward/packages/release-summary",
+      ".steward/packages/missing/task-definition.json",
+      ".steward/packages/../tasks/release-summary.json",
+    ]) {
+      const client = new DirectClient();
+      await assert.rejects(runWorkflow(packageConfig(packagePath), root, dependencies(client)));
+      assert.deepEqual(client.calls, [], packagePath);
+    }
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

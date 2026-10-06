@@ -45,7 +45,7 @@ test("the customer workflow executes only its own immutable action with GitHub O
   const selfCheckout = steps.find((step) => step.id === "workflow-source");
   const task = steps.find((step) => step.id === "task");
   assert.equal(callerCheckout?.uses, "actions/checkout@11d5960a326750d5838078e36cf38b85af677262");
-  assert.equal(callerCheckout?.if, "inputs.invocation-path != ''");
+  assert.equal(callerCheckout?.if, "inputs.invocation-path != '' || inputs.package-path != ''");
   assert.deepEqual(callerCheckout?.with, { ref: "${{ github.sha }}", "persist-credentials": false });
   assert.equal(selfCheckout?.uses, "actions/checkout@11d5960a326750d5838078e36cf38b85af677262");
   assert.deepEqual(selfCheckout?.with, {
@@ -61,6 +61,8 @@ test("the customer workflow executes only its own immutable action with GitHub O
     workflow: "${{ inputs.workflow }}",
     "envelope-digest": "${{ inputs.envelope-digest }}",
     "invocation-path": "${{ inputs.invocation-path }}",
+    "package-path": "${{ inputs.package-path }}",
+    "execution-log": "${{ inputs.execution-log }}",
     inputs: "in",
     outputs: "out",
     "steward-api-url": "${{ inputs.steward-api-url }}",

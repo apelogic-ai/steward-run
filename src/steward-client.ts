@@ -78,11 +78,19 @@ export interface DirectTaskEvidence {
   envelope: Record<string, unknown>;
   effectiveRequirements: Record<string, unknown>;
   diagnostics: { executionLog: "off" | "full" };
+  invocationKind?: "manifest" | "implicit";
+  promptSource?: "path" | "inline";
 }
 
 export type TaskSubmissionRequest =
   | { workflow: string; envelopeDigest?: string; agentRuntimeUid?: string }
-  | { contractVersion: "steward.task/v2"; invocationPath: string; envelopeDigest?: string };
+  | { contractVersion: "steward.task/v2"; invocationPath: string; envelopeDigest?: string }
+  | {
+      contractVersion: "steward.task/v2";
+      packagePath: string;
+      diagnostics: { executionLog: "off" | "full" };
+      envelopeDigest?: string;
+    };
 
 interface ClientOptions {
   baseUrl: string;
@@ -280,6 +288,8 @@ function parseDirectTaskEvidence(value: unknown): DirectTaskEvidence | undefined
       "envelope",
       "effectiveRequirements",
       "diagnostics",
+      "invocationKind",
+      "promptSource",
     ]) ||
     evidence.schemaVersion !== "steward.task/source-authority-evidence/v1" ||
     typeof evidence.taskUid !== "string" ||
@@ -303,7 +313,11 @@ function parseDirectTaskEvidence(value: unknown): DirectTaskEvidence | undefined
     !closure ||
     !envelope ||
     !effectiveRequirements ||
-    !diagnostics
+    !diagnostics ||
+    (evidence.invocationKind !== undefined &&
+      evidence.invocationKind !== "manifest" && evidence.invocationKind !== "implicit") ||
+    (evidence.promptSource !== undefined &&
+      evidence.promptSource !== "path" && evidence.promptSource !== "inline")
   ) {
     return undefined;
   }
@@ -318,6 +332,12 @@ function parseDirectTaskEvidence(value: unknown): DirectTaskEvidence | undefined
     envelope,
     effectiveRequirements,
     diagnostics,
+    ...(evidence.invocationKind === undefined
+      ? {}
+      : { invocationKind: evidence.invocationKind as "manifest" | "implicit" }),
+    ...(evidence.promptSource === undefined
+      ? {}
+      : { promptSource: evidence.promptSource as "path" | "inline" }),
   };
 }
 

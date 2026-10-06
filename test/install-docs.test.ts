@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
 
-test("the v0.7.6 guide is one self-contained operator runbook", async () => {
+test("the v0.8.0 guide is one self-contained operator runbook", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const guide = await readFile(new URL("../docs/installation.md", import.meta.url), "utf8");
   const historical = await readFile(new URL("../docs/installation-v0.5.0.md", import.meta.url), "utf8");
@@ -16,8 +16,8 @@ test("the v0.7.6 guide is one self-contained operator runbook", async () => {
     await readFile(new URL("../charts/steward-run/Chart.yaml", import.meta.url), "utf8"),
   ) as { kubeVersion?: string };
 
-  assert.match(readme, /v0\.7\.6 installation, setup, and integration guide/u);
-  assert.match(arcReadme, /v0\.7\.6/u);
+  assert.match(readme, /v0\.8\.0 installation, setup, and integration guide/u);
+  assert.match(arcReadme, /v0\.8\.0/u);
   assert.match(historical, /Historical release guide/u);
   assert.equal(applicationChart.kubeVersion, ">=1.32.0-0 <1.37.0-0");
   assert.equal(libraryChart.kubeVersion, applicationChart.kubeVersion);
@@ -147,15 +147,16 @@ test("the public upstream and private-fork integration boundaries are explicit",
   assert.equal(sourceCheckout?.with?.["persist-credentials"], false);
 });
 
-test("current authentication, timeout, links, and examples cannot drift", async () => {
+test("current authentication, task sources, timeout, links, and examples cannot drift", async () => {
   const root = new URL("..", import.meta.url).pathname;
-  const [guide, readme, specification, actionSource, arcReadme, libraryReadme, releaseNotes, securityReleaseNotes, priorReleaseNotes] = await Promise.all([
+  const [guide, readme, specification, actionSource, arcReadme, libraryReadme, releaseNotes, previousReleaseNotes, securityReleaseNotes, priorReleaseNotes] = await Promise.all([
     readFile(new URL("../docs/installation.md", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/steward-run-spec.md", import.meta.url), "utf8"),
     readFile(new URL("../action.yml", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run-arc/README.md", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run/README.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/release-notes-v0.8.0.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.7.6.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.7.5.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.7.4.md", import.meta.url), "utf8"),
@@ -172,6 +173,7 @@ test("current authentication, timeout, links, and examples cannot drift", async 
     for (const document of [guide, readme, specification]) assert.ok(document.includes(name), name);
   }
   assert.equal(action.inputs["runtime-binding-timeout-minutes"]?.default, "10");
+  assert.equal(action.inputs["execution-log"]?.default, "off");
 
   for (const file of ["steward-task.yml", "steward-task-self-hosted.yml", "steward-task-customer.yml"]) {
     const source = await readFile(resolve(root, ".github", "workflows", file), "utf8");
@@ -186,10 +188,13 @@ test("current authentication, timeout, links, and examples cannot drift", async 
     assert.equal(workflow.on.workflow_call.inputs["job-timeout-minutes"]?.default, 15);
     assert.match(workflow.on.workflow_call.inputs["job-timeout-minutes"]?.description ?? "", /whole minutes \(1-360\)/u);
     assert.equal(workflow.on.workflow_call.inputs["runtime-binding-timeout-minutes"]?.default, 10);
+    assert.equal(workflow.on.workflow_call.inputs["execution-log"]?.default, "off");
     assert.equal(workflow.jobs.governed["timeout-minutes"], "${{ inputs.job-timeout-minutes }}");
     assert.ok(workflow.jobs.governed.steps.some((step) => step.name === "Validate job timeout"));
     const task = workflow.jobs.governed.steps.find((step) => step.id === "task");
     assert.equal(task?.with?.["runtime-binding-timeout-minutes"], "${{ inputs.runtime-binding-timeout-minutes }}");
+    assert.equal(task?.with?.["package-path"], "${{ inputs.package-path }}");
+    assert.equal(task?.with?.["execution-log"], "${{ inputs.execution-log }}");
   }
 
   assert.match(guide, /rejected without that URL/u);
@@ -201,6 +206,8 @@ test("current authentication, timeout, links, and examples cannot drift", async 
   assert.match(guide, /five-second timeout/u);
   assert.match(guide, /ten-second\s+budget/u);
   assert.match(guide, /Metadata responses must be exactly HTTP 200/u);
+  assert.match(guide, /steward_package_path_supported/u);
+  assert.match(guide, /Steward 0\.3\.9 or later/u);
   assert.match(guide, /job-timeout-minutes[\s\S]*?whole minutes from 1[\s\S]*?through 360/u);
   assert.match(guide, /within that window/u);
   assert.match(guide, /GET https:\/\/steward\.customer\.example\/\.well-known\/oauth-protected-resource/u);
@@ -209,8 +216,10 @@ test("current authentication, timeout, links, and examples cannot drift", async 
   assert.match(guide, /Discovery compares raw strings[\s\S]*?taskIdentity\.resource[\s\S]*?Identity's `issuer` exactly/u);
   assert.match(priorReleaseNotes, /proxy variables are newly honored/u);
   assert.match(priorReleaseNotes, /private-CA request path now follows redirects/u);
-  assert.match(releaseNotes, /failure-category=authentication/u);
-  assert.match(releaseNotes, /steward-task-vendored\.yml/u);
+  assert.match(releaseNotes, /package-path/u);
+  assert.match(releaseNotes, /packagePathInvocation/u);
+  assert.match(previousReleaseNotes, /failure-category=authentication/u);
+  assert.match(previousReleaseNotes, /steward-task-vendored\.yml/u);
   assert.match(securityReleaseNotes, /CVE-2026-75803/u);
   assert.match(securityReleaseNotes, /v0\.7\.4 remains affected/u);
   assert.doesNotMatch(guide, /https:\/\/steward\.customer\.example\/api\b/u);
@@ -220,7 +229,8 @@ test("current authentication, timeout, links, and examples cannot drift", async 
     [new URL("../README.md", import.meta.url), readme],
     [new URL("../docs/installation.md", import.meta.url), guide],
     [new URL("../docs/steward-run-spec.md", import.meta.url), specification],
-    [new URL("../docs/release-notes-v0.7.6.md", import.meta.url), releaseNotes],
+    [new URL("../docs/release-notes-v0.8.0.md", import.meta.url), releaseNotes],
+    [new URL("../docs/release-notes-v0.7.6.md", import.meta.url), previousReleaseNotes],
     [new URL("../docs/release-notes-v0.7.5.md", import.meta.url), securityReleaseNotes],
     [new URL("../docs/release-notes-v0.7.4.md", import.meta.url), priorReleaseNotes],
     [new URL("../charts/steward-run-arc/README.md", import.meta.url), arcReadme],

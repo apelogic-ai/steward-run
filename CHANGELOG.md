@@ -7,6 +7,26 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-06
+
+### Added
+
+- Added `package-path` to the composite action, all reusable workflows, and
+  the vendored workflow for same-repository direct packages with implicit
+  invocation.
+- Added `execution-log` (`off` by default or `full`) for `package-path`, sent
+  in the exact Steward Task v2 diagnostics request.
+- Added a pre-exchange discovery gate for Steward's distinct package-path
+  capability and clear Steward 0.3.9-or-later guidance when it is absent.
+
+### Changed
+
+- Updated the action, workflow, OpenAPI, installation, and integration
+  contracts so exactly one of `workflow`, `invocation-path`, or `package-path`
+  is accepted. Existing `invocation-path` requests remain unchanged.
+- Declared steward-run 0.8.0 as the client floor for Steward's
+  `packagePathInvocation` compatibility capability.
+
 ## [0.7.6] - 2026-09-29
 
 ### Added
@@ -286,7 +306,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.7.6...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/apelogic-ai/steward-run/compare/v0.7.6...v0.8.0
 [0.7.6]: https://github.com/apelogic-ai/steward-run/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/apelogic-ai/steward-run/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/apelogic-ai/steward-run/compare/v0.7.3...v0.7.4

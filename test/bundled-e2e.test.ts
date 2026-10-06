@@ -121,6 +121,112 @@ test("the checked-in bundle round-trips a file through the mock Steward API", as
   }
 });
 
+test("the checked-in bundle executes a package-path request with full diagnostics", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "steward-run-package-path-"));
+  const outputFile = join(workspace, "github-output");
+  const summaryFile = join(workspace, "github-summary");
+  const packagePath = ".steward/packages/release-summary/task-definition.json";
+  const mock = await startMockSteward({
+    directPackage: { packagePath, executionLog: "full" },
+  });
+  try {
+    await mkdir(join(workspace, "in"));
+    await mkdir(join(workspace, ".steward", "packages", "release-summary"), {
+      recursive: true,
+    });
+    await writeFile(join(workspace, "in", "payload.bin"), "package fixture");
+    await writeFile(join(workspace, packagePath), "{}\n");
+    await writeFile(outputFile, "");
+    await writeFile(summaryFile, "");
+    const child = spawn(process.execPath, ["dist/index.cjs"], {
+      cwd: new URL("..", import.meta.url),
+      env: {
+        ...process.env,
+        ACTIONS_ID_TOKEN_REQUEST_URL: `${mock.url}/oidc?api-version=1`,
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-secret",
+        GITHUB_JOB: "agent",
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_REPOSITORY: "apelogic-ai/example",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_RUN_ID: "123",
+        GITHUB_STEP_SUMMARY: summaryFile,
+        GITHUB_WORKSPACE: workspace,
+        STEWARD_RUN_API_URL: mock.url,
+        STEWARD_RUN_INPUTS: "in",
+        STEWARD_RUN_OUTPUTS: "out/payload.bin",
+        STEWARD_RUN_PACKAGE_PATH: packagePath,
+        STEWARD_RUN_EXECUTION_LOG: "full",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
+    const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+    assert.equal(code, 0, stderr);
+    assert.deepEqual(mock.observations.taskSubmission, {
+      contractVersion: "steward.task/v2",
+      packagePath,
+      diagnostics: { executionLog: "full" },
+    });
+    assert.equal(mock.observations.protectedResourceDiscoveryRequests, 1);
+    assert.equal(mock.observations.identityDiscoveryRequests, 1);
+    assert.ok(mock.observations.exchangeRequests > 0);
+    assert.equal(await readFile(join(workspace, "out", "payload.bin"), "utf8"), "package fixture");
+  } finally {
+    await mock.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("package-path rejects the old direct-package capability before token exchange", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "steward-run-package-unsupported-"));
+  const outputFile = join(workspace, "github-output");
+  const summaryFile = join(workspace, "github-summary");
+  const packagePath = ".steward/packages/release-summary/task-definition.json";
+  const mock = await startMockSteward({ packagePathSupported: null });
+  try {
+    await mkdir(join(workspace, "in"));
+    await mkdir(join(workspace, ".steward", "packages", "release-summary"), {
+      recursive: true,
+    });
+    await writeFile(join(workspace, "in", "payload.bin"), "fixture");
+    await writeFile(join(workspace, packagePath), "{}\n");
+    await writeFile(outputFile, "");
+    await writeFile(summaryFile, "");
+    const child = spawn(process.execPath, ["dist/index.cjs"], {
+      cwd: new URL("..", import.meta.url),
+      env: {
+        ...process.env,
+        ACTIONS_ID_TOKEN_REQUEST_URL: `${mock.url}/oidc?api-version=1`,
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-secret",
+        GITHUB_JOB: "agent",
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_REPOSITORY: "apelogic-ai/example",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_RUN_ID: "123",
+        GITHUB_STEP_SUMMARY: summaryFile,
+        GITHUB_WORKSPACE: workspace,
+        STEWARD_RUN_API_URL: mock.url,
+        STEWARD_RUN_INPUTS: "in",
+        STEWARD_RUN_OUTPUTS: "out/payload.bin",
+        STEWARD_RUN_PACKAGE_PATH: packagePath,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += String(chunk)));
+    const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+    assert.equal(code, 1);
+    assert.match(stdout, /package-path requires Steward 0\.3\.9 or later/u);
+    assert.equal(mock.observations.oidcRequests, 0);
+    assert.equal(mock.observations.exchangeRequests, 0);
+    assert.deepEqual(mock.observations.operations, []);
+  } finally {
+    await mock.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("both supported wrappers execute their own immutable discovery-capable action bundle", async () => {
   const repository = new URL("..", import.meta.url);
   const workflowPaths = [

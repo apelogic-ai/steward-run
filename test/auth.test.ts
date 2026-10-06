@@ -217,6 +217,62 @@ test("direct-package configuration selects one canonical invocation path without
   );
 });
 
+test("package-path selects an implicit direct package with bounded diagnostics", () => {
+  const defaults = readActionConfig({
+    ...baseEnvironment,
+    STEWARD_RUN_WORKFLOW: undefined,
+    STEWARD_RUN_PACKAGE_PATH: ".steward/packages/release-summary",
+  });
+  assert.ok("packagePath" in defaults);
+  assert.equal(defaults.packagePath, ".steward/packages/release-summary");
+  assert.equal(defaults.executionLog, "off");
+  assert.equal("invocationPath" in defaults, false);
+  assert.equal("workflow" in defaults, false);
+
+  const full = readActionConfig({
+    ...baseEnvironment,
+    STEWARD_RUN_WORKFLOW: undefined,
+    STEWARD_RUN_PACKAGE_PATH: ".steward/packages/release-summary",
+    STEWARD_RUN_EXECUTION_LOG: "full",
+  });
+  assert.ok("packagePath" in full);
+  assert.equal(full.executionLog, "full");
+
+  for (const environment of [
+    {
+      ...baseEnvironment,
+      STEWARD_RUN_INVOCATION_PATH: ".steward/tasks/release-summary.json",
+      STEWARD_RUN_PACKAGE_PATH: ".steward/packages/release-summary",
+    },
+    {
+      ...baseEnvironment,
+      STEWARD_RUN_WORKFLOW: undefined,
+      STEWARD_RUN_INVOCATION_PATH: undefined,
+      STEWARD_RUN_PACKAGE_PATH: undefined,
+    },
+  ]) {
+    assert.throws(() => readActionConfig(environment), /configure exactly one Task source/u);
+  }
+  assert.throws(
+    () => readActionConfig({
+      ...baseEnvironment,
+      STEWARD_RUN_WORKFLOW: undefined,
+      STEWARD_RUN_INVOCATION_PATH: ".steward/tasks/release-summary.json",
+      STEWARD_RUN_EXECUTION_LOG: "full",
+    }),
+    /execution-log=full requires package-path/u,
+  );
+  assert.throws(
+    () => readActionConfig({
+      ...baseEnvironment,
+      STEWARD_RUN_WORKFLOW: undefined,
+      STEWARD_RUN_PACKAGE_PATH: ".steward/packages/release-summary",
+      STEWARD_RUN_EXECUTION_LOG: "verbose",
+    }),
+    /execution-log must be off or full/u,
+  );
+});
+
 test("short-lived bearer token files are reread so projected credentials can rotate", async () => {
   const root = await mkdtemp(join(tmpdir(), "steward-run-token-"));
   const path = join(root, "token");

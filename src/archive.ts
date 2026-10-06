@@ -57,7 +57,7 @@ function normalizeWorkspacePath(value: string): string {
   return normalized;
 }
 
-function canonicalInvocationPath(value: string): string {
+function canonicalRepositoryFilePath(value: string, inputName: string): string {
   if (
     !value ||
     value.length > 512 ||
@@ -74,30 +74,42 @@ function canonicalInvocationPath(value: string): string {
       !/^[A-Za-z0-9._-]+$/u.test(component)
     )
   ) {
-    throw new Error("invocation-path must be a canonical repository-relative path");
+    throw new Error(`${inputName} must be a canonical repository-relative path`);
   }
   return value;
 }
 
-export async function validateInvocationFile(workspace: string, value: string): Promise<string> {
-  const relative = canonicalInvocationPath(value);
+async function validateRepositoryFile(
+  workspace: string,
+  value: string,
+  inputName: string,
+): Promise<string> {
+  const relative = canonicalRepositoryFilePath(value, inputName);
   let current = workspace;
   const components = relative.split("/");
   for (const [index, component] of components.entries()) {
     current = join(current, component);
     const metadata = await lstat(current).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") throw new Error("invocation-path does not exist");
+      if (error.code === "ENOENT") throw new Error(`${inputName} does not exist`);
       throw error;
     });
     if (metadata.isSymbolicLink()) {
-      throw new Error("invocation-path must not contain symbolic links");
+      throw new Error(`${inputName} must not contain symbolic links`);
     }
     const final = index === components.length - 1;
     if ((!final && !metadata.isDirectory()) || (final && !metadata.isFile())) {
-      throw new Error("invocation-path must identify a regular file");
+      throw new Error(`${inputName} must identify a regular file`);
     }
   }
   return relative;
+}
+
+export async function validateInvocationFile(workspace: string, value: string): Promise<string> {
+  return validateRepositoryFile(workspace, value, "invocation-path");
+}
+
+export async function validatePackageFile(workspace: string, value: string): Promise<string> {
+  return validateRepositoryFile(workspace, value, "package-path");
 }
 
 export function parseWorkspacePaths(source: string): string[] {

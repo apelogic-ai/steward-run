@@ -18,9 +18,11 @@ test("the composite action exposes the versioned steward-run contract", async ()
       "agent-runtime",
       "bearer-token-file",
       "envelope-digest",
+      "execution-log",
       "identity-exchange-url",
       "identity-exchange-audience",
       "invocation-path",
+      "package-path",
       "inputs",
       "oidc-audience",
       "outputs",
@@ -35,6 +37,8 @@ test("the composite action exposes the versioned steward-run contract", async ()
   }
   assert.notEqual(action.inputs.workflow?.required, true);
   assert.notEqual(action.inputs["invocation-path"]?.required, true);
+  assert.notEqual(action.inputs["package-path"]?.required, true);
+  assert.equal(action.inputs["execution-log"]?.default, "off");
   assert.notEqual(action.inputs["oidc-audience"]?.required, true);
   assert.notEqual(action.inputs["identity-exchange-url"]?.required, true);
   assert.notEqual(action.inputs["bearer-token-file"]?.required, true);
@@ -92,6 +96,7 @@ test("the Steward Task API contract covers the complete lifecycle", async () => 
         DirectTaskSubmissionRequest: {
           required: string[];
           properties: Record<string, unknown>;
+          oneOf: Array<Record<string, unknown>>;
           additionalProperties: boolean;
         };
         TaskStatusResponse: {
@@ -123,14 +128,23 @@ test("the Steward Task API contract covers the complete lifecycle", async () => 
     "agentRuntimeUid",
   ]);
   assert.equal(api.components.schemas.WorkflowTaskSubmissionRequest.additionalProperties, false);
-  assert.deepEqual(api.components.schemas.DirectTaskSubmissionRequest.required, [
-    "contractVersion",
-    "invocationPath",
-  ]);
+  assert.deepEqual(api.components.schemas.DirectTaskSubmissionRequest.required, ["contractVersion"]);
   assert.deepEqual(Object.keys(api.components.schemas.DirectTaskSubmissionRequest.properties), [
     "contractVersion",
     "invocationPath",
+    "packagePath",
+    "diagnostics",
     "envelopeDigest",
+  ]);
+  assert.deepEqual(api.components.schemas.DirectTaskSubmissionRequest.oneOf, [
+    {
+      required: ["invocationPath"],
+      properties: { packagePath: false, diagnostics: false },
+    },
+    {
+      required: ["packagePath", "diagnostics"],
+      properties: { invocationPath: false },
+    },
   ]);
   assert.equal(api.components.schemas.DirectTaskSubmissionRequest.additionalProperties, false);
   assert.deepEqual(api.components.schemas.TaskStatusResponse.properties.runtimeUid.oneOf, [

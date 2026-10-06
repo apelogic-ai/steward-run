@@ -28898,7 +28898,9 @@ async function discoverTaskAuthentication(stewardApiUrl, fetchImplementation = f
     )
   );
   const authorizationServers = protectedResourcePayload?.authorization_servers;
-  if (protectedResourcePayload?.resource !== stewardApiUrl || !Array.isArray(authorizationServers) || authorizationServers.length !== 1 || typeof authorizationServers[0] !== "string") {
+  const directPackagesSupported = protectedResourcePayload?.steward_direct_packages_supported;
+  const packagePathSupported = protectedResourcePayload?.steward_package_path_supported;
+  if (protectedResourcePayload?.resource !== stewardApiUrl || !Array.isArray(authorizationServers) || authorizationServers.length !== 1 || typeof authorizationServers[0] !== "string" || directPackagesSupported !== void 0 && typeof directPackagesSupported !== "boolean" || packagePathSupported !== void 0 && typeof packagePathSupported !== "boolean") {
     throw new Error("Steward protected-resource metadata was incompatible");
   }
   const issuerIdentifier = authorizationServers[0];
@@ -28925,7 +28927,9 @@ async function discoverTaskAuthentication(stewardApiUrl, fetchImplementation = f
   return {
     issuer: issuerIdentifier,
     exchangeUrl: identityPayload.token_endpoint,
-    githubOidcAudience: advertisedAudience ?? issuerIdentifier
+    githubOidcAudience: advertisedAudience ?? issuerIdentifier,
+    directPackagesSupported: directPackagesSupported === true,
+    packagePathSupported: packagePathSupported === true
   };
 }
 function discoveredIdentityExchangeTokenProvider(environment, stewardApiUrl, sourceFetchImplementation = fetch, now = () => Math.floor(Date.now() / 1e3), discoveryAndExchangeFetchImplementation = sourceFetchImplementation, options = {}) {
@@ -29025,6 +29029,8 @@ function requiredVerbatim(environment, name) {
 function readActionConfig(environment) {
   const workflow = environment.STEWARD_RUN_WORKFLOW;
   const invocationPath = environment.STEWARD_RUN_INVOCATION_PATH;
+  const packagePath = environment.STEWARD_RUN_PACKAGE_PATH;
+  const executionLog = environment.STEWARD_RUN_EXECUTION_LOG?.trim() || "off";
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
   const envelopeDigest = environment.STEWARD_RUN_ENVELOPE_DIGEST?.trim();
   const identityExchangeUrl = environment.STEWARD_RUN_IDENTITY_EXCHANGE_URL?.trim();
@@ -29033,11 +29039,17 @@ function readActionConfig(environment) {
   const bearerTokenFile = environment.STEWARD_RUN_BEARER_TOKEN_FILE?.trim();
   const caCertificateFile = environment.STEWARD_RUN_CA_CERTIFICATE_FILE?.trim();
   const apiUrl = required(environment, "STEWARD_RUN_API_URL");
-  const taskSourceCount = [workflow?.trim(), invocationPath].filter(Boolean).length;
+  const taskSourceCount = [workflow?.trim(), invocationPath, packagePath].filter(Boolean).length;
   if (taskSourceCount !== 1) {
-    throw new Error("configure exactly one Task source: workflow or invocation-path");
+    throw new Error("configure exactly one Task source: workflow, invocation-path, or package-path");
   }
-  if (invocationPath && agentRuntime) {
+  if (executionLog !== "off" && executionLog !== "full") {
+    throw new Error("execution-log must be off or full");
+  }
+  if (!packagePath && executionLog !== "off") {
+    throw new Error("execution-log=full requires package-path");
+  }
+  if ((invocationPath || packagePath) && agentRuntime) {
     throw new Error("agent-runtime cannot be selected for a direct package invocation");
   }
   if (envelopeDigest && !/^steward:sha256:[0-9a-f]{64}$/u.test(envelopeDigest)) {
@@ -29079,7 +29091,18 @@ function readActionConfig(environment) {
     runtimeBindingTimeoutMilliseconds: runtimeBindingTimeoutMilliseconds(environment),
     ...caCertificateFile ? { caCertificateFile } : {}
   };
-  return invocationPath ? { ...common, invocationPath, ...envelopeDigest ? { envelopeDigest } : {} } : {
+  if (invocationPath) {
+    return { ...common, invocationPath, ...envelopeDigest ? { envelopeDigest } : {} };
+  }
+  if (packagePath) {
+    return {
+      ...common,
+      packagePath,
+      executionLog,
+      ...envelopeDigest ? { envelopeDigest } : {}
+    };
+  }
+  return {
     ...common,
     workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
     ...envelopeDigest ? { envelopeDigest } : {},
@@ -29458,33 +29481,39 @@ function normalizeWorkspacePath(value) {
   }
   return normalized;
 }
-function canonicalInvocationPath(value) {
+function canonicalRepositoryFilePath(value, inputName) {
   if (!value || value.length > 512 || value !== value.trim() || value.includes("\\") || /[\u0000-\u001f\u007f]/u.test(value) || import_node_path.posix.isAbsolute(value) || import_node_path.win32.isAbsolute(value) || import_node_path.posix.normalize(value) !== value || value.split("/").some(
     (component) => !component || component === "." || component === ".." || !/^[A-Za-z0-9._-]+$/u.test(component)
   )) {
-    throw new Error("invocation-path must be a canonical repository-relative path");
+    throw new Error(`${inputName} must be a canonical repository-relative path`);
   }
   return value;
 }
-async function validateInvocationFile(workspace, value) {
-  const relative = canonicalInvocationPath(value);
+async function validateRepositoryFile(workspace, value, inputName) {
+  const relative = canonicalRepositoryFilePath(value, inputName);
   let current = workspace;
   const components = relative.split("/");
   for (const [index, component] of components.entries()) {
     current = (0, import_node_path.join)(current, component);
     const metadata = await (0, import_promises2.lstat)(current).catch((error) => {
-      if (error.code === "ENOENT") throw new Error("invocation-path does not exist");
+      if (error.code === "ENOENT") throw new Error(`${inputName} does not exist`);
       throw error;
     });
     if (metadata.isSymbolicLink()) {
-      throw new Error("invocation-path must not contain symbolic links");
+      throw new Error(`${inputName} must not contain symbolic links`);
     }
     const final = index === components.length - 1;
     if (!final && !metadata.isDirectory() || final && !metadata.isFile()) {
-      throw new Error("invocation-path must identify a regular file");
+      throw new Error(`${inputName} must identify a regular file`);
     }
   }
   return relative;
+}
+async function validateInvocationFile(workspace, value) {
+  return validateRepositoryFile(workspace, value, "invocation-path");
+}
+async function validatePackageFile(workspace, value) {
+  return validateRepositoryFile(workspace, value, "package-path");
 }
 function parseWorkspacePaths(source) {
   const paths = [];
@@ -29896,7 +29925,9 @@ function parseDirectTaskEvidence(value) {
     "closureDigest",
     "envelope",
     "effectiveRequirements",
-    "diagnostics"
+    "diagnostics",
+    "invocationKind",
+    "promptSource"
   ]) || evidence.schemaVersion !== "steward.task/source-authority-evidence/v1" || typeof evidence.taskUid !== "string" || !evidence.taskUid || typeof evidence.closureDigest !== "string" || !evidence.closureDigest) {
     return void 0;
   }
@@ -29907,7 +29938,7 @@ function parseDirectTaskEvidence(value) {
   const envelope = record2(evidence.envelope);
   const effectiveRequirements = record2(evidence.effectiveRequirements);
   const diagnostics = parseTaskDiagnostics(evidence.diagnostics);
-  if (!sourceProvenance || !invocation || !packageSource || !closure || !envelope || !effectiveRequirements || !diagnostics) {
+  if (!sourceProvenance || !invocation || !packageSource || !closure || !envelope || !effectiveRequirements || !diagnostics || evidence.invocationKind !== void 0 && evidence.invocationKind !== "manifest" && evidence.invocationKind !== "implicit" || evidence.promptSource !== void 0 && evidence.promptSource !== "path" && evidence.promptSource !== "inline") {
     return void 0;
   }
   return {
@@ -29920,7 +29951,9 @@ function parseDirectTaskEvidence(value) {
     closureDigest: evidence.closureDigest,
     envelope,
     effectiveRequirements,
-    diagnostics
+    diagnostics,
+    ...evidence.invocationKind === void 0 ? {} : { invocationKind: evidence.invocationKind },
+    ...evidence.promptSource === void 0 ? {} : { promptSource: evidence.promptSource }
   };
 }
 var pendingBindingPhases = /* @__PURE__ */ new Set(["submitted", "parked", "queued"]);
@@ -30486,6 +30519,8 @@ async function runWorkflow(config, workspace, dependencies) {
     outputPaths = parseWorkspacePaths(config.outputPaths);
     if ("invocationPath" in config) {
       await validateInvocationFile(workspace, config.invocationPath);
+    } else if ("packagePath" in config) {
+      await validatePackageFile(workspace, config.packagePath);
     }
     initialArchive = await createInputArchive(workspace, inputPaths);
     stage = "submit";
@@ -30494,6 +30529,11 @@ async function runWorkflow(config, workspace, dependencies) {
         contractVersion: "steward.task/v2",
         invocationPath: config.invocationPath,
         ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}
+      } : "packagePath" in config ? {
+        contractVersion: "steward.task/v2",
+        packagePath: config.packagePath,
+        diagnostics: { executionLog: config.executionLog },
+        ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}
       } : {
         workflow: config.workflow,
         ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {},
@@ -30501,10 +30541,10 @@ async function runWorkflow(config, workspace, dependencies) {
       },
       createIdempotencyKey(dependencies.environment)
     );
-    if ("invocationPath" in config && (created.contractVersion !== "steward.task/v2" || created.diagnostics === void 0)) {
+    if (("invocationPath" in config || "packagePath" in config) && (created.contractVersion !== "steward.task/v2" || created.diagnostics === void 0)) {
       throw new Error("Steward omitted the direct Task contract projection");
     }
-    if (!("invocationPath" in config) && (created.contractVersion !== void 0 || created.diagnostics !== void 0)) {
+    if (!("invocationPath" in config) && !("packagePath" in config) && (created.contractVersion !== void 0 || created.diagnostics !== void 0)) {
       throw new Error("Steward returned a direct Task projection for a legacy request");
     }
     const expectedOwnership = "agentRuntime" in config && config.agentRuntime ? "adopted" : "provisioned";
@@ -30727,9 +30767,30 @@ async function main() {
     transports.add(githubFetch);
     const stewardFetch = await createStewardFetch(config.caCertificateFile);
     transports.add(stewardFetch);
+    const discovered = "packagePath" in config ? await discoverTaskAuthentication(
+      config.apiUrl,
+      stewardFetch,
+      controller.signal
+    ) : void 0;
+    if (discovered && !discovered.packagePathSupported) {
+      process.stdout.write(
+        "::error title=Unsupported Steward capability::package-path requires Steward 0.3.9 or later with advertised package-path support\n"
+      );
+      throw new Error("Steward does not advertise package-path support");
+    }
     const getToken = (() => {
       switch (config.authentication.kind) {
         case "github-oidc-discovery":
+          if (discovered) {
+            return identityExchangeTokenProvider(
+              process.env,
+              discovered.exchangeUrl,
+              githubFetch,
+              void 0,
+              discovered.githubOidcAudience,
+              stewardFetch
+            );
+          }
           return discoveredIdentityExchangeTokenProvider(
             process.env,
             config.apiUrl,
@@ -30777,7 +30838,7 @@ async function main() {
     await Promise.allSettled([...transports].map((transport) => transport.close()));
   }
 }
-if (process.env.STEWARD_RUN_WORKFLOW !== void 0 || process.env.STEWARD_RUN_INVOCATION_PATH !== void 0) {
+if (process.env.STEWARD_RUN_WORKFLOW !== void 0 || process.env.STEWARD_RUN_INVOCATION_PATH !== void 0 || process.env.STEWARD_RUN_PACKAGE_PATH !== void 0) {
   main().catch((error) => {
     process.stderr.write(`steward-run: ${safeFailure(error).message}
 `);
