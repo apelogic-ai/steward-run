@@ -28,6 +28,7 @@ test("discovery follows RFC well-known paths and selects the advertised audience
       return json({
         resource: "https://steward.example/api?tenant=1",
         authorization_servers: ["https://identity.example/tenant"],
+        steward_direct_packages_supported: true,
       });
     }
     return json({
@@ -43,6 +44,7 @@ test("discovery follows RFC well-known paths and selects the advertised audience
       issuer: "https://identity.example/tenant",
       exchangeUrl: "https://identity.example/v1/exchange",
       githubOidcAudience: "github-exchange-audience",
+      directPackagesSupported: true,
     },
   );
   assert.deepEqual(
@@ -63,6 +65,7 @@ test("the issuer URL is the documented GitHub OIDC audience fallback", async () 
         : json({ issuer: "https://identity.example/", token_endpoint: "https://identity.example/exchange" }),
   );
   assert.equal(discovered.githubOidcAudience, "https://identity.example/");
+  assert.equal(discovered.directPackagesSupported, false);
 });
 
 test("the discovered provider caches metadata and requests the exact advertised audience", async () => {
@@ -145,6 +148,7 @@ test("discovery rejects mismatches, ambiguous issuers, and unsafe URLs", async (
     ["resource mismatch", "https://steward.example/", { resource: "https://other.example/", authorization_servers: ["https://identity.example/"] }, {}, /protected-resource metadata was incompatible/u],
     ["missing issuer", "https://steward.example/", { resource: "https://steward.example/", authorization_servers: [] }, {}, /protected-resource metadata was incompatible/u],
     ["multiple issuers", "https://steward.example/", { resource: "https://steward.example/", authorization_servers: ["https://one.example/", "https://two.example/"] }, {}, /protected-resource metadata was incompatible/u],
+    ["invalid direct-package capability", "https://steward.example/", { resource: "https://steward.example/", authorization_servers: ["https://identity.example/"], steward_direct_packages_supported: "yes" }, {}, /protected-resource metadata was incompatible/u],
     ["plaintext issuer", "https://steward.example/", { resource: "https://steward.example/", authorization_servers: ["http://identity.example/"] }, {}, /HTTPS except on loopback/u],
     ["credentialed issuer", "https://steward.example/", { resource: "https://steward.example/", authorization_servers: ["https://user:pass@identity.example/"] }, {}, /credentials or a fragment/u],
     ["fragmented issuer", "https://steward.example/", { resource: "https://steward.example/", authorization_servers: ["https://identity.example/#fragment"] }, {}, /credentials or a fragment/u],

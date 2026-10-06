@@ -4,7 +4,7 @@
 live GitHub Actions job into a governed Steward Task. The workspace is the only workflow
 author-facing data contract.
 
-The [v0.7.6 installation, setup, and integration guide](docs/installation.md)
+The [v0.8.0 installation, setup, and integration guide](docs/installation.md)
 describes the current release contract. The [v0.5.0 guide](docs/installation-v0.5.0.md) is the
 authoritative guide for v0.5.0, which predates authentication discovery and
 requires the explicit Identity exchange inputs.
@@ -19,10 +19,10 @@ The product is [MIT licensed](LICENSE): this repository owns the runner image,
 composite action, reusable workflow sources, and installable
 [`steward-run-arc` chart](charts/steward-run-arc/). The ARC controller and GitHub
 runner registration API are external prerequisites; this is not a separate
-long-running Steward API service. Release `v0.7.6` publishes the standalone
-multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.7.6` and the
+long-running Steward API service. Release `v0.8.0` publishes the standalone
+multi-platform runner at `ghcr.io/apelogic-ai/steward-run:0.8.0` and the
 application chart in
-`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.7.6`; the
+`oci://ghcr.io/apelogic-ai/charts/steward-run-arc` at version `0.8.0`; the
 [Artifact Hub package](https://artifacthub.io/packages/helm/steward-run/steward-run-arc)
 indexes the same OCI repository. The
 attached `oss-release-manifest.json` records both immutable OCI digests, the
@@ -114,7 +114,8 @@ See `docs/steward-run-spec.md` for the product boundary.
 
 ## Action and workflow contract
 
-The action accepts an exact Task source (`workflow` or `invocation-path`),
+The action accepts exactly one Task source (`workflow`, `invocation-path`, or
+`package-path`),
 workspace-relative input/output paths, and a Steward HTTPS URL. That is the
 complete production authentication configuration when Steward and Identity
 publish the discovery contract. `id-token: write` is the GitHub Actions input;
@@ -167,11 +168,18 @@ Its Task create body contains only `contractVersion: steward.task/v2` and that p
 the manifest from the Identity-ratified repository and exact commit.
 
 Direct action use remains available when another workflow owns the artifact steps. All action paths
-are relative to `GITHUB_WORKSPACE`. Exactly one Task source is selected: `invocation-path` for the
-direct-package v2 flow or `workflow` for the existing versioned Workflow flow. `agent-runtime`
-applies only to the latter. Either Task source may also supply `envelope-digest` as an exact
+are relative to `GITHUB_WORKSPACE`. Exactly one Task source is selected: `invocation-path` for an
+explicit direct-package invocation manifest, `package-path` for a checked-in
+`task-definition.json` whose inline prompt supplies the implicit invocation, or `workflow` for the
+existing versioned Workflow flow. `agent-runtime` applies only to the latter. Every Task source may
+also supply `envelope-digest` as an exact
 `steward:sha256:<64 lowercase hex>` selector. Steward resolves it only among the caller's active
 envelopes. Omitting it remains valid only when that owner has exactly one active envelope.
+`package-path` also accepts `execution-log: off|full` (default `off`); the input is rejected with
+the other two source modes. Steward 0.3.9 or later must advertise
+`steward_direct_packages_supported: true` in protected-resource metadata before the action requests
+a GitHub OIDC token. The `package-path` request is exactly
+`{contractVersion:"steward.task/v2", packagePath, diagnostics:{executionLog}}`.
 Reusable workflows expose `job-timeout-minutes` (default 15) and
 `runtime-binding-timeout-minutes` (default 10). Both accept whole minutes from
 1 through 360; the latter bounds only the controller-binding wait.

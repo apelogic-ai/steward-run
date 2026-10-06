@@ -246,12 +246,14 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
     [
       "agent-runtime",
       "envelope-digest",
+      "execution-log",
       "identity-exchange-audience",
       "identity-exchange-url",
       "input-artifact",
       "invocation-path",
       "job-timeout-minutes",
       "output-artifact",
+      "package-path",
       "runner-label",
       "runtime-binding-timeout-minutes",
       "steward-api-url",
@@ -285,6 +287,8 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.equal(workflow.on.workflow_call.inputs["runtime-binding-timeout-minutes"]?.type, "number");
   assert.equal(workflow.on.workflow_call.inputs["runtime-binding-timeout-minutes"]?.default, 10);
   assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
+  assert.notEqual(workflow.on.workflow_call.inputs["package-path"]?.required, true);
+  assert.equal(workflow.on.workflow_call.inputs["execution-log"]?.default, "off");
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.deepEqual(
     Object.keys(workflow.on.workflow_call.outputs).sort(),
@@ -311,7 +315,7 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.equal(workflow.on.workflow_call.inputs["container-image"], undefined);
   assert.equal(workflow.on.workflow_call.inputs["job-container-image"], undefined);
   assert.match(source, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/u);
-  assert.match(source, /if:\s*inputs\.invocation-path != ''/u);
+  assert.match(source, /if:\s*inputs\.invocation-path != '' \|\| inputs\.package-path != ''/u);
   assert.match(source, /ref:\s*\$\{\{ github\.sha \}\}/u);
   assert.match(source, /persist-credentials:\s*false/u);
   assert.doesNotMatch(source, /inputs\.action-commit/u);
@@ -331,6 +335,8 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.match(source, /inputs:\s*in/);
   assert.match(source, /outputs:\s*out/);
   assert.match(source, /invocation-path:\s*\$\{\{ inputs\.invocation-path \}\}/u);
+  assert.match(source, /package-path:\s*\$\{\{ inputs\.package-path \}\}/u);
+  assert.match(source, /execution-log:\s*\$\{\{ inputs\.execution-log \}\}/u);
   assert.match(source, /workflow:\s*\$\{\{ inputs\.workflow \}\}/u);
   assert.match(source, /runtime-binding-timeout-minutes:\s*\$\{\{ inputs\.runtime-binding-timeout-minutes \}\}/u);
   assert.doesNotMatch(source, /coding-agent-runtime|codingAgentRuntime/u);
@@ -385,6 +391,8 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
     assert.equal((workflow.on.workflow_call.inputs[name] as { default?: string })?.default, "", name);
   }
   assert.notEqual(workflow.on.workflow_call.inputs["invocation-path"]?.required, true);
+  assert.notEqual(workflow.on.workflow_call.inputs["package-path"]?.required, true);
+  assert.equal(workflow.on.workflow_call.inputs["execution-log"]?.default, "off");
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.match(source, /repository:\s*\$\{\{ job\.workflow_repository \}\}/u);
   assert.match(source, /ref:\s*\$\{\{ job\.workflow_sha \}\}/u);
@@ -393,13 +401,15 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   assert.match(source, /actions\/download-artifact@/);
   assert.match(source, /actions\/upload-artifact@/);
   assert.match(source, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/u);
-  assert.match(source, /if:\s*inputs\.invocation-path != ''/u);
+  assert.match(source, /if:\s*inputs\.invocation-path != '' \|\| inputs\.package-path != ''/u);
   assert.match(source, /persist-credentials:\s*false/u);
   assert.match(
     source,
     /identity-exchange-audience:\s*\$\{\{ inputs\.identity-exchange-audience \}\}/u,
   );
   assert.match(source, /invocation-path:\s*\$\{\{ inputs\.invocation-path \}\}/u);
+  assert.match(source, /package-path:\s*\$\{\{ inputs\.package-path \}\}/u);
+  assert.match(source, /execution-log:\s*\$\{\{ inputs\.execution-log \}\}/u);
   assert.match(source, /runtime-binding-timeout-minutes:\s*\$\{\{ inputs\.runtime-binding-timeout-minutes \}\}/u);
   assert.doesNotMatch(source, /amazonaws\.com|container:|bearer-token|identity\.dev|cluster|secret/iu);
 });

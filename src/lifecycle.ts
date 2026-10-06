@@ -6,6 +6,7 @@ import {
   extractOutputArchive,
   parseWorkspacePaths,
   validateInvocationFile,
+  validatePackageFile,
 } from "./archive.js";
 import type { WorkflowConfig } from "./config.js";
 import { replayExecutionTranscript, type LogChannel } from "./execution-log.js";
@@ -316,6 +317,8 @@ export async function runWorkflow(
     outputPaths = parseWorkspacePaths(config.outputPaths);
     if ("invocationPath" in config) {
       await validateInvocationFile(workspace, config.invocationPath);
+    } else if ("packagePath" in config) {
+      await validatePackageFile(workspace, config.packagePath);
     }
     initialArchive = await createInputArchive(workspace, inputPaths);
     stage = "submit";
@@ -326,6 +329,13 @@ export async function runWorkflow(
             invocationPath: config.invocationPath,
             ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
           }
+        : "packagePath" in config
+          ? {
+              contractVersion: "steward.task/v2",
+              packagePath: config.packagePath,
+              diagnostics: { executionLog: config.executionLog },
+              ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
+            }
         : {
             workflow: config.workflow,
             ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
@@ -334,13 +344,14 @@ export async function runWorkflow(
       createIdempotencyKey(dependencies.environment),
     );
     if (
-      "invocationPath" in config &&
+      ("invocationPath" in config || "packagePath" in config) &&
       (created.contractVersion !== "steward.task/v2" || created.diagnostics === undefined)
     ) {
       throw new Error("Steward omitted the direct Task contract projection");
     }
     if (
       !("invocationPath" in config) &&
+      !("packagePath" in config) &&
       (created.contractVersion !== undefined || created.diagnostics !== undefined)
     ) {
       throw new Error("Steward returned a direct Task projection for a legacy request");

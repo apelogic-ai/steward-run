@@ -158,10 +158,25 @@ components:
     DirectTaskSubmissionRequest:
       type: object
       additionalProperties: false
-      required: [contractVersion, invocationPath]
+      required: [contractVersion]
+      oneOf:
+        - required: [invocationPath]
+          properties:
+            packagePath: false
+            diagnostics: false
+        - required: [packagePath, diagnostics]
+          properties:
+            invocationPath: false
       properties:
         contractVersion: { type: string, const: steward.task/v2 }
         invocationPath: { type: string, minLength: 1 }
+        packagePath: { type: string, minLength: 1 }
+        diagnostics:
+          type: object
+          additionalProperties: false
+          required: [executionLog]
+          properties:
+            executionLog: { type: string, enum: [off, full], default: off }
         envelopeDigest:
           type: string
           pattern: '^steward:sha256:[0-9a-f]{64}$'

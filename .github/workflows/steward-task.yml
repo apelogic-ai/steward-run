@@ -18,20 +18,30 @@ on:
         type: number
         default: 10
       workflow:
-        description: Existing governed Workflow reference; mutually exclusive with invocation-path
+        description: Existing governed Workflow reference; mutually exclusive with invocation-path and package-path
         required: false
         type: string
         default: ""
       envelope-digest:
-        description: Optional exact active User Envelope selector for either Task source
+        description: Optional exact active User Envelope selector for any Task source
         required: false
         type: string
         default: ""
       invocation-path:
-        description: Repository-relative direct-package invocation manifest path; mutually exclusive with workflow
+        description: Repository-relative direct-package invocation manifest path; mutually exclusive with workflow and package-path
         required: false
         type: string
         default: ""
+      package-path:
+        description: Repository-relative direct-package task-definition.json path; mutually exclusive with workflow and invocation-path
+        required: false
+        type: string
+        default: ""
+      execution-log:
+        description: Direct-package execution log policy (off or full); accepted only with package-path
+        required: false
+        type: string
+        default: "off"
       input-artifact:
         description: Artifact whose contents are materialized under in/
         required: true
@@ -114,7 +124,7 @@ jobs:
           fi
       - id: caller-source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        if: inputs.invocation-path != ''
+        if: inputs.invocation-path != '' || inputs.package-path != ''
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -166,6 +176,8 @@ jobs:
           workflow: ${{ inputs.workflow }}
           envelope-digest: ${{ inputs.envelope-digest }}
           invocation-path: ${{ inputs.invocation-path }}
+          package-path: ${{ inputs.package-path }}
+          execution-log: ${{ inputs.execution-log }}
           inputs: in
           outputs: out
           steward-api-url: ${{ inputs.steward-api-url }}

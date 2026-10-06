@@ -118,8 +118,10 @@ the resumed invocation (a new job, new token).
 | Input | Meaning |
 |---|---|
 | `invocation-path` | Canonical repository-relative v2 invocation-manifest path; its bytes are never submitted |
+| `package-path` | Canonical repository-relative `task-definition.json` path for an implicit same-repository package invocation |
+| `execution-log` *(optional, default `off`)* | `off` or `full`; accepted only with `package-path` and sent as `diagnostics.executionLog` |
 | `workflow` | Existing immutable Steward Workflow reference forwarded unchanged (e.g. `repository-review@1`) |
-| `envelope-digest` *(optional)* | Exact `steward:sha256:<64 lowercase hex>` active-envelope selector for either Task source |
+| `envelope-digest` *(optional)* | Exact `steward:sha256:<64 lowercase hex>` active-envelope selector for any Task source |
 | `inputs` | Workspace path(s) materialised into the sandbox as its input directory |
 | `outputs` | Sandbox output path(s) written back to the workspace |
 | `steward-api-url` | The control-plane API base (env-supplied; not hardcoded) |
@@ -131,11 +133,13 @@ the resumed invocation (a new job, new token).
 | `agent-runtime` *(optional)* | Adopt an existing `AgentRuntime` id for the existing Workflow path only (D2) |
 | `runtime-binding-timeout-minutes` *(optional)* | Whole-minute controller-binding deadline from 1 through 360; default `10` |
 
-Exactly one of `invocation-path` and `workflow` is required. The v2 reusable-workflow path uses
-`invocation-path`; the legacy input remains additive compatibility for direct action and existing
-callers. The runner verifies that a direct invocation path is canonical, exists at the clean exact
-trigger checkout, contains no symlink component, and names a regular file. This is an early local
-failure only: Steward's authenticated exact-commit source retrieval is authoritative.
+Exactly one of `invocation-path`, `package-path`, and `workflow` is required.
+The runner verifies that either direct path is canonical, exists at the clean
+exact trigger checkout, contains no symlink component, and names a regular
+file. `invocation-path` retains its existing request byte-for-byte.
+`package-path` sends exactly `{contractVersion:"steward.task/v2", packagePath,
+diagnostics:{executionLog}}`. This is an early local failure only: Steward's
+authenticated exact-commit source retrieval is authoritative.
 
 Steward resolves `envelope-digest` within the authenticated owner's active envelopes for either a
 versioned Workflow or direct-package invocation, so the selector cannot cross an ownership
@@ -150,6 +154,12 @@ Identity document must repeat the exact issuer and provide `token_endpoint`.
 The GitHub audience is its non-empty, bounded `github_oidc_audience`, or the
 exact issuer URL when the field is absent. The action never derives an exchange
 endpoint from a hostname convention.
+
+Before any token exchange, `package-path` also requires the protected-resource
+metadata boolean `steward_direct_packages_supported: true`. Missing or false
+fails with a fixed Steward 0.3.9-or-later compatibility message. A non-boolean
+value makes the discovery document incompatible. Other Task-source modes do
+not require that additive field.
 
 Discovery allows no redirects, caps each JSON document at 64 KiB, permits at
 most two metadata requests, limits each request to five seconds and the total

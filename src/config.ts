@@ -7,6 +7,14 @@ interface CommonWorkflowConfig {
 export type WorkflowConfig = CommonWorkflowConfig & (
   | { workflow: string; invocationPath?: never; agentRuntime?: string; envelopeDigest?: string }
   | { invocationPath: string; workflow?: never; agentRuntime?: never; envelopeDigest?: string }
+  | {
+      packagePath: string;
+      executionLog: "off" | "full";
+      workflow?: never;
+      invocationPath?: never;
+      agentRuntime?: never;
+      envelopeDigest?: string;
+    }
 );
 
 export type ActionAuthentication =
@@ -56,6 +64,8 @@ function requiredVerbatim(environment: NodeJS.ProcessEnv, name: string): string 
 export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
   const workflow = environment.STEWARD_RUN_WORKFLOW;
   const invocationPath = environment.STEWARD_RUN_INVOCATION_PATH;
+  const packagePath = environment.STEWARD_RUN_PACKAGE_PATH;
+  const executionLog = environment.STEWARD_RUN_EXECUTION_LOG?.trim() || "off";
   const agentRuntime = environment.STEWARD_RUN_AGENT_RUNTIME?.trim();
   const envelopeDigest = environment.STEWARD_RUN_ENVELOPE_DIGEST?.trim();
   const identityExchangeUrl = environment.STEWARD_RUN_IDENTITY_EXCHANGE_URL?.trim();
@@ -64,11 +74,17 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
   const bearerTokenFile = environment.STEWARD_RUN_BEARER_TOKEN_FILE?.trim();
   const caCertificateFile = environment.STEWARD_RUN_CA_CERTIFICATE_FILE?.trim();
   const apiUrl = required(environment, "STEWARD_RUN_API_URL");
-  const taskSourceCount = [workflow?.trim(), invocationPath].filter(Boolean).length;
+  const taskSourceCount = [workflow?.trim(), invocationPath, packagePath].filter(Boolean).length;
   if (taskSourceCount !== 1) {
-    throw new Error("configure exactly one Task source: workflow or invocation-path");
+    throw new Error("configure exactly one Task source: workflow, invocation-path, or package-path");
   }
-  if (invocationPath && agentRuntime) {
+  if (executionLog !== "off" && executionLog !== "full") {
+    throw new Error("execution-log must be off or full");
+  }
+  if (!packagePath && executionLog !== "off") {
+    throw new Error("execution-log=full requires package-path");
+  }
+  if ((invocationPath || packagePath) && agentRuntime) {
     throw new Error("agent-runtime cannot be selected for a direct package invocation");
   }
   if (envelopeDigest && !/^steward:sha256:[0-9a-f]{64}$/u.test(envelopeDigest)) {
@@ -118,14 +134,23 @@ export function readActionConfig(environment: NodeJS.ProcessEnv): ActionConfig {
     runtimeBindingTimeoutMilliseconds: runtimeBindingTimeoutMilliseconds(environment),
     ...(caCertificateFile ? { caCertificateFile } : {}),
   };
-  return invocationPath
-    ? { ...common, invocationPath, ...(envelopeDigest ? { envelopeDigest } : {}) }
-    : {
-        ...common,
-        workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
-        ...(envelopeDigest ? { envelopeDigest } : {}),
-        ...(agentRuntime ? { agentRuntime } : {}),
-      };
+  if (invocationPath) {
+    return { ...common, invocationPath, ...(envelopeDigest ? { envelopeDigest } : {}) };
+  }
+  if (packagePath) {
+    return {
+      ...common,
+      packagePath,
+      executionLog,
+      ...(envelopeDigest ? { envelopeDigest } : {}),
+    };
+  }
+  return {
+    ...common,
+    workflow: requiredVerbatim(environment, "STEWARD_RUN_WORKFLOW"),
+    ...(envelopeDigest ? { envelopeDigest } : {}),
+    ...(agentRuntime ? { agentRuntime } : {}),
+  };
 }
 
 export const compatibilityInputNames = [
