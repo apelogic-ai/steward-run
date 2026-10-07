@@ -30774,7 +30774,7 @@ async function main() {
     ) : void 0;
     if (discovered && !discovered.packagePathSupported) {
       process.stdout.write(
-        "::error title=Unsupported Steward capability::package-path requires Steward 0.3.9 or later with advertised package-path support\n"
+        "::error title=Unsupported Steward capability::package-path requires Steward 0.3.10 or later with advertised package-path support\n"
       );
       throw new Error("Steward does not advertise package-path support");
     }

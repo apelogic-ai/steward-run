@@ -217,7 +217,7 @@ test("package-path rejects the old direct-package capability before token exchan
     child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += String(chunk)));
     const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
     assert.equal(code, 1);
-    assert.match(stdout, /package-path requires Steward 0\.3\.9 or later/u);
+    assert.match(stdout, /package-path requires Steward 0\.3\.10 or later/u);
     assert.equal(mock.observations.oidcRequests, 0);
     assert.equal(mock.observations.exchangeRequests, 0);
     assert.deepEqual(mock.observations.operations, []);

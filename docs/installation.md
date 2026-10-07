@@ -1,4 +1,4 @@
-# steward-run v0.8.0 installation, setup, and integration
+# steward-run v0.8.1 installation, setup, and integration
 
 This is the complete operator runbook for the standalone OSS release. Use one
 tagged release as a unit: reusable workflow, action commit, runner image, and
@@ -19,7 +19,7 @@ projects `image` to `governedJobContainerImage`.
 
 The [v0.5.0 guide](installation-v0.5.0.md) is historical and applies only to
 that release. Do not use its versions, paths, or explicit-authentication
-defaults for v0.8.0.
+defaults for v0.8.1.
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ the signed manifest.
 
 ```sh
 set -euo pipefail
-RELEASE_VERSION=0.8.0
+RELEASE_VERSION=0.8.1
 RELEASE_TAG="v$RELEASE_VERSION"
 RELEASE_REPOSITORY=apelogic-ai/steward-run
 RELEASE_IDENTITY="https://github.com/$RELEASE_REPOSITORY/.github/workflows/portable-release.yml@refs/tags/$RELEASE_TAG"
@@ -407,8 +407,8 @@ budget. Metadata responses must be exactly HTTP 200.
 | Purpose | Object or claim | Owner |
 | --- | --- | --- |
 | ARC registration | Existing `Opaque` Secret in `arc-runners` with `github_app_id`, `github_app_installation_id`, and `github_app_private_key` | GitHub App / cluster operator |
-| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.8.0 release |
-| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.8.0 release |
+| Runner image | Manifest `image`, pinned as `repository@sha256:<64 lowercase hex>` | v0.8.1 release |
+| Reusable workflow | Manifest `workflowRepository` and exact 40-character `workflowCommit` | v0.8.1 release |
 | Steward authentication | Job-scoped GitHub OIDC token from `id-token: write`; no static token Secret | GitHub / Identity |
 | Optional public CA | Existing ConfigMap key `ca.crt`, mounted at `/etc/steward-run/trust/ca.crt` | PKI / cluster operator |
 | ARC controller | Separate 0.14.2 controller and CRDs | Cluster platform operator |
@@ -557,7 +557,7 @@ Supply exactly one Task source:
 - `package-path`: a canonical checked-in `task-definition.json` path for a
   same-repository package with an implicit invocation.
 
-`package-path` requires Steward 0.3.9 or later and
+`package-path` requires Steward 0.3.10 or later and
 `steward_package_path_supported: true` in the protected-resource metadata.
 The older `steward_direct_packages_supported` flag covers `invocation-path`
 only and does not satisfy this gate.

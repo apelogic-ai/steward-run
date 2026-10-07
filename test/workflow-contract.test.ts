@@ -423,6 +423,10 @@ test("CI executes the governed job-container runtime contract", async () => {
   assert.match(ci, /node \/workspace\/dist\/index\.cjs/u);
   assert.match(ci, /Verify pinned governed job-container image/u);
   assert.match(ci, /steward-task\.yml/u);
+  assert.match(ci, /require\("\.\/package\.json"\)\.version/u);
+  assert.match(ci, /docker buildx imagetools inspect "\$image" --format '\{\{json \.Image\}\}'/u);
+  assert.match(ci, /verify-image-release-labels\.mjs/u);
+  assert.match(ci, /"\$GITHUB_SERVER_URL\/\$GITHUB_REPOSITORY"/u);
   assert.equal(ci.match(/dpkg-query -W -f=\\\$\{Version\}/gu)?.length, 4);
   const ciContainerProbe = ci.slice(
     ci.indexOf("- name: Smoke-test ARC and governed job-container contracts"),
