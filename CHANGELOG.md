@@ -7,7 +7,26 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-06
+
+### Fixed
+
+- Recovered the complete v0.8.0 `package-path` change set unchanged after the
+  v0.8.0 release workflow stopped before publishing any release or OCI
+  artifact. The v0.8.0 tag is an incomplete publication and must not be used.
+- Refreshed the signed governed job-container image for v0.8.1 and pinned its
+  immutable digest in the container-based reusable workflow before tagging.
+- Added a non-publishing pre-tag release gate that compares both platforms' pinned
+  `org.opencontainers.image.version` labels with the repository release
+  version, preventing a stale job-container pin from reaching a release tag.
+- Updated package-path compatibility guidance to the first Steward release
+  that ships `steward_package_path_supported`, Steward v0.3.10.
+
 ## [0.8.0] - 2026-10-06
+
+**Publication status:** incomplete. The release workflow failed before
+publishing the GitHub release, runner image, or chart. Do not use v0.8.0; use
+v0.8.1, which carries these changes unchanged.
 
 ### Added
 
@@ -306,7 +325,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/apelogic-ai/steward-run/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/apelogic-ai/steward-run/compare/v0.7.6...v0.8.0
 [0.7.6]: https://github.com/apelogic-ai/steward-run/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/apelogic-ai/steward-run/compare/v0.7.4...v0.7.5

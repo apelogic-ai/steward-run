@@ -116,9 +116,24 @@ publishes the immutable
 `job-container-X.Y.Z-<commit>` index, keyless-signs its digest with the fork's
 default-branch workflow identity, and prints the digest in the run summary.
 Pin that exact digest in `.github/workflows/steward-task.yml`, rerun the normal
-CI, and merge the reviewed result before tagging. Release publication promotes
-that digest unchanged to `X.Y.Z`; the final schema-3 manifest records it in
-the existing `image` field mapped into Steward's `governedJobContainerImage`.
+CI, then dispatch the non-publishing `preflight` operation against the exact
+release-preparation branch and version:
+
+```sh
+gh workflow run portable-release.yml --ref RELEASE_PREPARATION_BRANCH \
+  -f operation=preflight -f version=X.Y.Z
+```
+
+Its `pretag-preflight` job requires the branch head to contain the current
+default-branch head and validates the package, chart, and immutable image
+coordinates. Its `pretag-image-labels` job requires both platform images to
+carry the exact release version and repository labels, verifies the bootstrap
+signature from the default branch, and proves the bootstrapped Dockerfile
+revision is an ancestor of the candidate without later Dockerfile changes.
+Link the successful run from the release-preparation pull request, merge the
+reviewed result, and only then tag. Release publication promotes that digest
+unchanged to `X.Y.Z`; the final schema-3 manifest records it in the existing
+`image` field mapped into Steward's `governedJobContainerImage`.
 
 There is no unsigned local-build fallback for this step. The release preflight
 requires the selected job-container digest to carry a keyless signature from

@@ -92,18 +92,18 @@ Configure proxy environment and any intercepting CA on the runner/job boundary;
 do not put proxy credentials in Helm values. The complete destination inventory
 and proxy behavior are in the installation guide.
 
-The v0.8.0 chart and runner include same-repository `package-path` submissions,
+The v0.8.1 chart and runner include same-repository `package-path` submissions,
 the optional exact User Envelope selector, authentication discovery, and
-system trust by default. `package-path` requires Steward 0.3.9 or later and its
+system trust by default. `package-path` requires Steward 0.3.10 or later and its
 distinct advertised package-path capability. Follow the
 [current installation guide](../../docs/installation.md)
 and pull the chart from the public repository with:
 
 ```sh
-helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.8.0
+helm pull oci://ghcr.io/apelogic-ai/charts/steward-run-arc --version 0.8.1
 ```
 
-The matching runner tag is `ghcr.io/apelogic-ai/steward-run:0.8.0`. Tags are
+The matching runner tag is `ghcr.io/apelogic-ai/steward-run:0.8.1`. Tags are
 for discovery only: resolve and pin the image digest from the release's
 `oss-release-manifest.json`.
 

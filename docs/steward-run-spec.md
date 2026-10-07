@@ -157,7 +157,7 @@ endpoint from a hostname convention.
 
 Before any token exchange, `package-path` also requires the protected-resource
 metadata boolean `steward_package_path_supported: true`. Missing or false
-fails with a fixed Steward 0.3.9-or-later compatibility message. The existing
+fails with a fixed Steward 0.3.10-or-later compatibility message. The existing
 `steward_direct_packages_supported` flag continues to describe
 `invocation-path`; it is not sufficient for implicit invocation. A non-boolean
 capability makes the discovery document incompatible. Other Task-source modes

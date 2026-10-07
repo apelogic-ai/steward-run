@@ -1,5 +1,10 @@
 # steward-run v0.8.0
 
+> **Incomplete publication — do not use.** The v0.8.0 release workflow failed
+> before publishing the GitHub release, runner image, or chart. v0.8.1 carries
+> the changes below unchanged with a correctly bootstrapped and pinned job
+> container.
+
 This release adds same-repository direct-package submission without changing
 the existing invocation-manifest contract. The signed release manifest remains
 schema 3 and continues to bind the exact action/workflow commit, runner image,
