@@ -75,12 +75,6 @@ jobs:
           image="$(sed -n 's/^[[:space:]]*image: \(ghcr.io\/[^[:space:]]*\)$/\1/p' \
             .github/workflows/steward-task.yml)"
           [[ "$image" =~ ^ghcr\.io/apelogic-ai/steward-run@sha256:[a-f0-9]{64}$ ]]
-          version="$(node -p 'require("./package.json").version')"
-          docker buildx imagetools inspect "$image" --format '{{json .Image}}' \
-            > "$RUNNER_TEMP/pinned-job-container-metadata.json"
-          node scripts/verify-image-release-labels.mjs \
-            "$RUNNER_TEMP/pinned-job-container-metadata.json" "$version" \
-            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
           docker pull --platform linux/${{ matrix.architecture }} "$image"
           # shellcheck disable=SC2016
           docker run --rm --platform linux/${{ matrix.architecture }} --entrypoint /bin/bash "$image" -c \

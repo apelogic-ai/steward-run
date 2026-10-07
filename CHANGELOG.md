@@ -16,7 +16,7 @@ This project follows [Semantic Versioning](https://semver.org/).
   artifact. The v0.8.0 tag is an incomplete publication and must not be used.
 - Refreshed the signed governed job-container image for v0.8.1 and pinned its
   immutable digest in the container-based reusable workflow before tagging.
-- Added a pull-request CI gate that compares both platforms' pinned
+- Added a non-publishing pre-tag release gate that compares both platforms' pinned
   `org.opencontainers.image.version` labels with the repository release
   version, preventing a stale job-container pin from reaching a release tag.
 - Updated package-path compatibility guidance to the first Steward release

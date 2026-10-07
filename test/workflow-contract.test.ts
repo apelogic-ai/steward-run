@@ -423,10 +423,6 @@ test("CI executes the governed job-container runtime contract", async () => {
   assert.match(ci, /node \/workspace\/dist\/index\.cjs/u);
   assert.match(ci, /Verify pinned governed job-container image/u);
   assert.match(ci, /steward-task\.yml/u);
-  assert.match(ci, /require\("\.\/package\.json"\)\.version/u);
-  assert.match(ci, /docker buildx imagetools inspect "\$image" --format '\{\{json \.Image\}\}'/u);
-  assert.match(ci, /verify-image-release-labels\.mjs/u);
-  assert.match(ci, /"\$GITHUB_SERVER_URL\/\$GITHUB_REPOSITORY"/u);
   assert.equal(ci.match(/dpkg-query -W -f=\\\$\{Version\}/gu)?.length, 4);
   const ciContainerProbe = ci.slice(
     ci.indexOf("- name: Smoke-test ARC and governed job-container contracts"),
@@ -454,7 +450,16 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   );
   assert.match(release, /resume_image_digest:/u);
   assert.match(release, /resume_chart_digest:/u);
-  assert.match(release, /operation:[\s\S]*?- release[\s\S]*?- bootstrap[\s\S]*?- retire-bootstrap/u);
+  assert.match(release, /operation:[\s\S]*?- preflight[\s\S]*?- release[\s\S]*?- bootstrap[\s\S]*?- retire-bootstrap/u);
+  assert.match(release, /pretag-preflight:/u);
+  assert.match(release, /Validate pre-tag release coordinates/u);
+  assert.match(release, /git merge-base --is-ancestor "\$default_sha" "\$GITHUB_SHA"/u);
+  assert.match(release, /pretag-image-labels:/u);
+  assert.match(release, /Verify pre-tag governed job-container labels and signature/u);
+  assert.match(release, /docker buildx imagetools inspect "\$JOB_CONTAINER_IMAGE" --format '\{\{json \.Image\}\}'/u);
+  assert.match(release, /verify-image-release-labels\.mjs/u);
+  assert.match(release, /git merge-base --is-ancestor "\$image_revision" "\$GITHUB_SHA"/u);
+  assert.match(release, /git diff --quiet "\$image_revision" "\$GITHUB_SHA" -- Dockerfile/u);
   assert.match(release, /bootstrap-preflight:/u);
   assert.match(release, /bootstrap-build-amd64:/u);
   assert.match(release, /bootstrap-build-arm64:/u);

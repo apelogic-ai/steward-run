@@ -44,11 +44,13 @@ caller repository and commit.
 ## Release integrity
 
 The governed job-container digest was bootstrapped and signed for v0.8.1 before
-tagging, then pinned in the container-based reusable workflow. Pull-request CI
-checks both platform images and fails when their
-`org.opencontainers.image.version` labels do not exactly match the repository
-release version. The self-hosted and vendored workflows do not declare a job
-container and therefore have no image digest to pin.
+tagging, then pinned in the container-based reusable workflow. The
+non-publishing release preflight checks both platform images and fails when
+their `org.opencontainers.image.version` labels do not exactly match the
+repository release version. Release preparation runs that preflight against
+the exact candidate branch before it is marked ready. The self-hosted and
+vendored workflows do not declare a job container and therefore have no image
+digest to pin.
 
 ## Upgrade
 

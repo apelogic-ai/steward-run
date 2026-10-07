@@ -98,10 +98,13 @@ test("the current handoff documents the public workflow and published OSS artifa
   assert.match(rebuild, /workflowCommit` and `actionCommit`/u);
   assert.match(rebuild, /jobs\.governed\.container\.image/u);
   assert.match(rebuild, /job-container-X\.Y\.Z/u);
+  assert.match(rebuild, /operation=preflight/u);
+  assert.match(rebuild, /pretag-preflight/u);
+  assert.match(rebuild, /pretag-image-labels/u);
   assert.match(rebuild, /Before every release,[\s\S]*?silently trail the[\s\S]*?release/u);
   assert.match(rebuild, /portable release[\s\S]*?workflow's `bootstrap`[\s\S]*?operation/u);
   assert.match(rebuild, /snapshot\.ubuntu\.com/u);
-  assert.match(rebuild, /manifest records it in[\s\S]*?existing `image` field/u);
+  assert.match(rebuild, /manifest records it in[\s\S]*?existing\s+`image` field/u);
   assert.match(rebuild, /retire-bootstrap/u);
   assert.match(rebuild, /steward-task-vendored\.yml/u);
   assert.match(rebuild, /Steward issue[\s\S]*?#218/u);
