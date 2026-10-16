@@ -717,7 +717,7 @@ export class StewardClient {
   async submitTask(request: TaskSubmissionRequest, idempotencyKey: string): Promise<Task> {
     const response = await this.#request("POST", "v1/tasks", {
       stage: "submit",
-      expectedStatus: [201, 202],
+      expectedStatus: [200, 201, 202],
       headers: {
         "content-type": "application/json",
         "idempotency-key": idempotencyKey,

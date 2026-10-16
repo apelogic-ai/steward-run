@@ -23,8 +23,13 @@ paths:
             schema:
               $ref: '#/components/schemas/TaskSubmissionRequest'
       responses:
+        '200':
+          description: Existing Task returned for an idempotent replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskStatusResponse' }
         '201':
-          description: Task admitted or idempotently returned
+          description: Task admitted
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TaskStatusResponse' }
@@ -133,7 +138,7 @@ components:
       name: Idempotency-Key
       in: header
       required: true
-      schema: { type: string, minLength: 32, maxLength: 64 }
+      schema: { type: string, minLength: 1 }
   responses:
     Unauthorized: { description: Missing, invalid, or unauthorized bearer identity }
     Conflict: { description: Request conflicts with the current Task state }

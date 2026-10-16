@@ -10,6 +10,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Removed an unused JWT package chain from the governed job-container image.
+- Accepted successful idempotent Task submission replays and aligned the API
+  contract with the server's non-empty idempotency-key rule.
 
 ## [0.8.1] - 2026-10-06
 

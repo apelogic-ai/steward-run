@@ -172,6 +172,21 @@ test("the Steward client submits Tasks with fresh OIDC tokens and an idempotency
   assert.equal(requests[1]?.headers.get("authorization"), "Bearer token-2");
 });
 
+test("the Steward client accepts an idempotent Task submission replay", async () => {
+  let submission = 0;
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () => jsonResponse(task, ++submission === 1 ? 201 : 200),
+  });
+
+  const initial = await client.submitTask({ workflow: "repository-review@1" }, "replay-key");
+  const replay = await client.submitTask({ workflow: "repository-review@1" }, "replay-key");
+
+  assert.deepEqual(replay, initial);
+  assert.equal(submission, 2);
+});
+
 test("direct-package submission accepts Steward's complete v2 Task status", async () => {
   let request: Request | undefined;
   const client = new StewardClient({
