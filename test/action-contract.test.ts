@@ -84,6 +84,11 @@ test("the Steward Task API contract covers the complete lifecycle", async () => 
     openapi: string;
     paths: Record<string, Record<string, unknown>>;
     components: {
+      parameters: {
+        IdempotencyKey: {
+          schema: { type: string; minLength: number; maxLength?: number };
+        };
+      };
       schemas: {
         TaskSubmissionRequest: {
           oneOf: Array<{ $ref: string }>;
@@ -117,6 +122,22 @@ test("the Steward Task API contract covers the complete lifecycle", async () => 
   assert.match(source, /steward-task-api/);
   assert.match(source, /67108864/);
   assert.match(source, /Task accepted for controller-owned runtime binding/u);
+  const submit = api.paths["/v1/tasks"]?.post as {
+    responses: Record<string, unknown>;
+  };
+  assert.deepEqual(Object.keys(submit.responses).sort(), [
+    "200",
+    "201",
+    "202",
+    "400",
+    "401",
+    "409",
+    "422",
+  ]);
+  assert.deepEqual(api.components.parameters.IdempotencyKey.schema, {
+    type: "string",
+    minLength: 1,
+  });
   assert.deepEqual(api.components.schemas.TaskSubmissionRequest.oneOf, [
     { $ref: "#/components/schemas/WorkflowTaskSubmissionRequest" },
     { $ref: "#/components/schemas/DirectTaskSubmissionRequest" },
