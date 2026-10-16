@@ -50,7 +50,7 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
   assert.doesNotMatch(dockerfile, /ENTRYPOINT|CMD/u);
 });
 
-test("the final runner image excludes the build-only GLib package chain", async () => {
+test("the final runner image excludes unused build-only package chains", async () => {
   const dockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
   const ciWorkflow = await readFile(
     new URL("../.github/workflows/ci.yml", import.meta.url),
@@ -68,6 +68,7 @@ test("the final runner image excludes the build-only GLib package chain", async 
     "libappstream5",
     "libgirepository-1.0-1",
     "python3-dbus",
+    "python3-jwt",
     "libxmlb2",
     "libglib2.0-0t64",
     "libglib2.0-bin",
@@ -78,7 +79,7 @@ test("the final runner image excludes the build-only GLib package chain", async 
     "libpolkit-agent-1-0",
     "libpolkit-gobject-1-0",
   ];
-  assert.equal(buildOnlyPackages.length, 19);
+  assert.equal(buildOnlyPackages.length, 20);
   for (const packageName of buildOnlyPackages) {
     assert.match(dockerfile, new RegExp(`\\n\\s+${packageName.replaceAll(".", "\\.")} \\\\`));
   }
@@ -88,6 +89,7 @@ test("the final runner image excludes the build-only GLib package chain", async 
     "libglib2.0-0t64",
     "libglib2.0-bin",
     "libglib2.0-data",
+    "python3-jwt",
   ]) {
     assert.match(dockerfile, new RegExp(`! dpkg-query .*${packageName}`));
     assert.match(ciWorkflow, new RegExp(`! dpkg-query .*${packageName}`));

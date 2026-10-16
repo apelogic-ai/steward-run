@@ -56,6 +56,7 @@ RUN test -n "$SOURCE_REPOSITORY" \
        polkitd \
        python3-dbus \
        python3-gi \
+       python3-jwt \
        python3-software-properties \
        software-properties-common \
     && apt-get check \
@@ -63,6 +64,7 @@ RUN test -n "$SOURCE_REPOSITORY" \
     && ! dpkg-query -W libglib2.0-0t64 \
     && ! dpkg-query -W libglib2.0-bin \
     && ! dpkg-query -W libglib2.0-data \
+    && ! dpkg-query -W python3-jwt \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && node --version \
