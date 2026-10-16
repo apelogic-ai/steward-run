@@ -41,6 +41,7 @@ export interface MockSteward {
 export interface MockStewardOptions {
   finalizationMarker?: string;
   acceptExternalGithubOidcToken?: boolean;
+  acceptedBearerToken?: string;
   terminalFailureReason?: string;
   directInvocation?: {
     invocationPath: string;
@@ -197,12 +198,13 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
   };
   const issuedAt = Math.floor(Date.now() / 1_000);
   const sourceToken = jwt({ aud: sourceAudience, sub: "mock-github-caller" });
-  const stewardToken = jwt({
-    aud: stewardAudience,
-    exp: issuedAt + 120,
-    iat: issuedAt,
-    sub: "mock-corporate-user",
-  });
+  const stewardToken = options.acceptedBearerToken ??
+    jwt({
+      aud: stewardAudience,
+      exp: issuedAt + 120,
+      iat: issuedAt,
+      sub: "mock-corporate-user",
+    });
   const acceptedSourceTokens = new Set([sourceToken]);
   let payload: Buffer<ArrayBufferLike> | undefined;
   let baseUrl = "";

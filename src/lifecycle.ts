@@ -46,6 +46,7 @@ export interface TaskClient {
 interface LifecycleDependencies {
   client: TaskClient;
   environment: NodeJS.ProcessEnv;
+  idempotencyKey?: string;
   setOutput: (name: "status" | "task-uid" | "runtime-uid", value: string) => Promise<void>;
   sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
@@ -341,7 +342,7 @@ export async function runWorkflow(
             ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
             ...(config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}),
           },
-      createIdempotencyKey(dependencies.environment),
+      dependencies.idempotencyKey ?? createIdempotencyKey(dependencies.environment),
     );
     if (
       ("invocationPath" in config || "packagePath" in config) &&

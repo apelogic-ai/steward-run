@@ -268,13 +268,16 @@ The minimal local invocation contract is:
 - provide `workflow`, declared workspace-relative `inputs` and `outputs`, the loopback/local
   `steward-api-url`, and `bearer-token-file` through the action inputs (or their corresponding
   `STEWARD_RUN_*` environment variables when executing the bundled entry point);
-- point `GITHUB_WORKSPACE` at the harness workspace and provide the ordinary bounded
-  `GITHUB_REPOSITORY`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `GITHUB_JOB`, and `GITHUB_OUTPUT`
-  bookkeeping values used for idempotency and results;
+- pass `--idempotency-key`, `--workspace`, and `--outputs-file` to the bundled entry point.
+  The key must be non-empty. The output file must be inside the workspace; the workspace itself
+  and every existing output-path component must not be symbolic links. In GitHub Actions these
+  flags are optional: the existing
+  `GITHUB_REPOSITORY`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, and `GITHUB_JOB` identity-derived key,
+  `GITHUB_WORKSPACE`, and `GITHUB_OUTPUT` remain the defaults;
 - pre-create every declared input path. Steward-run creates only declared output paths recovered
   from the Task archive;
 - read successful `outcome`, `status`, `task-uid`, and `runtime-uid` values from
-  `GITHUB_OUTPUT`; on failure, read only `outcome`, `failure-category`, optional
+  the selected outputs file; on failure, read only `outcome`, `failure-category`, optional
   `http-status`, and the versioned bounded annotations/summary described above.
 
 The token file itself is never a result artifact. Harnesses must mount it outside the declared

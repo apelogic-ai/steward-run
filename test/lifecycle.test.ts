@@ -53,6 +53,7 @@ async function outputArchive(path = "results/report.txt", body = "done"): Promis
 
 class FakeClient implements TaskClient {
   readonly calls: string[] = [];
+  readonly idempotencyKeys: string[] = [];
   readonly requests: TaskSubmissionRequest[] = [];
   phases: Task["phase"][] = ["running", "succeeded"];
   ownership: Task["runtimeOwnership"] = "provisioned";
@@ -67,9 +68,10 @@ class FakeClient implements TaskClient {
   ignoreBindingCancellation = false;
   taskProjection: Partial<Task> = {};
 
-  async submitTask(request: TaskSubmissionRequest): Promise<Task> {
+  async submitTask(request: TaskSubmissionRequest, idempotencyKey: string): Promise<Task> {
     this.calls.push("create");
     this.requests.push(request);
+    this.idempotencyKeys.push(idempotencyKey);
     return { ...this.submittedTask, ...this.taskProjection, runtimeOwnership: this.ownership };
   }
   async uploadTaskInputs(_uid: string, createArchive: () => Promise<Readable>): Promise<void> {
@@ -1062,4 +1064,19 @@ test("idempotency keys are stable for one job identity", () => {
     );
   }
   assert.match(createIdempotencyKey(identity), /^[a-f0-9]{64}$/);
+});
+
+test("an explicit caller idempotency key overrides GitHub job identity", async () => {
+  const root = await fixture();
+  const client = new FakeClient();
+  try {
+    await runWorkflow(config, root, {
+      ...dependencies(client, {}),
+      environment: {},
+      idempotencyKey: "caller-key",
+    });
+    assert.deepEqual(client.idempotencyKeys, ["caller-key"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

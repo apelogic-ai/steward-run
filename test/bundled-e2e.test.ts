@@ -11,6 +11,112 @@ function jwt(payload: Record<string, unknown>): string {
   return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.test-signature`;
 }
 
+function environmentWithoutGitHub(overrides: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const environment = { ...process.env, ...overrides };
+  for (const name of [
+    "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+    "ACTIONS_ID_TOKEN_REQUEST_URL",
+    "GITHUB_JOB",
+    "GITHUB_OUTPUT",
+    "GITHUB_REPOSITORY",
+    "GITHUB_RUN_ATTEMPT",
+    "GITHUB_RUN_ID",
+    "GITHUB_STEP_SUMMARY",
+    "GITHUB_WORKSPACE",
+  ]) {
+    delete environment[name];
+  }
+  return environment;
+}
+
+test("the checked-in bundle accepts explicit caller flags outside GitHub Actions", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "steward-run-caller-"));
+  const outputFile = join(workspace, "caller-outputs");
+  const bearerFile = join(workspace, "projected-token.jwt");
+  const issuedAt = Math.floor(Date.now() / 1_000);
+  const bearer = jwt({ aud: "steward-task-api", exp: issuedAt + 300, iat: issuedAt });
+  const mock = await startMockSteward({ acceptedBearerToken: bearer });
+  try {
+    await mkdir(join(workspace, "in"));
+    await writeFile(join(workspace, "in", "payload.bin"), "caller fixture");
+    await writeFile(bearerFile, bearer);
+    const child = spawn(
+      process.execPath,
+      [
+        "dist/index.cjs",
+        "--idempotency-key",
+        "caller-key",
+        "--workspace",
+        workspace,
+        "--outputs-file",
+        "caller-outputs",
+      ],
+      {
+        cwd: new URL("..", import.meta.url),
+        env: environmentWithoutGitHub({
+          STEWARD_RUN_API_URL: mock.url,
+          STEWARD_RUN_BEARER_TOKEN_FILE: bearerFile,
+          STEWARD_RUN_INPUTS: "in",
+          STEWARD_RUN_OUTPUTS: "out/payload.bin",
+          STEWARD_RUN_WORKFLOW: "repository-review@1",
+        }),
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let stderr = "";
+    child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
+    const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+
+    assert.equal(code, 0, stderr);
+    assert.equal(await readFile(join(workspace, "out", "payload.bin"), "utf8"), "caller fixture");
+    assert.match(await readFile(outputFile, "utf8"), /^outcome=success$/mu);
+    assert.deepEqual(mock.observations.operations, [
+      "submit",
+      "upload-inputs",
+      "execute",
+      "poll",
+      "download-outputs",
+      "finalize",
+    ]);
+    assert.equal(mock.observations.oidcRequests, 0);
+    assert.equal(mock.observations.exchangeRequests, 0);
+  } finally {
+    await mock.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("the checked-in bundle refuses a missing caller idempotency key before submission", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "steward-run-caller-key-"));
+  const mock = await startMockSteward();
+  try {
+    await mkdir(join(workspace, "in"));
+    await writeFile(join(workspace, "in", "payload.bin"), "caller fixture");
+    const child = spawn(
+      process.execPath,
+      ["dist/index.cjs", "--workspace", workspace, "--outputs-file", "caller-outputs"],
+      {
+        cwd: new URL("..", import.meta.url),
+        env: environmentWithoutGitHub({
+          STEWARD_RUN_API_URL: mock.url,
+          STEWARD_RUN_INPUTS: "in",
+          STEWARD_RUN_OUTPUTS: "out/payload.bin",
+          STEWARD_RUN_WORKFLOW: "repository-review@1",
+        }),
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+
+    assert.equal(code, 1);
+    assert.deepEqual(mock.observations.operations, []);
+    assert.equal(mock.observations.protectedResourceDiscoveryRequests, 0);
+  } finally {
+    await mock.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("the checked-in bundle round-trips a file through the mock Steward API", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "steward-run-bundle-"));
   const outputFile = join(workspace, "github-output");

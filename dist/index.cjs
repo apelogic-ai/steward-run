@@ -1270,8 +1270,8 @@ var require_streamx = __commonJS({
             return this;
           },
           next() {
-            return new Promise(function(resolve, reject) {
-              promiseResolve = resolve;
+            return new Promise(function(resolve2, reject) {
+              promiseResolve = resolve2;
               promiseReject = reject;
               const data = stream.read();
               if (data !== null) ondata(data);
@@ -1304,11 +1304,11 @@ var require_streamx = __commonJS({
         }
         function destroy(err) {
           stream.destroy(err);
-          return new Promise((resolve, reject) => {
-            if (stream._duplexState & DESTROYED) return resolve({ value: void 0, done: true });
+          return new Promise((resolve2, reject) => {
+            if (stream._duplexState & DESTROYED) return resolve2({ value: void 0, done: true });
             stream.once("close", function() {
               if (err) reject(err);
-              else resolve({ value: void 0, done: true });
+              else resolve2({ value: void 0, done: true });
             });
           });
         }
@@ -1352,8 +1352,8 @@ var require_streamx = __commonJS({
         const writes = pending + (ws._duplexState & WRITE_WRITING ? 1 : 0);
         if (writes === 0) return Promise.resolve(true);
         if (state.drains === null) state.drains = [];
-        return new Promise((resolve) => {
-          state.drains.push({ writes, resolve });
+        return new Promise((resolve2) => {
+          state.drains.push({ writes, resolve: resolve2 });
         });
       }
       write(data) {
@@ -1458,10 +1458,10 @@ var require_streamx = __commonJS({
       cb(null);
     }
     function pipelinePromise(...streams) {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve2, reject) => {
         return pipeline2(...streams, (err) => {
           if (err) return reject(err);
-          resolve();
+          resolve2();
         });
       });
     }
@@ -2120,16 +2120,16 @@ var require_extract = __commonJS({
           entryCallback = null;
           cb(err);
         }
-        function onnext(resolve, reject) {
+        function onnext(resolve2, reject) {
           if (error) {
             return reject(error);
           }
           if (entryStream) {
-            resolve({ value: entryStream, done: false });
+            resolve2({ value: entryStream, done: false });
             entryStream = null;
             return;
           }
-          promiseResolve = resolve;
+          promiseResolve = resolve2;
           promiseReject = reject;
           consumeCallback(null);
           if (extract._finished && promiseResolve) {
@@ -2157,11 +2157,11 @@ var require_extract = __commonJS({
         function destroy(err) {
           extract.destroy(err);
           consumeCallback(err);
-          return new Promise((resolve, reject) => {
-            if (extract.destroyed) return resolve({ value: void 0, done: true });
+          return new Promise((resolve2, reject) => {
+            if (extract.destroyed) return resolve2({ value: void 0, done: true });
             extract.once("close", function() {
               if (err) reject(err);
-              else resolve({ value: void 0, done: true });
+              else resolve2({ value: void 0, done: true });
             });
           });
         }
@@ -5161,9 +5161,9 @@ var require_dispatcher_base = __commonJS({
       }
       close(callback) {
         if (callback === void 0) {
-          return new Promise((resolve, reject) => {
+          return new Promise((resolve2, reject) => {
             this.close((err, data) => {
-              return err ? reject(err) : resolve(data);
+              return err ? reject(err) : resolve2(data);
             });
           });
         }
@@ -5201,9 +5201,9 @@ var require_dispatcher_base = __commonJS({
           err = null;
         }
         if (callback === void 0) {
-          return new Promise((resolve, reject) => {
+          return new Promise((resolve2, reject) => {
             this.destroy(err, (err2, data) => {
-              return err2 ? reject(err2) : resolve(data);
+              return err2 ? reject(err2) : resolve2(data);
             });
           });
         }
@@ -8700,8 +8700,8 @@ var require_promise = __commonJS({
     function createDeferredPromise() {
       let res;
       let rej;
-      const promise = new Promise((resolve, reject) => {
-        res = resolve;
+      const promise = new Promise((resolve2, reject) => {
+        res = resolve2;
         rej = reject;
       });
       return { promise, resolve: res, reject: rej };
@@ -10111,12 +10111,12 @@ upgrade: ${upgrade}\r
           cb();
         }
       }
-      const waitForDrain = () => new Promise((resolve, reject) => {
+      const waitForDrain = () => new Promise((resolve2, reject) => {
         assert(callback === null);
         if (socket[kError]) {
           reject(socket[kError]);
         } else {
-          callback = resolve;
+          callback = resolve2;
         }
       });
       socket.on("close", onDrain).on("drain", onDrain);
@@ -11002,12 +11002,12 @@ var require_client_h2 = __commonJS({
           cb();
         }
       }
-      const waitForDrain = () => new Promise((resolve, reject) => {
+      const waitForDrain = () => new Promise((resolve2, reject) => {
         assert(callback === null);
         if (socket[kError]) {
           reject(socket[kError]);
         } else {
-          callback = resolve;
+          callback = resolve2;
         }
       });
       h2stream.on("close", onDrain).on("drain", onDrain);
@@ -11323,16 +11323,16 @@ var require_client = __commonJS({
         return this[kNeedDrain] < 2;
       }
       [kClose]() {
-        return new Promise((resolve) => {
+        return new Promise((resolve2) => {
           if (this[kSize]) {
-            this[kClosedResolve] = resolve;
+            this[kClosedResolve] = resolve2;
           } else {
-            resolve(null);
+            resolve2(null);
           }
         });
       }
       [kDestroy](err) {
-        return new Promise((resolve) => {
+        return new Promise((resolve2) => {
           const requests = this[kQueue].splice(this[kPendingIdx]);
           for (let i = 0; i < requests.length; i++) {
             const request = requests[i];
@@ -11345,7 +11345,7 @@ var require_client = __commonJS({
               this[kClosedResolve]();
               this[kClosedResolve] = null;
             }
-            resolve(null);
+            resolve2(null);
           };
           if (this[kHTTPContext]) {
             this[kHTTPContext].destroy(err, callback);
@@ -11752,8 +11752,8 @@ var require_pool_base = __commonJS({
           }
           return Promise.all(closeAll);
         } else {
-          return new Promise((resolve) => {
-            this[kClosedResolve] = resolve;
+          return new Promise((resolve2) => {
+            this[kClosedResolve] = resolve2;
           });
         }
       }
@@ -12872,7 +12872,7 @@ var require_socks5_proxy_agent = __commonJS({
         const proxyHost = this[kProxyUrl].hostname;
         const proxyPort = parseInt(this[kProxyUrl].port) || 1080;
         debug("creating SOCKS5 connection to", proxyHost, proxyPort);
-        const socket = await new Promise((resolve, reject) => {
+        const socket = await new Promise((resolve2, reject) => {
           this[kConnector]({
             hostname: proxyHost,
             host: proxyHost,
@@ -12882,7 +12882,7 @@ var require_socks5_proxy_agent = __commonJS({
             if (err) {
               reject(err);
             } else {
-              resolve(socket2);
+              resolve2(socket2);
             }
           });
         });
@@ -12892,14 +12892,14 @@ var require_socks5_proxy_agent = __commonJS({
           socket.destroy();
         });
         await socks5Client.handshake();
-        await new Promise((resolve, reject) => {
+        await new Promise((resolve2, reject) => {
           const timeout = setTimeout(() => {
             reject(new Error("SOCKS5 authentication timeout"));
           }, 5e3);
           const onAuthenticated = () => {
             clearTimeout(timeout);
             socks5Client.removeListener("error", onError);
-            resolve();
+            resolve2();
           };
           const onError = (err) => {
             clearTimeout(timeout);
@@ -12908,14 +12908,14 @@ var require_socks5_proxy_agent = __commonJS({
           };
           if (socks5Client.state === STATES.AUTHENTICATED) {
             clearTimeout(timeout);
-            resolve();
+            resolve2();
           } else {
             socks5Client.once("authenticated", onAuthenticated);
             socks5Client.once("error", onError);
           }
         });
         await socks5Client.connect(targetHost, targetPort);
-        await new Promise((resolve, reject) => {
+        await new Promise((resolve2, reject) => {
           const timeout = setTimeout(() => {
             reject(new Error("SOCKS5 connection timeout"));
           }, 5e3);
@@ -12923,7 +12923,7 @@ var require_socks5_proxy_agent = __commonJS({
             debug("SOCKS5 tunnel established to", targetHost, targetPort, "via", info);
             clearTimeout(timeout);
             socks5Client.removeListener("error", onError);
-            resolve();
+            resolve2();
           };
           const onError = (err) => {
             clearTimeout(timeout);
@@ -12966,8 +12966,8 @@ var require_socks5_proxy_agent = __commonJS({
                       socket,
                       servername: this[kRequestTls]?.servername || targetHost
                     });
-                    await new Promise((resolve, reject) => {
-                      finalSocket.once("secureConnect", resolve);
+                    await new Promise((resolve2, reject) => {
+                      finalSocket.once("secureConnect", resolve2);
                       finalSocket.once("error", reject);
                     });
                   }
@@ -14100,7 +14100,7 @@ var require_readable = __commonJS({
         if (this._readableState.closeEmitted) {
           return Promise.resolve(null);
         }
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           if (this[kContentLength] && this[kContentLength] > limit || this[kBytesRead] > limit) {
             this.destroy(new AbortError());
           }
@@ -14114,11 +14114,11 @@ var require_readable = __commonJS({
               if (signal.aborted) {
                 reject(signal.reason ?? new AbortError());
               } else {
-                resolve(null);
+                resolve2(null);
               }
             });
           } else {
-            this.on("close", resolve);
+            this.on("close", resolve2);
           }
           this.on("error", noop).on("data", () => {
             if (this[kBytesRead] > limit) {
@@ -14146,7 +14146,7 @@ var require_readable = __commonJS({
     }
     function consume(stream, type) {
       assert(!stream[kConsume]);
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve2, reject) => {
         if (isUnusable(stream)) {
           const rState = stream._readableState;
           if (rState.destroyed && rState.closeEmitted === false) {
@@ -14161,7 +14161,7 @@ var require_readable = __commonJS({
             stream[kConsume] = {
               type,
               stream,
-              resolve,
+              resolve: resolve2,
               reject,
               length: 0,
               body: []
@@ -14235,18 +14235,18 @@ var require_readable = __commonJS({
       return buffer;
     }
     function consumeEnd(consume2, encoding) {
-      const { type, body, resolve, stream, length } = consume2;
+      const { type, body, resolve: resolve2, stream, length } = consume2;
       try {
         if (type === "text") {
-          resolve(chunksDecode(body, length, encoding));
+          resolve2(chunksDecode(body, length, encoding));
         } else if (type === "json") {
-          resolve(JSON.parse(chunksDecode(body, length, encoding)));
+          resolve2(JSON.parse(chunksDecode(body, length, encoding)));
         } else if (type === "arrayBuffer") {
-          resolve(chunksConcat(body, length).buffer);
+          resolve2(chunksConcat(body, length).buffer);
         } else if (type === "blob") {
-          resolve(new Blob(body, { type: stream[kContentType] }));
+          resolve2(new Blob(body, { type: stream[kContentType] }));
         } else if (type === "bytes") {
-          resolve(chunksConcat(body, length));
+          resolve2(chunksConcat(body, length));
         }
         consumeFinish(consume2);
       } catch (err) {
@@ -14436,9 +14436,9 @@ var require_api_request = __commonJS({
     };
     function request(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           request.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve(data);
+            return err ? reject(err) : resolve2(data);
           });
         });
       }
@@ -14650,9 +14650,9 @@ var require_api_stream = __commonJS({
     };
     function stream(opts, factory, callback) {
       if (callback === void 0) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           stream.call(this, opts, factory, (err, data) => {
-            return err ? reject(err) : resolve(data);
+            return err ? reject(err) : resolve2(data);
           });
         });
       }
@@ -14940,9 +14940,9 @@ var require_api_upgrade = __commonJS({
     };
     function upgrade(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           upgrade.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve(data);
+            return err ? reject(err) : resolve2(data);
           });
         });
       }
@@ -15035,9 +15035,9 @@ var require_api_connect = __commonJS({
     };
     function connect(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           connect.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve(data);
+            return err ? reject(err) : resolve2(data);
           });
         });
       }
@@ -16311,7 +16311,7 @@ var require_snapshot_recorder = __commonJS({
   "node_modules/undici/lib/mock/snapshot-recorder.js"(exports2, module2) {
     "use strict";
     var { writeFile, readFile: readFile4, mkdir: mkdir2 } = require("node:fs/promises");
-    var { dirname: dirname2, resolve } = require("node:path");
+    var { dirname: dirname2, resolve: resolve2 } = require("node:path");
     var { setTimeout: setTimeout2, clearTimeout: clearTimeout2 } = require("node:timers");
     var { InvalidArgumentError, UndiciError } = require_errors2();
     var { hashId, isUrlExcludedFactory, normalizeHeaders, createHeaderFilters } = require_snapshot_utils();
@@ -16512,7 +16512,7 @@ var require_snapshot_recorder = __commonJS({
           throw new InvalidArgumentError("Snapshot path is required");
         }
         try {
-          const data = await readFile4(resolve(path), "utf8");
+          const data = await readFile4(resolve2(path), "utf8");
           const parsed = JSON.parse(data);
           if (Array.isArray(parsed)) {
             this.#snapshots.clear();
@@ -16541,7 +16541,7 @@ var require_snapshot_recorder = __commonJS({
         if (!path) {
           throw new InvalidArgumentError("Snapshot path is required");
         }
-        const resolvedPath = resolve(path);
+        const resolvedPath = resolve2(path);
         await mkdir2(dirname2(resolvedPath), { recursive: true });
         const data = Array.from(this.#snapshots.entries()).map(([hash, snapshot]) => ({
           hash,
@@ -24114,7 +24114,7 @@ var require_fetch = __commonJS({
         const agent = fetchParams.controller.dispatcher;
         const path = url.pathname + url.search;
         const hasTrailingQuestionMark = url.search.length === 0 && url.href[url.href.length - url.hash.length - 1] === "?";
-        return new Promise((resolve, reject) => agent.dispatch(
+        return new Promise((resolve2, reject) => agent.dispatch(
           {
             path: hasTrailingQuestionMark ? `${path}?` : path,
             origin: url.origin,
@@ -24202,7 +24202,7 @@ var require_fetch = __commonJS({
                 }
               }
               const onError = this.onError.bind(this);
-              resolve({
+              resolve2({
                 status,
                 statusText,
                 headersList,
@@ -24255,7 +24255,7 @@ var require_fetch = __commonJS({
                   headersList.append(headerName, String(value), true);
                 }
               }
-              resolve({
+              resolve2({
                 status,
                 statusText: STATUS_CODES[status],
                 headersList,
@@ -24279,7 +24279,7 @@ var require_fetch = __commonJS({
                   headersList.append(nameStr, value.toString("latin1"), true);
                 }
               }
-              resolve({
+              resolve2({
                 status,
                 statusText: STATUS_CODES[status],
                 headersList,
@@ -28538,7 +28538,7 @@ __export(main_exports, {
   main: () => main
 });
 module.exports = __toCommonJS(main_exports);
-var import_promises7 = require("node:fs/promises");
+var import_promises8 = require("node:fs/promises");
 
 // src/oidc.ts
 async function getGitHubOidcToken(requestUrl, requestToken, audience, fetchImplementation = fetch, signal) {
@@ -28792,7 +28792,7 @@ function record(value) {
 }
 function readWithSignal(reader, signal) {
   if (signal.aborted) return Promise.reject(signal.reason);
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve2, reject) => {
     const aborted = () => {
       reader.cancel(signal.reason).then(
         () => reject(signal.reason),
@@ -28800,7 +28800,7 @@ function readWithSignal(reader, signal) {
       );
     };
     signal.addEventListener("abort", aborted, { once: true });
-    reader.read().then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted));
+    reader.read().then(resolve2, reject).finally(() => signal.removeEventListener("abort", aborted));
   });
 }
 async function boundedJson(response, maximumBytes, label, signal) {
@@ -28995,6 +28995,75 @@ function shortLivedBearerTokenFileProvider(path, now = () => Math.floor(Date.now
     }
     return validateShortLivedToken(token, now());
   };
+}
+
+// src/cli.ts
+var import_promises2 = require("node:fs/promises");
+var import_node_path = require("node:path");
+var import_node_util = require("node:util");
+function nonEmptyOption(name, value, trim = true) {
+  if (value === void 0) return void 0;
+  const normalized = trim ? value.trim() : value;
+  if (!normalized) throw new Error(`--${name} must not be empty`);
+  return normalized;
+}
+function parseCallerOptions(args) {
+  const { values } = (0, import_node_util.parseArgs)({
+    args: [...args],
+    allowPositionals: false,
+    options: {
+      "idempotency-key": { type: "string" },
+      "outputs-file": { type: "string" },
+      workspace: { type: "string" }
+    },
+    strict: true
+  });
+  const idempotencyKey = nonEmptyOption("idempotency-key", values["idempotency-key"], false);
+  const outputsFile = nonEmptyOption("outputs-file", values["outputs-file"]);
+  const workspace = nonEmptyOption("workspace", values.workspace);
+  return {
+    ...idempotencyKey === void 0 ? {} : { idempotencyKey },
+    ...outputsFile === void 0 ? {} : { outputsFile },
+    ...workspace === void 0 ? {} : { workspace }
+  };
+}
+async function validateWorkspaceOption(value) {
+  const workspace = (0, import_node_path.resolve)(value);
+  const metadata = await (0, import_promises2.lstat)(workspace).catch((error) => {
+    if (error.code === "ENOENT") throw new Error("--workspace must identify an existing directory");
+    throw error;
+  });
+  if (metadata.isSymbolicLink()) throw new Error("--workspace must not be a symbolic link");
+  if (!metadata.isDirectory()) throw new Error("--workspace must identify an existing directory");
+  return workspace;
+}
+async function validateOutputsFileOption(workspace, value) {
+  const target = (0, import_node_path.resolve)(workspace, value);
+  const workspaceRelative = (0, import_node_path.relative)(workspace, target);
+  if (!workspaceRelative || (0, import_node_path.isAbsolute)(workspaceRelative) || workspaceRelative === ".." || workspaceRelative.startsWith(`..${import_node_path.sep}`)) {
+    throw new Error("--outputs-file must identify a file inside the workspace");
+  }
+  const components = workspaceRelative.split(import_node_path.sep);
+  let current = workspace;
+  for (const [index, component] of components.entries()) {
+    current = (0, import_node_path.resolve)(current, component);
+    const final = index === components.length - 1;
+    const metadata = await (0, import_promises2.lstat)(current).catch((error) => {
+      if (error.code === "ENOENT" && final) return void 0;
+      if (error.code === "ENOENT") {
+        throw new Error("--outputs-file parent directory does not exist");
+      }
+      throw error;
+    });
+    if (metadata === void 0) return target;
+    if (metadata.isSymbolicLink()) {
+      throw new Error("--outputs-file must not contain symbolic links");
+    }
+    if (!final && !metadata.isDirectory() || final && !metadata.isFile()) {
+      throw new Error("--outputs-file must identify a regular file");
+    }
+  }
+  return target;
 }
 
 // src/config.ts
@@ -29453,14 +29522,14 @@ var StewardRunFailure = class extends Error {
 
 // src/lifecycle.ts
 var import_node_crypto3 = require("node:crypto");
-var import_promises5 = require("node:timers/promises");
+var import_promises6 = require("node:timers/promises");
 
 // src/archive.ts
 var import_node_fs = require("node:fs");
-var import_promises2 = require("node:fs/promises");
+var import_promises3 = require("node:fs/promises");
 var import_node_crypto = require("node:crypto");
-var import_node_path = require("node:path");
-var import_promises3 = require("node:stream/promises");
+var import_node_path2 = require("node:path");
+var import_promises4 = require("node:stream/promises");
 var import_tar_stream = __toESM(require_tar_stream(), 1);
 var diagnosticsRoot = ".steward/diagnostics";
 var stdoutTranscriptPath = `${diagnosticsRoot}/stdout.log`;
@@ -29472,17 +29541,17 @@ function invalidWorkspacePath(value) {
 function normalizeWorkspacePath(value) {
   let candidate = value.trim();
   while (candidate.startsWith("./")) candidate = candidate.slice(2);
-  if (!candidate || candidate === "." || candidate.includes("\\") || candidate.includes("\0") || import_node_path.posix.isAbsolute(candidate) || import_node_path.win32.isAbsolute(candidate)) {
+  if (!candidate || candidate === "." || candidate.includes("\\") || candidate.includes("\0") || import_node_path2.posix.isAbsolute(candidate) || import_node_path2.win32.isAbsolute(candidate)) {
     throw invalidWorkspacePath(value);
   }
-  const normalized = import_node_path.posix.normalize(candidate);
+  const normalized = import_node_path2.posix.normalize(candidate);
   if (normalized === ".." || normalized.startsWith("../")) {
     throw invalidWorkspacePath(value);
   }
   return normalized;
 }
 function canonicalRepositoryFilePath(value, inputName) {
-  if (!value || value.length > 512 || value !== value.trim() || value.includes("\\") || /[\u0000-\u001f\u007f]/u.test(value) || import_node_path.posix.isAbsolute(value) || import_node_path.win32.isAbsolute(value) || import_node_path.posix.normalize(value) !== value || value.split("/").some(
+  if (!value || value.length > 512 || value !== value.trim() || value.includes("\\") || /[\u0000-\u001f\u007f]/u.test(value) || import_node_path2.posix.isAbsolute(value) || import_node_path2.win32.isAbsolute(value) || import_node_path2.posix.normalize(value) !== value || value.split("/").some(
     (component) => !component || component === "." || component === ".." || !/^[A-Za-z0-9._-]+$/u.test(component)
   )) {
     throw new Error(`${inputName} must be a canonical repository-relative path`);
@@ -29490,12 +29559,12 @@ function canonicalRepositoryFilePath(value, inputName) {
   return value;
 }
 async function validateRepositoryFile(workspace, value, inputName) {
-  const relative = canonicalRepositoryFilePath(value, inputName);
+  const relative2 = canonicalRepositoryFilePath(value, inputName);
   let current = workspace;
-  const components = relative.split("/");
+  const components = relative2.split("/");
   for (const [index, component] of components.entries()) {
-    current = (0, import_node_path.join)(current, component);
-    const metadata = await (0, import_promises2.lstat)(current).catch((error) => {
+    current = (0, import_node_path2.join)(current, component);
+    const metadata = await (0, import_promises3.lstat)(current).catch((error) => {
       if (error.code === "ENOENT") throw new Error(`${inputName} does not exist`);
       throw error;
     });
@@ -29507,7 +29576,7 @@ async function validateRepositoryFile(workspace, value, inputName) {
       throw new Error(`${inputName} must identify a regular file`);
     }
   }
-  return relative;
+  return relative2;
 }
 async function validateInvocationFile(workspace, value) {
   return validateRepositoryFile(workspace, value, "invocation-path");
@@ -29529,36 +29598,36 @@ function parseWorkspacePaths(source) {
   if (paths.length === 0) throw invalidWorkspacePath(source);
   return paths;
 }
-async function collectEntries(workspace, relative, entries) {
-  const source = (0, import_node_path.join)(workspace, ...relative.split("/"));
-  const metadata = await (0, import_promises2.lstat)(source).catch((error) => {
+async function collectEntries(workspace, relative2, entries) {
+  const source = (0, import_node_path2.join)(workspace, ...relative2.split("/"));
+  const metadata = await (0, import_promises3.lstat)(source).catch((error) => {
     if (error.code === "ENOENT") {
-      throw new Error(`declared input does not exist: ${relative}`);
+      throw new Error(`declared input does not exist: ${relative2}`);
     }
     throw error;
   });
   if (metadata.isSymbolicLink()) {
-    throw new Error(`symbolic links are not allowed in inputs: ${relative}`);
+    throw new Error(`symbolic links are not allowed in inputs: ${relative2}`);
   }
   if (metadata.isDirectory()) {
-    entries.set(relative, {
-      name: relative,
+    entries.set(relative2, {
+      name: relative2,
       source,
       type: "directory",
       mode: metadata.mode & 511
     });
-    const children = await (0, import_promises2.readdir)(source);
+    const children = await (0, import_promises3.readdir)(source);
     children.sort((left, right) => left.localeCompare(right, "en"));
     for (const child of children) {
-      await collectEntries(workspace, import_node_path.posix.join(relative, child), entries);
+      await collectEntries(workspace, import_node_path2.posix.join(relative2, child), entries);
     }
     return;
   }
   if (!metadata.isFile()) {
-    throw new Error(`only regular files and directories are allowed in inputs: ${relative}`);
+    throw new Error(`only regular files and directories are allowed in inputs: ${relative2}`);
   }
-  entries.set(relative, {
-    name: relative,
+  entries.set(relative2, {
+    name: relative2,
     source,
     type: "file",
     mode: metadata.mode & 511
@@ -29587,13 +29656,13 @@ async function createInputArchive(workspace, paths) {
           gname: ""
         };
         if (entry.type === "directory") {
-          await new Promise((resolve, reject) => {
-            pack.entry(header, (error) => error ? reject(error) : resolve());
+          await new Promise((resolve2, reject) => {
+            pack.entry(header, (error) => error ? reject(error) : resolve2());
           });
         } else {
-          const body = await (0, import_promises2.readFile)(entry.source);
-          await new Promise((resolve, reject) => {
-            pack.entry(header, body, (error) => error ? reject(error) : resolve());
+          const body = await (0, import_promises3.readFile)(entry.source);
+          await new Promise((resolve2, reject) => {
+            pack.entry(header, body, (error) => error ? reject(error) : resolve2());
           });
         }
       }
@@ -29605,10 +29674,10 @@ async function createInputArchive(workspace, paths) {
   return pack;
 }
 function normalizeArchivePath(value) {
-  if (!value || value.includes("\\") || value.includes("\0") || import_node_path.posix.isAbsolute(value) || import_node_path.win32.isAbsolute(value)) {
+  if (!value || value.includes("\\") || value.includes("\0") || import_node_path2.posix.isAbsolute(value) || import_node_path2.win32.isAbsolute(value)) {
     throw new Error(`unsafe archive path: ${JSON.stringify(value)}`);
   }
-  const normalized = import_node_path.posix.normalize(value.replace(/\/$/u, ""));
+  const normalized = import_node_path2.posix.normalize(value.replace(/\/$/u, ""));
   if (!normalized || normalized === "." || normalized === ".." || normalized.startsWith("../")) {
     throw new Error(`unsafe archive path: ${JSON.stringify(value)}`);
   }
@@ -29624,8 +29693,8 @@ async function ensureSafeDirectories(workspace, relativeDirectory) {
   if (!relativeDirectory || relativeDirectory === ".") return;
   let current = workspace;
   for (const component of relativeDirectory.split("/")) {
-    current = (0, import_node_path.join)(current, component);
-    const metadata = await (0, import_promises2.lstat)(current).catch((error) => {
+    current = (0, import_node_path2.join)(current, component);
+    const metadata = await (0, import_promises3.lstat)(current).catch((error) => {
       if (error.code === "ENOENT") return void 0;
       throw error;
     });
@@ -29635,26 +29704,26 @@ async function ensureSafeDirectories(workspace, relativeDirectory) {
     if (metadata && !metadata.isDirectory()) {
       throw new Error(`non-directory in output path: ${relativeDirectory}`);
     }
-    if (!metadata) await (0, import_promises2.mkdir)(current);
+    if (!metadata) await (0, import_promises3.mkdir)(current);
   }
 }
-async function writeOutputFile(stream, workspace, relative, mode) {
-  const parent = (0, import_node_path.dirname)(relative).split("\\").join("/");
+async function writeOutputFile(stream, workspace, relative2, mode) {
+  const parent = (0, import_node_path2.dirname)(relative2).split("\\").join("/");
   await ensureSafeDirectories(workspace, parent);
-  const target = (0, import_node_path.join)(workspace, ...relative.split("/"));
-  const existing = await (0, import_promises2.lstat)(target).catch((error) => {
+  const target = (0, import_node_path2.join)(workspace, ...relative2.split("/"));
+  const existing = await (0, import_promises3.lstat)(target).catch((error) => {
     if (error.code === "ENOENT") return void 0;
     throw error;
   });
-  if (existing?.isSymbolicLink()) throw new Error(`symbolic link in output path: ${relative}`);
-  if (existing?.isDirectory()) throw new Error(`output file would replace a directory: ${relative}`);
-  const temporary = (0, import_node_path.join)((0, import_node_path.dirname)(target), `.${(0, import_node_path.basename)(target)}.${(0, import_node_crypto.randomUUID)()}.tmp`);
+  if (existing?.isSymbolicLink()) throw new Error(`symbolic link in output path: ${relative2}`);
+  if (existing?.isDirectory()) throw new Error(`output file would replace a directory: ${relative2}`);
+  const temporary = (0, import_node_path2.join)((0, import_node_path2.dirname)(target), `.${(0, import_node_path2.basename)(target)}.${(0, import_node_crypto.randomUUID)()}.tmp`);
   try {
-    await (0, import_promises3.pipeline)(stream, (0, import_node_fs.createWriteStream)(temporary, { flags: "wx", mode: mode ?? 384 }));
-    await (0, import_promises2.chmod)(temporary, (mode ?? 384) & 511);
-    await (0, import_promises2.rename)(temporary, target);
+    await (0, import_promises4.pipeline)(stream, (0, import_node_fs.createWriteStream)(temporary, { flags: "wx", mode: mode ?? 384 }));
+    await (0, import_promises3.chmod)(temporary, (mode ?? 384) & 511);
+    await (0, import_promises3.rename)(temporary, target);
   } catch (error) {
-    await (0, import_promises2.rm)(temporary, { force: true });
+    await (0, import_promises3.rm)(temporary, { force: true });
     throw error;
   }
 }
@@ -29697,55 +29766,55 @@ async function extractOutputArchive(archive, workspace, declaredPaths, diagnosti
           next();
           return;
         }
-        const relative = normalizeArchivePath(header.name);
-        if (isDiagnosticsPath(relative) || diagnostics.executionLog === "full" && relative === ".steward") {
+        const relative2 = normalizeArchivePath(header.name);
+        if (isDiagnosticsPath(relative2) || diagnostics.executionLog === "full" && relative2 === ".steward") {
           if (diagnostics.executionLog !== "full") {
             stream.resume();
             throw new Error("reserved diagnostics require full execution logging");
           }
-          if (!hasCanonicalReservedSpelling(header.name, relative, header.type)) {
+          if (!hasCanonicalReservedSpelling(header.name, relative2, header.type)) {
             stream.resume();
             throw new Error("reserved diagnostics archive path is not canonical");
           }
-          if (seen.has(relative)) throw new Error(`duplicate archive entry: ${relative}`);
-          seen.add(relative);
-          if (relative === ".steward" || relative === diagnosticsRoot) {
+          if (seen.has(relative2)) throw new Error(`duplicate archive entry: ${relative2}`);
+          seen.add(relative2);
+          if (relative2 === ".steward" || relative2 === diagnosticsRoot) {
             if (header.type !== "directory") {
               stream.resume();
-              throw new Error(`reserved diagnostics ancestor must be a directory: ${relative}`);
+              throw new Error(`reserved diagnostics ancestor must be a directory: ${relative2}`);
             }
             stream.resume();
-          } else if (relative === stdoutTranscriptPath || relative === stderrTranscriptPath) {
+          } else if (relative2 === stdoutTranscriptPath || relative2 === stderrTranscriptPath) {
             if (header.type !== "file") {
               stream.resume();
-              throw new Error(`reserved execution transcript must be a file: ${relative}`);
+              throw new Error(`reserved execution transcript must be a file: ${relative2}`);
             }
-            const body = await readTranscriptFile(stream, relative);
-            if (relative === stdoutTranscriptPath) stdout = body;
+            const body = await readTranscriptFile(stream, relative2);
+            if (relative2 === stdoutTranscriptPath) stdout = body;
             else stderr = body;
           } else {
             stream.resume();
-            throw new Error(`unknown reserved diagnostics path: ${relative}`);
+            throw new Error(`unknown reserved diagnostics path: ${relative2}`);
           }
           next();
           return;
         }
-        const isDeclared = isDeclaredOutput(relative, outputs);
-        const isAncestor = isStrictAncestorOfDeclaredOutput(relative, outputs);
+        const isDeclared = isDeclaredOutput(relative2, outputs);
+        const isAncestor = isStrictAncestorOfDeclaredOutput(relative2, outputs);
         if (!isDeclared && !isAncestor) {
-          throw new Error(`archive path is not a declared output: ${relative}`);
+          throw new Error(`archive path is not a declared output: ${relative2}`);
         }
-        if (seen.has(relative)) throw new Error(`duplicate archive entry: ${relative}`);
-        seen.add(relative);
+        if (seen.has(relative2)) throw new Error(`duplicate archive entry: ${relative2}`);
+        seen.add(relative2);
         if (!isDeclared && header.type !== "directory") {
           stream.resume();
           throw new Error(`archive ancestor entry type is not allowed: ${header.type ?? "unknown"}`);
         }
         if (header.type === "directory") {
           stream.resume();
-          await ensureSafeDirectories(workspace, relative);
+          await ensureSafeDirectories(workspace, relative2);
         } else if (header.type === "file") {
-          await writeOutputFile(stream, workspace, relative, header.mode);
+          await writeOutputFile(stream, workspace, relative2, header.mode);
         } else {
           stream.resume();
           throw new Error(`archive entry type is not allowed: ${header.type ?? "unknown"}`);
@@ -29757,7 +29826,7 @@ async function extractOutputArchive(archive, workspace, declaredPaths, diagnosti
       }
     })();
   });
-  await (0, import_promises3.pipeline)(archive, extract);
+  await (0, import_promises4.pipeline)(archive, extract);
   if (diagnostics.executionLog === "full") {
     if (stdout === void 0 || stderr === void 0) {
       throw new Error("missing reserved execution transcript");
@@ -29815,7 +29884,7 @@ async function replayExecutionTranscript(transcript, dependencies = {}) {
 }
 
 // src/steward-client.ts
-var import_promises4 = require("node:timers/promises");
+var import_promises5 = require("node:timers/promises");
 var import_node_stream = require("node:stream");
 var taskPhases = [
   "submitted",
@@ -30120,7 +30189,7 @@ var StewardClient = class {
     this.#baseUrl = validatedBaseUrl(options.baseUrl);
     this.#getToken = options.getToken;
     this.#fetch = options.fetch ?? fetch;
-    this.#sleep = options.sleep ?? (async (milliseconds, signal) => (0, import_promises4.setTimeout)(milliseconds, void 0, { signal }));
+    this.#sleep = options.sleep ?? (async (milliseconds, signal) => (0, import_promises5.setTimeout)(milliseconds, void 0, { signal }));
     this.#maxAttempts = options.maxAttempts ?? 4;
   }
   async #request(method, path, options) {
@@ -30499,7 +30568,7 @@ async function runWorkflow(config, workspace, dependencies) {
     }
     return createInputArchive(workspace, inputPaths);
   };
-  const sleep = dependencies.sleep ?? (async (milliseconds, signal) => (0, import_promises5.setTimeout)(milliseconds, void 0, { signal }));
+  const sleep = dependencies.sleep ?? (async (milliseconds, signal) => (0, import_promises6.setTimeout)(milliseconds, void 0, { signal }));
   let created;
   let terminal;
   let result;
@@ -30539,7 +30608,7 @@ async function runWorkflow(config, workspace, dependencies) {
         ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {},
         ...config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}
       },
-      createIdempotencyKey(dependencies.environment)
+      dependencies.idempotencyKey ?? createIdempotencyKey(dependencies.environment)
     );
     if (("invocationPath" in config || "packagePath" in config) && (created.contractVersion !== "steward.task/v2" || created.diagnostics === void 0)) {
       throw new Error("Steward omitted the direct Task contract projection");
@@ -30652,14 +30721,14 @@ async function runWorkflow(config, workspace, dependencies) {
 
 // src/transport.ts
 var import_node_crypto4 = require("node:crypto");
-var import_promises6 = require("node:fs/promises");
+var import_promises7 = require("node:fs/promises");
 var import_node_tls = require("node:tls");
 var import_undici = __toESM(require_undici(), 1);
 var certificatePattern = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/gu;
 async function trustedCaBundle(path) {
   let source;
   try {
-    source = await (0, import_promises6.readFile)(path, "utf8");
+    source = await (0, import_promises7.readFile)(path, "utf8");
   } catch {
     throw new Error("Steward CA certificate file could not be read");
   }
@@ -30700,14 +30769,15 @@ function requiredEnvironment(name) {
   if (!value) throw new Error(`required GitHub environment ${name} is missing`);
   return value;
 }
-async function setActionOutput(name, value) {
-  if (!/^[a-z-]+$/u.test(name) || /[\r\n]/u.test(value)) {
-    throw new Error("refusing to write an unsafe GitHub Actions output");
-  }
-  await (0, import_promises7.appendFile)(requiredEnvironment("GITHUB_OUTPUT"), `${name}=${value}
-`, {
-    encoding: "utf8"
-  });
+function actionOutputWriter(path) {
+  return async (name, value) => {
+    if (!/^[a-z-]+$/u.test(name) || /[\r\n]/u.test(value)) {
+      throw new Error("refusing to write an unsafe GitHub Actions output");
+    }
+    if (!path) throw new Error("required GitHub environment GITHUB_OUTPUT is missing");
+    await (0, import_promises8.appendFile)(path, `${name}=${value}
+`, { encoding: "utf8" });
+  };
 }
 function safeFailure(error) {
   if (error instanceof StewardRunFailure) return error;
@@ -30719,7 +30789,7 @@ function safeFailure(error) {
   };
   return new StewardRunFailure(metadata);
 }
-async function reportActionFailure(failure) {
+async function reportActionFailure(failure, setActionOutput) {
   const safe = sanitizeFailureMetadata(failure.metadata);
   await publishFailureMetadata(safe, {
     writeAnnotation: async (value) => {
@@ -30730,7 +30800,7 @@ async function reportActionFailure(failure) {
       const path = process.env.GITHUB_STEP_SUMMARY?.trim();
       if (!path) return;
       try {
-        await (0, import_promises7.appendFile)(path, value, { encoding: "utf8" });
+        await (0, import_promises8.appendFile)(path, value, { encoding: "utf8" });
       } catch {
       }
     }
@@ -30742,13 +30812,19 @@ async function reportActionFailure(failure) {
   } catch {
   }
 }
-async function main() {
+async function main(args = process.argv.slice(2)) {
   const controller = new AbortController();
   const transports = /* @__PURE__ */ new Set();
+  let setActionOutput = actionOutputWriter(process.env.GITHUB_OUTPUT?.trim());
   const cancel = () => controller.abort();
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
+    const options = parseCallerOptions(args);
+    const workspace = options.workspace === void 0 ? requiredEnvironment("GITHUB_WORKSPACE") : await validateWorkspaceOption(options.workspace);
+    const outputsFile = options.outputsFile === void 0 ? requiredEnvironment("GITHUB_OUTPUT") : await validateOutputsFileOption(workspace, options.outputsFile);
+    setActionOutput = actionOutputWriter(outputsFile);
+    const idempotencyKey = options.idempotencyKey ?? createIdempotencyKey(process.env);
     for (const input of usedCompatibilityInputs(process.env)) {
       process.stdout.write(
         `::warning title=Deprecated steward-run input::${compatibilityInputNotice(input)}
@@ -30818,9 +30894,10 @@ async function main() {
       getToken,
       fetch: stewardFetch
     });
-    await runWorkflow(config, requiredEnvironment("GITHUB_WORKSPACE"), {
+    await runWorkflow(config, workspace, {
       client,
       environment: process.env,
+      idempotencyKey,
       setOutput: setActionOutput,
       signal: controller.signal,
       runtimeBindingTimeoutMilliseconds: config.runtimeBindingTimeoutMilliseconds
@@ -30830,7 +30907,7 @@ async function main() {
     await setActionOutput("http-status", "");
   } catch (error) {
     const failure = safeFailure(error);
-    await reportActionFailure(failure);
+    await reportActionFailure(failure, setActionOutput);
     throw failure;
   } finally {
     process.off("SIGINT", cancel);

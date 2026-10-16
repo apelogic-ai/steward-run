@@ -5,6 +5,11 @@ import {
 } from "./auth-discovery.js";
 import { shortLivedBearerTokenFileProvider } from "./auth.js";
 import {
+  parseCallerOptions,
+  validateOutputsFileOption,
+  validateWorkspaceOption,
+} from "./cli.js";
+import {
   compatibilityInputNotice,
   implicitIdentityExchangeAudienceNotice,
   readActionConfig,
@@ -18,7 +23,7 @@ import {
   type FailureMetadata,
 } from "./failure-metadata.js";
 import { identityExchangeTokenProvider } from "./identity-exchange.js";
-import { runWorkflow } from "./lifecycle.js";
+import { createIdempotencyKey, runWorkflow } from "./lifecycle.js";
 import { oidcTokenProvider } from "./oidc.js";
 import { StewardClient } from "./steward-client.js";
 import { createStewardFetch, type CloseableFetch } from "./transport.js";
@@ -37,13 +42,16 @@ type ActionOutputName =
   | "status"
   | "task-uid";
 
-async function setActionOutput(name: ActionOutputName, value: string): Promise<void> {
-  if (!/^[a-z-]+$/u.test(name) || /[\r\n]/u.test(value)) {
-    throw new Error("refusing to write an unsafe GitHub Actions output");
-  }
-  await appendFile(requiredEnvironment("GITHUB_OUTPUT"), `${name}=${value}\n`, {
-    encoding: "utf8",
-  });
+type SetActionOutput = (name: ActionOutputName, value: string) => Promise<void>;
+
+function actionOutputWriter(path: string | undefined): SetActionOutput {
+  return async (name, value) => {
+    if (!/^[a-z-]+$/u.test(name) || /[\r\n]/u.test(value)) {
+      throw new Error("refusing to write an unsafe GitHub Actions output");
+    }
+    if (!path) throw new Error("required GitHub environment GITHUB_OUTPUT is missing");
+    await appendFile(path, `${name}=${value}\n`, { encoding: "utf8" });
+  };
 }
 
 function safeFailure(error: unknown): StewardRunFailure {
@@ -57,7 +65,10 @@ function safeFailure(error: unknown): StewardRunFailure {
   return new StewardRunFailure(metadata);
 }
 
-async function reportActionFailure(failure: StewardRunFailure): Promise<void> {
+async function reportActionFailure(
+  failure: StewardRunFailure,
+  setActionOutput: SetActionOutput,
+): Promise<void> {
   const safe = sanitizeFailureMetadata(failure.metadata);
   await publishFailureMetadata(safe, {
     writeAnnotation: async (value) => {
@@ -82,13 +93,23 @@ async function reportActionFailure(failure: StewardRunFailure): Promise<void> {
   }
 }
 
-export async function main(): Promise<void> {
+export async function main(args: readonly string[] = process.argv.slice(2)): Promise<void> {
   const controller = new AbortController();
   const transports = new Set<CloseableFetch>();
+  let setActionOutput = actionOutputWriter(process.env.GITHUB_OUTPUT?.trim());
   const cancel = () => controller.abort();
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
+    const options = parseCallerOptions(args);
+    const workspace = options.workspace === undefined
+      ? requiredEnvironment("GITHUB_WORKSPACE")
+      : await validateWorkspaceOption(options.workspace);
+    const outputsFile = options.outputsFile === undefined
+      ? requiredEnvironment("GITHUB_OUTPUT")
+      : await validateOutputsFileOption(workspace, options.outputsFile);
+    setActionOutput = actionOutputWriter(outputsFile);
+    const idempotencyKey = options.idempotencyKey ?? createIdempotencyKey(process.env);
     for (const input of usedCompatibilityInputs(process.env)) {
       process.stdout.write(
         `::warning title=Deprecated steward-run input::${compatibilityInputNotice(input)}\n`,
@@ -158,9 +179,10 @@ export async function main(): Promise<void> {
       getToken,
       fetch: stewardFetch,
     });
-    await runWorkflow(config, requiredEnvironment("GITHUB_WORKSPACE"), {
+    await runWorkflow(config, workspace, {
       client,
       environment: process.env,
+      idempotencyKey,
       setOutput: setActionOutput,
       signal: controller.signal,
       runtimeBindingTimeoutMilliseconds: config.runtimeBindingTimeoutMilliseconds,
@@ -170,7 +192,7 @@ export async function main(): Promise<void> {
     await setActionOutput("http-status", "");
   } catch (error) {
     const failure = safeFailure(error);
-    await reportActionFailure(failure);
+    await reportActionFailure(failure, setActionOutput);
     throw failure;
   } finally {
     process.off("SIGINT", cancel);
