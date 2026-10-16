@@ -7,6 +7,11 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added explicit idempotency-key, workspace, and outputs-file flags for bundled
+  callers outside GitHub Actions while retaining the GitHub environment defaults.
+
 ### Fixed
 
 - Removed an unused JWT package chain from the governed job-container image.
