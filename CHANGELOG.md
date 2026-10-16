@@ -7,6 +7,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Removed an unused JWT package chain from the governed job-container image.
+
 ## [0.8.1] - 2026-10-06
 
 ### Fixed
