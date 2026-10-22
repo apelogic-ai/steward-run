@@ -7,6 +7,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-22
+
 ### Added
 
 - Added explicit idempotency-key, workspace, and outputs-file flags for bundled
@@ -336,7 +338,8 @@ v0.8.1, which carries these changes unchanged.
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/apelogic-ai/steward-run/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/apelogic-ai/steward-run/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/apelogic-ai/steward-run/compare/v0.7.6...v0.8.0
 [0.7.6]: https://github.com/apelogic-ai/steward-run/compare/v0.7.5...v0.7.6
