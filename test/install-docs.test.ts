@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
 
-test("the v0.8.1 guide is one self-contained operator runbook", async () => {
+test("the v0.8.2 guide is one self-contained operator runbook", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const guide = await readFile(new URL("../docs/installation.md", import.meta.url), "utf8");
   const changelog = await readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8");
@@ -159,7 +159,7 @@ test("current authentication, task sources, timeout, links, and examples cannot 
     readFile(new URL("../action.yml", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run-arc/README.md", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run/README.md", import.meta.url), "utf8"),
-    readFile(new URL("../docs/release-notes-v0.8.1.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/release-notes-v0.8.2.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.8.0.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.7.6.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.7.5.md", import.meta.url), "utf8"),
@@ -235,7 +235,7 @@ test("current authentication, task sources, timeout, links, and examples cannot 
     [new URL("../README.md", import.meta.url), readme],
     [new URL("../docs/installation.md", import.meta.url), guide],
     [new URL("../docs/steward-run-spec.md", import.meta.url), specification],
-    [new URL("../docs/release-notes-v0.8.1.md", import.meta.url), releaseNotes],
+    [new URL("../docs/release-notes-v0.8.2.md", import.meta.url), releaseNotes],
     [new URL("../docs/release-notes-v0.8.0.md", import.meta.url), incompleteReleaseNotes],
     [new URL("../docs/release-notes-v0.7.6.md", import.meta.url), previousReleaseNotes],
     [new URL("../docs/release-notes-v0.7.5.md", import.meta.url), securityReleaseNotes],
