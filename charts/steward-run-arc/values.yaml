@@ -15,6 +15,8 @@ gha-runner-scale-set:
   controllerServiceAccount:
     namespace: ""
     name: ""
+  # Optional existing runner group. Leave unset to preserve the default group.
+  # runnerGroup: governed-runners
   runnerScaleSetName: steward-run
   scaleSetLabels:
     - steward-run

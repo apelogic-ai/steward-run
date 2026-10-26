@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -51,6 +52,29 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     const objects = parseAllDocuments(rendered).map((doc) => doc.toJSON()).filter(Boolean) as Record<string, any>[];
     const scaleSet = objects.find((object) => object.kind === "AutoscalingRunnerSet");
     assert.ok(scaleSet, "must render a real upstream ARC scale set");
+    assert.equal(
+      createHash("sha256").update(rendered).digest("hex"),
+      "486c2c20d894b13e8ea303f79179e44ca6a3dc3e59c894a212c9895c54682aa4",
+      "an unset runnerGroup must preserve the existing rendered manifest byte-for-byte",
+    );
+    assert.equal(scaleSet.spec.runnerGroup, undefined);
+    const runnerGroupRendered = template(
+      "steward-run",
+      chart,
+      "--namespace",
+      "arc-runners",
+      "--values",
+      fixture,
+      "--set-string",
+      "gha-runner-scale-set.runnerGroup=governed-runners",
+    );
+    const runnerGroupObjects = parseAllDocuments(runnerGroupRendered).map((doc) => doc.toJSON()).filter(Boolean) as Record<string, any>[];
+    const expectedRunnerGroupObjects = structuredClone(objects);
+    const expectedRunnerGroupScaleSet = expectedRunnerGroupObjects.find((object) => object.kind === "AutoscalingRunnerSet");
+    assert.ok(expectedRunnerGroupScaleSet);
+    expectedRunnerGroupScaleSet.metadata.annotations["actions.github.com/values-hash"] = "48e752325a19e9c15d6a0b85c2fb4678d94a946325e76d9ebf44458bbfd1924";
+    expectedRunnerGroupScaleSet.spec.runnerGroup = "governed-runners";
+    assert.deepEqual(runnerGroupObjects, expectedRunnerGroupObjects);
     assert.equal(scaleSet.spec.githubConfigUrl, "https://github.com/customer/example");
     assert.equal(scaleSet.spec.githubConfigSecret, "steward-run-github-app");
     assert.equal(scaleSet.spec.minRunners, 0);
@@ -425,6 +449,18 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     );
     assert.equal(parsedSchema.properties.image.additionalProperties, false);
     assert.equal(parsedSchema.properties.image.properties.requireDigest.default, true);
+    assert.deepEqual(
+      parsedSchema.properties["gha-runner-scale-set"].properties.runnerGroup,
+      { type: "string", minLength: 1 },
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set-string", "gha-runner-scale-set.runnerGroup="),
+      /runnerGroup|minLength/u,
+    );
+    assert.throws(
+      () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.runnerGroup=true"),
+      /runnerGroup|type/u,
+    );
 
     const upstreamValues = execFileSync("tar", ["-xOf", join(chart, "charts", "gha-runner-scale-set-0.14.2.tgz"), "gha-runner-scale-set/values.yaml"], { encoding: "utf8" });
     for (const key of ["github_app_id", "github_app_installation_id", "github_app_private_key", "githubConfigSecret", "imagePullSecrets"]) {
