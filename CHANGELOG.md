@@ -7,6 +7,12 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added an optional repository-and-tag runner image source to the ARC chart for
+  delivery platforms that promote images by tag, while retaining digest pinning
+  as the default and preserving the existing direct digest source.
+
 ## [0.8.2] - 2026-10-22
 
 ### Added

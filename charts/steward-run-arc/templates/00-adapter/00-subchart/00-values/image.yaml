@@ -1,0 +1,37 @@
+{{- /*
+Helm renders deeper template paths before dependency templates. This adapter is
+therefore deliberately nested: it validates the optional parent image values and
+sets the composed reference on the vendored scale-set subchart before that chart
+renders. test/arc-chart.test.ts guards the rendered AutoscalingRunnerSet value.
+*/ -}}
+{{- $image := .Values.image -}}
+{{- $arc := index .Subcharts "gha-runner-scale-set" -}}
+{{- $container := index $arc.Values.template.spec.containers 0 -}}
+{{- $legacyImage := $container.image | default "" -}}
+{{- if $image.repository -}}
+  {{- if $legacyImage -}}
+    {{- fail "image.repository cannot be set with gha-runner-scale-set.template.spec.containers[0].image" -}}
+  {{- end -}}
+  {{- if or (regexMatch "[@\\s]" $image.repository) (hasSuffix ":" $image.repository) (hasSuffix "/" $image.repository) -}}
+    {{- fail "image.repository must be an OCI repository without a tag or digest" -}}
+  {{- end -}}
+  {{- $reference := "" -}}
+  {{- if $image.requireDigest -}}
+    {{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $image.digest) -}}
+      {{- fail "image.digest must be an exact lowercase sha256 OCI digest" -}}
+    {{- end -}}
+    {{- if eq $image.digest "sha256:0000000000000000000000000000000000000000000000000000000000000000" -}}
+      {{- fail "image.digest must be a released immutable digest; the all-zero placeholder is invalid" -}}
+    {{- end -}}
+    {{- $reference = printf "%s@%s" $image.repository $image.digest -}}
+  {{- else -}}
+    {{- $sentinelTags := list "latest" "main" "master" "stable" "edge" "canary" "nightly" "dev" "development" "snapshot" "replace-me" "changeme" -}}
+    {{- if or (not (regexMatch "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$" $image.tag)) (has (lower $image.tag) $sentinelTags) -}}
+      {{- fail "image.tag must be an exact non-sentinel tag" -}}
+    {{- end -}}
+    {{- $reference = printf "%s:%s" $image.repository $image.tag -}}
+  {{- end -}}
+  {{- $_ := set $container "image" $reference -}}
+{{- else if or $image.tag $image.digest (not $image.requireDigest) -}}
+  {{- fail "image.repository must be set when configuring image.tag, image.digest, or image.requireDigest" -}}
+{{- end -}}

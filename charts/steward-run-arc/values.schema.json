@@ -1,8 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["gha-runner-scale-set"],
+  "required": ["image", "gha-runner-scale-set"],
   "properties": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag", "digest", "requireDigest"],
+      "properties": {
+        "repository": {"type": "string"},
+        "tag": {"type": "string", "maxLength": 128, "pattern": "^$|^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"},
+        "digest": {"type": "string", "pattern": "^$|^sha256:[0-9a-f]{64}$"},
+        "requireDigest": {"type": "boolean", "default": true}
+      }
+    },
     "gha-runner-scale-set": {
       "type": "object",
       "additionalProperties": false,
@@ -126,7 +137,7 @@
                       "image": {
                         "type": "string",
                         "allOf": [
-                          {"pattern": "^[^@\\s]+@sha256:[0-9a-f]{64}$"},
+                          {"pattern": "^$|^[^@\\s]+@sha256:[0-9a-f]{64}$"},
                           {"not": {"pattern": "^[^@\\s]+@sha256:0{64}$"}}
                         ]
                       },

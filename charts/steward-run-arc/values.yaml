@@ -1,5 +1,11 @@
 # Supply the customer-owned image digest and GitHub registration inputs in a
 # private values overlay. The upstream ARC controller is an external prerequisite.
+image:
+  repository: ""
+  tag: ""
+  digest: ""
+  requireDigest: true
+
 gha-runner-scale-set:
   githubConfigUrl: ""
   githubConfigSecret: ""

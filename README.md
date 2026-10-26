@@ -198,9 +198,10 @@ listener, service accounts, and RBAC using its upstream templates. The ARC
 dependency archive is vendored and checksum-locked, so chart linting,
 rendering, and packaging do not pull a subchart from GHCR. The ARC
 controller remains an external shared prerequisite. The chart requires a
-customer-owned runner image at a full `sha256` digest and a GitHub registration
-URL plus existing App Secret reference. It defaults to zero idle runners and
-non-root, no-privilege runner Pods without a Kubernetes API token. The old
+runner image at a full `sha256` digest by default, with an explicit exact-tag
+mode for delivery platforms that promote images by tag, plus a GitHub
+registration URL and existing App Secret reference. It defaults to zero idle
+runners and non-root, no-privilege runner Pods without a Kubernetes API token. The old
 [`steward-run` library chart](charts/steward-run/) remains an internal helper,
 not the customer installation path. The public runner and chart are published
 at the GHCR coordinates above; the [guide](docs/installation.md)
