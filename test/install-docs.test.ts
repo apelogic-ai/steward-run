@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
 
-test("the v0.8.2 guide is one self-contained operator runbook", async () => {
+test("the v0.8.3 guide is one self-contained operator runbook", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const guide = await readFile(new URL("../docs/installation.md", import.meta.url), "utf8");
   const changelog = await readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8");
@@ -17,8 +17,9 @@ test("the v0.8.2 guide is one self-contained operator runbook", async () => {
     await readFile(new URL("../charts/steward-run/Chart.yaml", import.meta.url), "utf8"),
   ) as { kubeVersion?: string };
 
-  assert.match(readme, /v0\.8\.2 installation, setup, and integration guide/u);
-  assert.match(arcReadme, /v0\.8\.2/u);
+  assert.match(readme, /v0\.8\.3 installation, setup, and integration guide/u);
+  assert.match(arcReadme, /v0\.8\.3/u);
+  assert.match(changelog, /## \[0\.8\.3\]/u);
   assert.match(changelog, /## \[0\.8\.1\][\s\S]*?v0\.8\.0 tag is an incomplete publication and must not be used/u);
   assert.match(changelog, /## \[0\.8\.0\][\s\S]*?Do not use v0\.8\.0; use\s+v0\.8\.1/u);
   assert.match(historical, /Historical release guide/u);
@@ -152,13 +153,14 @@ test("the public upstream and private-fork integration boundaries are explicit",
 
 test("current authentication, task sources, timeout, links, and examples cannot drift", async () => {
   const root = new URL("..", import.meta.url).pathname;
-  const [guide, readme, specification, actionSource, arcReadme, libraryReadme, releaseNotes, packagePathReleaseNotes, incompleteReleaseNotes, previousReleaseNotes, securityReleaseNotes, priorReleaseNotes] = await Promise.all([
+  const [guide, readme, specification, actionSource, arcReadme, libraryReadme, releaseNotes, runnerSecurityReleaseNotes, packagePathReleaseNotes, incompleteReleaseNotes, previousReleaseNotes, securityReleaseNotes, priorReleaseNotes] = await Promise.all([
     readFile(new URL("../docs/installation.md", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/steward-run-spec.md", import.meta.url), "utf8"),
     readFile(new URL("../action.yml", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run-arc/README.md", import.meta.url), "utf8"),
     readFile(new URL("../charts/steward-run/README.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/release-notes-v0.8.3.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.8.2.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.8.1.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/release-notes-v0.8.0.md", import.meta.url), "utf8"),
@@ -221,10 +223,14 @@ test("current authentication, task sources, timeout, links, and examples cannot 
   assert.match(guide, /Discovery compares raw strings[\s\S]*?taskIdentity\.resource[\s\S]*?Identity's `issuer` exactly/u);
   assert.match(priorReleaseNotes, /proxy variables are newly honored/u);
   assert.match(priorReleaseNotes, /private-CA request path now follows redirects/u);
-  assert.match(releaseNotes, /CVE-2026-102267/u);
-  assert.match(releaseNotes, /CVE-2026-102268/u);
-  assert.match(releaseNotes, /successful idempotent replay/u);
-  assert.match(releaseNotes, /--idempotency-key/u);
+  assert.match(releaseNotes, /repository-and-tag/u);
+  assert.match(releaseNotes, /requireDigest/u);
+  assert.match(releaseNotes, /delivery platforms that promote images by tag/u);
+  assert.match(releaseNotes, /GHSA-4qv8-2p9j-2685/u);
+  assert.match(runnerSecurityReleaseNotes, /CVE-2026-102267/u);
+  assert.match(runnerSecurityReleaseNotes, /CVE-2026-102268/u);
+  assert.match(runnerSecurityReleaseNotes, /successful idempotent replay/u);
+  assert.match(runnerSecurityReleaseNotes, /--idempotency-key/u);
   assert.match(packagePathReleaseNotes, /package-path/u);
   assert.match(packagePathReleaseNotes, /packagePathInvocation/u);
   assert.match(packagePathReleaseNotes, /v0\.8\.0 is incomplete and must not be used/u);
@@ -240,7 +246,8 @@ test("current authentication, task sources, timeout, links, and examples cannot 
     [new URL("../README.md", import.meta.url), readme],
     [new URL("../docs/installation.md", import.meta.url), guide],
     [new URL("../docs/steward-run-spec.md", import.meta.url), specification],
-    [new URL("../docs/release-notes-v0.8.2.md", import.meta.url), releaseNotes],
+    [new URL("../docs/release-notes-v0.8.3.md", import.meta.url), releaseNotes],
+    [new URL("../docs/release-notes-v0.8.2.md", import.meta.url), runnerSecurityReleaseNotes],
     [new URL("../docs/release-notes-v0.8.1.md", import.meta.url), packagePathReleaseNotes],
     [new URL("../docs/release-notes-v0.8.0.md", import.meta.url), incompleteReleaseNotes],
     [new URL("../docs/release-notes-v0.7.6.md", import.meta.url), previousReleaseNotes],

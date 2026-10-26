@@ -7,11 +7,18 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-25
+
 ### Added
 
 - Added an optional repository-and-tag runner image source to the ARC chart for
   delivery platforms that promote images by tag, while retaining digest pinning
   as the default and preserving the existing direct digest source.
+
+### Fixed
+
+- Updated the bundled HTTP client to the lowest version that fixes
+  GHSA-4qv8-2p9j-2685.
 
 ## [0.8.2] - 2026-10-22
 
@@ -344,7 +351,8 @@ v0.8.1, which carries these changes unchanged.
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/apelogic-ai/steward-run/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/apelogic-ai/steward-run/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/apelogic-ai/steward-run/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/apelogic-ai/steward-run/compare/v0.7.6...v0.8.0
