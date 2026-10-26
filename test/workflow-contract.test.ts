@@ -8,7 +8,7 @@ import { parse } from "yaml";
 
 const governedJobContainer =
   "ghcr.io/apelogic-ai/steward-run@" +
-  "sha256:0e26036a90f52a97d0fcd85a25f8a9acafaeac81b8336a99eb1b29ab61698c54";
+  "sha256:0d5a6e2c304dbd18403a9795a3280299bcc3b95222f9a39019664d153bbd6aca";
 const buildkitImage =
   "docker.io/moby/buildkit@" +
   "sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8";
