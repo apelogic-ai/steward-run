@@ -73,6 +73,11 @@ the three GitHub App keys documented in the installation guide; PAT registration
 through a `github_token` key is unsupported. Because this chart never reads
 Secret data, operators verify that key inventory before installation.
 
+To register the scale set in an existing runner group, set the optional
+`gha-runner-scale-set.runnerGroup` value to its non-empty name. Omit the value
+to preserve the existing default-group behavior; the chart does not create or
+manage runner groups.
+
 The remaining narrow values are intentional security and capacity boundaries:
 `minRunners` is fixed at `0` for scale-to-zero, `containerMode.type` is fixed at
 the empty direct-runner mode (no DinD or Kubernetes job-container mode), and the

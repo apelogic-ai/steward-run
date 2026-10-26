@@ -72,6 +72,7 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     const expectedRunnerGroupObjects = structuredClone(objects);
     const expectedRunnerGroupScaleSet = expectedRunnerGroupObjects.find((object) => object.kind === "AutoscalingRunnerSet");
     assert.ok(expectedRunnerGroupScaleSet);
+    expectedRunnerGroupScaleSet.metadata.annotations["actions.github.com/values-hash"] = "48e752325a19e9c15d6a0b85c2fb4678d94a946325e76d9ebf44458bbfd1924";
     expectedRunnerGroupScaleSet.spec.runnerGroup = "governed-runners";
     assert.deepEqual(runnerGroupObjects, expectedRunnerGroupObjects);
     assert.equal(scaleSet.spec.githubConfigUrl, "https://github.com/customer/example");

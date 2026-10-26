@@ -7,6 +7,11 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added an optional ARC runner-group value that is passed to the runner scale
+  set while leaving the existing default-group render unchanged when unset.
+
 ## [0.8.3] - 2026-10-25
 
 ### Added
