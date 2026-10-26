@@ -65,6 +65,11 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
       namespace: derivedController.namespace,
     }]);
     const pod = scaleSet.spec.template.spec;
+    const runnerImageFrom = (manifest: string) => parseAllDocuments(manifest)
+      .map((doc) => doc.toJSON())
+      .filter(Boolean)
+      .find((object: any) => object.kind === "AutoscalingRunnerSet")
+      ?.spec.template.spec.containers[0].image;
     assert.equal(pod.containers[0].name, "runner");
     assert.equal(pod.nodeSelector, undefined);
     assert.equal(pod.affinity, undefined);
@@ -75,7 +80,10 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     assert.equal(pod.securityContext.fsGroup, 1001);
     assert.equal(pod.securityContext.fsGroupChangePolicy, "OnRootMismatch");
     assert.deepEqual(pod.securityContext.seccompProfile, { type: "RuntimeDefault" });
-    assert.match(pod.containers[0].image, /^registry\.example\/steward-run@sha256:[a-f0-9]{64}$/u);
+    assert.equal(
+      pod.containers[0].image,
+      "registry.example/steward-run@sha256:b818f4eda4cb3610c7efbe9ec93c432155bb44af676e8443aa06139b98b5ad32",
+    );
     assert.equal(pod.containers[0].securityContext.allowPrivilegeEscalation, false);
     assert.deepEqual(pod.containers[0].securityContext.capabilities.drop, ["ALL"]);
     assert.equal(pod.containers[0].securityContext.capabilities.add, undefined);
@@ -105,6 +113,102 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", "gha-runner-scale-set.template.spec.containers[0].image=registry.example/steward-run:latest"),
       /sha256|digest/u,
+    );
+    const repositoryImageArgs = [
+      "--set-string",
+      "gha-runner-scale-set.template.spec.containers[0].image=",
+      "--set-string",
+      "image.repository=registry.example/steward-run",
+    ];
+    const digest = `sha256:${"c".repeat(64)}`;
+    const repositoryDigestRendered = template(
+      "steward-run",
+      chart,
+      "--namespace",
+      "arc-runners",
+      "--values",
+      fixture,
+      ...repositoryImageArgs,
+      "--set-string",
+      `image.digest=${digest}`,
+    );
+    assert.equal(
+      runnerImageFrom(repositoryDigestRendered),
+      `registry.example/steward-run@${digest}`,
+    );
+    const repositoryTagRendered = template(
+      "steward-run",
+      chart,
+      "--namespace",
+      "arc-runners",
+      "--values",
+      fixture,
+      ...repositoryImageArgs,
+      "--set",
+      "image.requireDigest=false",
+      "--set-string",
+      "image.tag=release-20261025",
+    );
+    assert.equal(
+      runnerImageFrom(repositoryTagRendered),
+      "registry.example/steward-run:release-20261025",
+    );
+    assert.throws(
+      () => template(
+        "steward-run",
+        chart,
+        "--namespace",
+        "arc-runners",
+        "--values",
+        fixture,
+        ...repositoryImageArgs,
+      ),
+      /image\.digest must be an exact lowercase sha256 OCI digest/u,
+    );
+    assert.throws(
+      () => template(
+        "steward-run",
+        chart,
+        "--namespace",
+        "arc-runners",
+        "--values",
+        fixture,
+        ...repositoryImageArgs,
+        "--set",
+        "image.requireDigest=false",
+      ),
+      /image\.tag must be an exact non-sentinel tag/u,
+    );
+    assert.throws(
+      () => template(
+        "steward-run",
+        chart,
+        "--namespace",
+        "arc-runners",
+        "--values",
+        fixture,
+        ...repositoryImageArgs,
+        "--set",
+        "image.requireDigest=false",
+        "--set-string",
+        "image.tag=latest",
+      ),
+      /image\.tag must be an exact non-sentinel tag/u,
+    );
+    assert.throws(
+      () => template(
+        "steward-run",
+        chart,
+        "--namespace",
+        "arc-runners",
+        "--values",
+        fixture,
+        "--set-string",
+        "image.repository=registry.example/steward-run",
+        "--set-string",
+        `image.digest=${digest}`,
+      ),
+      /image\.repository cannot be set with gha-runner-scale-set\.template\.spec\.containers\[0\]\.image/u,
     );
     assert.throws(
       () => template("steward-run", chart, "--namespace", "arc-runners", "--values", fixture, "--set", `gha-runner-scale-set.template.spec.containers[0].image=registry.example/steward-run@sha256:${"0".repeat(64)}`),
@@ -299,6 +403,7 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     }]);
     const metadata = readFileSync(join(chart, "Chart.yaml"), "utf8");
     const schema = readFileSync(join(chart, "values.schema.json"), "utf8");
+    const parsedSchema = JSON.parse(schema);
     const artifactHubRepository = readFileSync(join(chart, "artifacthub-repo.yml"), "utf8");
     assert.match(metadata, /type: application/u);
     assert.match(metadata, /version: 0\.14\.2/u);
@@ -314,6 +419,12 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     for (const field of ["configMap", "items", "env", "volumeMounts", "mountPath", "readOnly"]) {
       assert.ok(schema.includes(`\"${field}\"`), `trust-bundle schema: ${field}`);
     }
+    assert.deepEqual(
+      Object.keys(parsedSchema.properties.image.properties).sort(),
+      ["digest", "repository", "requireDigest", "tag"],
+    );
+    assert.equal(parsedSchema.properties.image.additionalProperties, false);
+    assert.equal(parsedSchema.properties.image.properties.requireDigest.default, true);
 
     const upstreamValues = execFileSync("tar", ["-xOf", join(chart, "charts", "gha-runner-scale-set-0.14.2.tgz"), "gha-runner-scale-set/values.yaml"], { encoding: "utf8" });
     for (const key of ["github_app_id", "github_app_installation_id", "github_app_private_key", "githubConfigSecret", "imagePullSecrets"]) {
