@@ -5,8 +5,9 @@ This is the installable customer chart. It wraps the upstream
 listener, and scoped service accounts/RBAC. The shared ARC controller and its
 CRDs are prerequisites and are not owned by this release. The chart requires
 an existing GitHub App Secret reference, a GitHub registration URL, and an
-operator-selected runner image pinned by `sha256` digest. No credential value is
-accepted in Helm values.
+operator-selected runner image. Digest pinning remains the default; an exact
+tag is available only through the explicit opt-out described below. No
+credential value is accepted in Helm values.
 
 The exact upstream chart archive is committed under `charts/` and bound to
 its upstream OCI manifest digest plus local archive SHA-256 in
@@ -37,10 +38,28 @@ ServiceAccount override. Run the
 cluster before registration and again with runner-linkage arguments before
 dispatching a workload.
 
-The image must be a released immutable reference in
-`repository@sha256:<64 lowercase hex>` form. Mutable tags and sentinel values,
-including the all-zero SHA-256 placeholder, fail schema validation before any
-cluster reconciliation.
+The existing image source remains
+`gha-runner-scale-set.template.spec.containers[0].image`, which must be a
+released immutable `repository@sha256:<64 lowercase hex>` reference. As an
+alternative for delivery platforms that promote images by tag and cannot write
+into a list item, set the top-level image values and leave the existing
+container image empty:
+
+```yaml
+image:
+  repository: registry.example/steward-run
+  tag: release-20261025
+  digest: ""
+  requireDigest: false
+```
+
+`requireDigest` defaults to `true`. In that mode, set `image.digest` to an exact
+lowercase SHA-256 digest and leave `image.tag` empty; the rendered reference is
+`repository@digest`. With `requireDigest: false`, `image.tag` must be an exact
+non-sentinel OCI tag and the rendered reference is `repository:tag`. Empty and
+mutable channel tags such as `latest`, `main`, `stable`, and `nightly` are
+refused. The all-zero SHA-256 placeholder is also refused. Setting both
+`image.repository` and the existing container image is an error.
 
 The image digest may identify the supported multi-platform OCI index with
 `linux/amd64` and `linux/arm64` manifests. This chart deliberately sets no
@@ -60,7 +79,7 @@ the empty direct-runner mode (no DinD or Kubernetes job-container mode), and the
 single container is named `runner`. Forks that relax those constraints own the
 resulting privilege, capacity, and compatibility contract.
 
-Default behavior is zero idle runners, five maximum, direct execution in the
+Default behavior is zero idle runners, five maximum, direct execution in a
 digest-pinned runner image, a non-root Pod UID/GID, no privilege escalation,
 no added capabilities, `RuntimeDefault` seccomp, no init or ephemeral
 containers, no host access, and no mounted Kubernetes API token. The values
