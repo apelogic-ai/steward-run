@@ -32,7 +32,7 @@ test("customer chart installs a digest-pinned ARC scale set without owning the c
     helm("package", chart, "--destination", work);
     const packagedEntries = execFileSync(
       "tar",
-      ["-tzf", join(work, "steward-run-arc-0.8.3.tgz")],
+      ["-tzf", join(work, "steward-run-arc-0.8.4.tgz")],
       { encoding: "utf8" },
     );
     assert.match(
