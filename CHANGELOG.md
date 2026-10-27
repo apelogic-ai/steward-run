@@ -7,6 +7,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-10-26
+
 ### Added
 
 - Added an optional ARC runner-group value that is passed to the runner scale
@@ -356,7 +358,8 @@ v0.8.1, which carries these changes unchanged.
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.4...HEAD
+[0.8.4]: https://github.com/apelogic-ai/steward-run/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/apelogic-ai/steward-run/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/apelogic-ai/steward-run/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/apelogic-ai/steward-run/compare/v0.8.0...v0.8.1
