@@ -30726,26 +30726,36 @@ async function finalizeAndConfirm(task, client, sleep) {
   }
 }
 var unavailableAgentLogsNotice = "Agent logs are unavailable from this server; continuing without them.\n";
+var failedAgentLogsNotice = "Agent logs could not be retrieved; continuing without them.\n";
+async function writeAgentLogNotice(dependencies, notice) {
+  try {
+    if (dependencies.writeLog) await dependencies.writeLog("stdout", notice);
+    else process.stdout.write(notice);
+  } catch {
+  }
+}
 async function replayTaskLogs(taskUid, dependencies) {
-  const stdout = await dependencies.client.downloadTaskLog(taskUid, "stdout");
-  if (stdout === void 0) {
-    if (dependencies.writeLog) await dependencies.writeLog("stdout", unavailableAgentLogsNotice);
-    else process.stdout.write(unavailableAgentLogsNotice);
-    return;
-  }
-  const stderr = await dependencies.client.downloadTaskLog(taskUid, "stderr");
-  if (stderr === void 0) {
-    if (dependencies.writeLog) await dependencies.writeLog("stdout", unavailableAgentLogsNotice);
-    else process.stdout.write(unavailableAgentLogsNotice);
-    return;
-  }
-  await replayExecutionTranscript(
-    { stdout, stderr },
-    {
-      ...dependencies.writeLog === void 0 ? {} : { write: dependencies.writeLog },
-      ...dependencies.commandToken === void 0 ? {} : { commandToken: dependencies.commandToken }
+  try {
+    const stdout = await dependencies.client.downloadTaskLog(taskUid, "stdout");
+    if (stdout === void 0) {
+      await writeAgentLogNotice(dependencies, unavailableAgentLogsNotice);
+      return;
     }
-  );
+    const stderr = await dependencies.client.downloadTaskLog(taskUid, "stderr");
+    if (stderr === void 0) {
+      await writeAgentLogNotice(dependencies, unavailableAgentLogsNotice);
+      return;
+    }
+    await replayExecutionTranscript(
+      { stdout, stderr },
+      {
+        ...dependencies.writeLog === void 0 ? {} : { write: dependencies.writeLog },
+        ...dependencies.commandToken === void 0 ? {} : { commandToken: dependencies.commandToken }
+      }
+    );
+  } catch {
+    await writeAgentLogNotice(dependencies, failedAgentLogsNotice);
+  }
 }
 function taskFailurePhase(task) {
   if (task?.phase === "succeeded" || task?.phase === "failed" || task?.phase === "cancelled") {

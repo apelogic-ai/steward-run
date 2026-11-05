@@ -255,32 +255,48 @@ type WorkflowStage = "input" | "submit" | "upload" | "execute" | "poll" | "outpu
 
 const unavailableAgentLogsNotice =
   "Agent logs are unavailable from this server; continuing without them.\n";
+const failedAgentLogsNotice =
+  "Agent logs could not be retrieved; continuing without them.\n";
+
+async function writeAgentLogNotice(
+  dependencies: LifecycleDependencies,
+  notice: string,
+): Promise<void> {
+  try {
+    if (dependencies.writeLog) await dependencies.writeLog("stdout", notice);
+    else process.stdout.write(notice);
+  } catch {
+    // Best-effort agent logging must never change the Task outcome.
+  }
+}
 
 async function replayTaskLogs(
   taskUid: string,
   dependencies: LifecycleDependencies,
 ): Promise<void> {
-  const stdout = await dependencies.client.downloadTaskLog(taskUid, "stdout");
-  if (stdout === undefined) {
-    if (dependencies.writeLog) await dependencies.writeLog("stdout", unavailableAgentLogsNotice);
-    else process.stdout.write(unavailableAgentLogsNotice);
-    return;
+  try {
+    const stdout = await dependencies.client.downloadTaskLog(taskUid, "stdout");
+    if (stdout === undefined) {
+      await writeAgentLogNotice(dependencies, unavailableAgentLogsNotice);
+      return;
+    }
+    const stderr = await dependencies.client.downloadTaskLog(taskUid, "stderr");
+    if (stderr === undefined) {
+      await writeAgentLogNotice(dependencies, unavailableAgentLogsNotice);
+      return;
+    }
+    await replayExecutionTranscript(
+      { stdout, stderr },
+      {
+        ...(dependencies.writeLog === undefined ? {} : { write: dependencies.writeLog }),
+        ...(dependencies.commandToken === undefined
+          ? {}
+          : { commandToken: dependencies.commandToken }),
+      },
+    );
+  } catch {
+    await writeAgentLogNotice(dependencies, failedAgentLogsNotice);
   }
-  const stderr = await dependencies.client.downloadTaskLog(taskUid, "stderr");
-  if (stderr === undefined) {
-    if (dependencies.writeLog) await dependencies.writeLog("stdout", unavailableAgentLogsNotice);
-    else process.stdout.write(unavailableAgentLogsNotice);
-    return;
-  }
-  await replayExecutionTranscript(
-    { stdout, stderr },
-    {
-      ...(dependencies.writeLog === undefined ? {} : { write: dependencies.writeLog }),
-      ...(dependencies.commandToken === undefined
-        ? {}
-        : { commandToken: dependencies.commandToken }),
-    },
-  );
 }
 
 function taskFailurePhase(task: Task | undefined): FailurePhase {

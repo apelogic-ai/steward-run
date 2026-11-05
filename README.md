@@ -191,7 +191,8 @@ cancelled Tasks. The action emits a sensitive-output warning, disables GitHub wo
 processing, and replays the streams verbatim in separate log groups before finalization. Against an
 older Steward without the Task log route, it prints one notice and continues. Successful outputs
 may still contain the compatibility `.steward/diagnostics/*.log` entries when `execution-log` is
-`full`; the action validates but does not replay that duplicate copy.
+`full`; the action validates but does not replay that duplicate copy. A log retrieval or replay
+error prints one notice and never changes the Task outcome.
 
 ## Kubernetes packaging
 

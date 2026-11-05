@@ -259,6 +259,8 @@ and cancellation. The action emits a sensitive-output warning, disables GitHub w
 interpretation with an unpredictable per-run command token, replays the original streams in
 separate groups, restores command processing, and then finalizes. A 404 or 405 from the stdout
 route identifies an older Steward: the action emits one notice and continues without log replay.
+Any other log retrieval or replay error also emits one bounded notice and does not change the Task
+outcome or prevent output extraction and finalization.
 
 For compatibility, a successful authenticated v2 Task with snapshotted
 `diagnostics.executionLog: full` may also carry exact server-owned stdout and stderr entries beneath

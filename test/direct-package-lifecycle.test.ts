@@ -247,7 +247,7 @@ test("invalid, missing, directory, and symlinked invocation paths fail before su
   }
 });
 
-test("transcript replay failure remains fatal but still finalizes", async () => {
+test("transcript replay failure remains best effort and still finalizes", async () => {
   const root = await workspace();
   const client = new DirectClient();
   let writes = 0;
@@ -259,7 +259,7 @@ test("transcript replay failure remains fatal but still finalizes", async () => 
     if (writes === 4) throw new Error("log sink failed");
   };
   try {
-    await assert.rejects(runWorkflow(directConfig(), root, lifecycleDependencies), StewardRunFailure);
+    assert.equal((await runWorkflow(directConfig(), root, lifecycleDependencies)).phase, "succeeded");
     assert.ok(writes >= 6);
     assert.ok(attempted.includes("::steward-safe-token::\n"));
     assert.ok(attempted.includes("::endgroup::\n"));
