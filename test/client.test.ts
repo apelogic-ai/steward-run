@@ -318,6 +318,22 @@ test("fields this client doesn't know are ignored at every level", async () => {
   assert.deepEqual(created.diagnostics, { executionLog: "full" });
 });
 
+test("a known admission delta with a malformed shape is still refused", async () => {
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () =>
+      jsonResponse(
+        { ...directTaskStatus, deltas: [{ dimension: "budget", requested: 10, ceiling: "5.00", currency: "USD" }] },
+        201,
+      ),
+  });
+  await assert.rejects(
+    client.submitTask({ contractVersion: "steward.task/v2", invocationPath: "i.json" }, "g".repeat(64)),
+    (error: unknown) => error instanceof StewardRequestFailure && error.category === "malformed-response",
+  );
+});
+
 test("package-path submission sends the exact v2 diagnostics contract", async () => {
   let request: Request | undefined;
   const client = new StewardClient({
