@@ -30177,7 +30177,12 @@ function parseDirectTaskEvidence(value) {
     "effectiveRequirements",
     "diagnostics",
     "invocationKind",
-    "promptSource"
+    "promptSource",
+    "requestedRequirements",
+    "taskRuntimeMinutesLimit",
+    "requestedDiagnostics",
+    "requestedWorkspace",
+    "workspace"
   ]) || evidence.schemaVersion !== "steward.task/source-authority-evidence/v1" || typeof evidence.taskUid !== "string" || !evidence.taskUid || typeof evidence.closureDigest !== "string" || !evidence.closureDigest) {
     return void 0;
   }
@@ -30188,7 +30193,7 @@ function parseDirectTaskEvidence(value) {
   const envelope = record2(evidence.envelope);
   const effectiveRequirements = record2(evidence.effectiveRequirements);
   const diagnostics = parseTaskDiagnostics(evidence.diagnostics);
-  if (!sourceProvenance || !invocation || !packageSource || !closure || !envelope || !effectiveRequirements || !diagnostics || evidence.invocationKind !== void 0 && evidence.invocationKind !== "manifest" && evidence.invocationKind !== "implicit" || evidence.promptSource !== void 0 && evidence.promptSource !== "path" && evidence.promptSource !== "inline") {
+  if (!sourceProvenance || !invocation || !packageSource || !closure || !envelope || !effectiveRequirements || !diagnostics || evidence.requestedRequirements !== void 0 && !record2(evidence.requestedRequirements) || evidence.taskRuntimeMinutesLimit !== void 0 && (typeof evidence.taskRuntimeMinutesLimit !== "string" || !evidence.taskRuntimeMinutesLimit) || evidence.requestedDiagnostics !== void 0 && parseTaskDiagnostics(evidence.requestedDiagnostics) === void 0 || evidence.requestedWorkspace !== void 0 && !Array.isArray(evidence.requestedWorkspace) || evidence.workspace !== void 0 && !record2(evidence.workspace) || evidence.invocationKind !== void 0 && evidence.invocationKind !== "manifest" && evidence.invocationKind !== "implicit" || evidence.promptSource !== void 0 && evidence.promptSource !== "path" && evidence.promptSource !== "inline") {
     return void 0;
   }
   return {

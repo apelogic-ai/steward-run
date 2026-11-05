@@ -290,6 +290,11 @@ function parseDirectTaskEvidence(value: unknown): DirectTaskEvidence | undefined
       "diagnostics",
       "invocationKind",
       "promptSource",
+      "requestedRequirements",
+      "taskRuntimeMinutesLimit",
+      "requestedDiagnostics",
+      "requestedWorkspace",
+      "workspace",
     ]) ||
     evidence.schemaVersion !== "steward.task/source-authority-evidence/v1" ||
     typeof evidence.taskUid !== "string" ||
@@ -314,6 +319,13 @@ function parseDirectTaskEvidence(value: unknown): DirectTaskEvidence | undefined
     !envelope ||
     !effectiveRequirements ||
     !diagnostics ||
+    (evidence.requestedRequirements !== undefined && !record(evidence.requestedRequirements)) ||
+    (evidence.taskRuntimeMinutesLimit !== undefined &&
+      (typeof evidence.taskRuntimeMinutesLimit !== "string" || !evidence.taskRuntimeMinutesLimit)) ||
+    (evidence.requestedDiagnostics !== undefined &&
+      parseTaskDiagnostics(evidence.requestedDiagnostics) === undefined) ||
+    (evidence.requestedWorkspace !== undefined && !Array.isArray(evidence.requestedWorkspace)) ||
+    (evidence.workspace !== undefined && !record(evidence.workspace)) ||
     (evidence.invocationKind !== undefined &&
       evidence.invocationKind !== "manifest" && evidence.invocationKind !== "implicit") ||
     (evidence.promptSource !== undefined &&
