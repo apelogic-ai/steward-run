@@ -203,7 +203,10 @@ test("an older server without the Task logs route emits one notice and continues
   client.logsAvailable = false;
   const writes: Array<{ channel: "stdout" | "stderr"; value: Buffer }> = [];
   try {
-    assert.equal((await runWorkflow(sources[0].config, root, dependencies(client, writes))).phase, "succeeded");
+    assert.equal(
+      (await runWorkflow(sources[0]!.config, root, dependencies(client, writes))).phase,
+      "succeeded",
+    );
     const visible = Buffer.concat(writes.map((entry) => entry.value)).toString("utf8");
     assert.equal(visible.match(/Agent logs are unavailable from this server/g)?.length, 1);
     assert.deepEqual(

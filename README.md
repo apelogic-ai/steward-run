@@ -175,8 +175,9 @@ existing versioned Workflow flow. `agent-runtime` applies only to the latter. Ev
 also supply `envelope-digest` as an exact
 `steward:sha256:<64 lowercase hex>` selector. Steward resolves it only among the caller's active
 envelopes. Omitting it remains valid only when that owner has exactly one active envelope.
-`package-path` also accepts `execution-log: off|full` (default `off`); the input is rejected with
-the other two source modes. Steward 0.3.10 or later must advertise
+`package-path` also accepts `execution-log: off|full` (default `off`) for compatibility; the value
+is still sent to Steward but no longer suppresses agent logs. The input is rejected with the other
+two source modes. Steward 0.3.10 or later must advertise
 `steward_package_path_supported: true` in protected-resource metadata before the action requests
 a GitHub OIDC token. The `package-path` request is exactly
 `{contractVersion:"steward.task/v2", packagePath, diagnostics:{executionLog}}`.
@@ -184,11 +185,13 @@ Reusable workflows expose `job-timeout-minutes` (default 15) and
 `runtime-binding-timeout-minutes` (default 10). Both accept whole minutes from
 1 through 360; the latter bounds only the controller-binding wait.
 
-When the server-snapshotted diagnostics mode is `full`, successful outputs may include the two
-reserved `.steward/diagnostics/*.log` streams. The action validates the reserved paths and 4 MiB
-per-stream bounds, emits a sensitive-output warning, disables GitHub workflow-command processing,
-and replays stdout and stderr verbatim in separate log groups before finalization. Diagnostics are
-never enabled merely because reserved files are present.
+After every Task reaches a terminal state, the action reads its bounded stdout and stderr from the
+authenticated Task log route. This applies to all three source modes and to successful, failed, and
+cancelled Tasks. The action emits a sensitive-output warning, disables GitHub workflow-command
+processing, and replays the streams verbatim in separate log groups before finalization. Against an
+older Steward without the Task log route, it prints one notice and continues. Successful outputs
+may still contain the compatibility `.steward/diagnostics/*.log` entries when `execution-log` is
+`full`; the action validates but does not replay that duplicate copy.
 
 ## Kubernetes packaging
 

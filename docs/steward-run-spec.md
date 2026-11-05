@@ -119,7 +119,7 @@ the resumed invocation (a new job, new token).
 |---|---|
 | `invocation-path` | Canonical repository-relative v2 invocation-manifest path; its bytes are never submitted |
 | `package-path` | Canonical repository-relative `task-definition.json` path for an implicit same-repository package invocation |
-| `execution-log` *(optional, default `off`)* | `off` or `full`; accepted only with `package-path` and sent as `diagnostics.executionLog` |
+| `execution-log` *(optional, default `off`)* | Compatibility value `off` or `full`; accepted only with `package-path` and sent as `diagnostics.executionLog`, but does not suppress Task log replay |
 | `workflow` | Existing immutable Steward Workflow reference forwarded unchanged (e.g. `repository-review@1`) |
 | `envelope-digest` *(optional)* | Exact `steward:sha256:<64 lowercase hex>` active-envelope selector for any Task source |
 | `inputs` | Workspace path(s) materialised into the sandbox as its input directory |
@@ -253,12 +253,17 @@ annotation or summary failure metadata. Both success and failure publish the bou
 above; a direct caller uses `continue-on-error: true` when it needs to branch on outputs after a
 failed action step.
 
-If and only if the authenticated v2 Task status reports snapshotted
-`diagnostics.executionLog: full`, the successful output archive must carry exact server-owned
-stdout and stderr entries beneath `.steward/diagnostics`. Each is limited to 4 MiB. After archive
-validation, the action emits a sensitive-output warning, disables GitHub workflow-command
+After any Task reaches a terminal state, the action reads its server-bounded stdout and stderr from
+`GET /v1/tasks/{taskUid}/logs/{stream}`. This applies to every Task source and to success, failure,
+and cancellation. The action emits a sensitive-output warning, disables GitHub workflow-command
 interpretation with an unpredictable per-run command token, replays the original streams in
-separate groups, restores command processing, and then finalizes. Missing, extra, malformed, or
+separate groups, restores command processing, and then finalizes. A 404 or 405 from the stdout
+route identifies an older Steward: the action emits one notice and continues without log replay.
+
+For compatibility, a successful authenticated v2 Task with snapshotted
+`diagnostics.executionLog: full` may also carry exact server-owned stdout and stderr entries beneath
+`.steward/diagnostics` in its output archive. Each is limited to 4 MiB. The action validates these
+reserved entries but does not replay the duplicate archive copy. Missing, extra, malformed, or
 over-limit diagnostic entries fail the action and still finalize the Task.
 
 `action.yml` is `runs: composite`. It probes for Node 24, uses the signed

@@ -39,7 +39,7 @@ on:
         type: string
         default: ""
       execution-log:
-        description: Direct-package execution log policy (off or full); accepted only with package-path
+        description: Compatibility value (off or full); accepted only with package-path and does not suppress Task logs
         required: false
         type: string
         default: off

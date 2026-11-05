@@ -16,7 +16,7 @@ inputs:
     description: Repository-relative direct-package task-definition.json path; mutually exclusive with workflow and invocation-path
     required: false
   execution-log:
-    description: Execution transcript mode for package-path only; off or full
+    description: Compatibility value for package-path only; off or full, without suppressing Task logs
     required: false
     default: "off"
   inputs:

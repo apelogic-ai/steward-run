@@ -105,6 +105,9 @@ class FakeClient implements TaskClient {
     this.calls.push("download");
     return outputArchive(this.archivePath);
   }
+  async downloadTaskLog(): Promise<Buffer> {
+    return Buffer.alloc(0);
+  }
   async finalizeTask(): Promise<Task> {
     this.calls.push("finalize");
     if (this.finalizeError) throw this.finalizeError;
@@ -133,6 +136,7 @@ function dependencies(client: TaskClient, outputs: Record<string, string>) {
     },
     setOutput: async (name: string, value: string) => void (outputs[name] = value),
     sleep: async () => undefined,
+    writeLog: async () => undefined,
   };
 }
 

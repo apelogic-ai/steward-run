@@ -30546,6 +30546,30 @@ var StewardClient = class {
     }
     return import_node_stream.Readable.fromWeb(response.body);
   }
+  async downloadTaskLog(taskUid, stream) {
+    const response = await this.#request(
+      "GET",
+      `v1/tasks/${encodeURIComponent(taskUid)}/logs/${stream}`,
+      {
+        stage: "output",
+        expectedStatus: [200, 404, 405],
+        headers: { accept: "text/plain" }
+      }
+    );
+    if (response.status === 404 || response.status === 405) {
+      await response.body?.cancel().catch(() => void 0);
+      return void 0;
+    }
+    if (!response.headers.get("content-type")?.startsWith("text/plain")) {
+      await response.body?.cancel().catch(() => void 0);
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure("output", "malformed-response", {
+        httpStatus: response.status,
+        ...correlationId === void 0 ? {} : { correlationId }
+      });
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
   async finalizeTask(taskUid) {
     return this.#taskResponse(
       await this.#request("DELETE", `v1/tasks/${encodeURIComponent(taskUid)}`, {
@@ -30701,6 +30725,28 @@ async function finalizeAndConfirm(task, client, sleep) {
     throw new FinalizationFailure("request-failed");
   }
 }
+var unavailableAgentLogsNotice = "Agent logs are unavailable from this server; continuing without them.\n";
+async function replayTaskLogs(taskUid, dependencies) {
+  const stdout = await dependencies.client.downloadTaskLog(taskUid, "stdout");
+  if (stdout === void 0) {
+    if (dependencies.writeLog) await dependencies.writeLog("stdout", unavailableAgentLogsNotice);
+    else process.stdout.write(unavailableAgentLogsNotice);
+    return;
+  }
+  const stderr = await dependencies.client.downloadTaskLog(taskUid, "stderr");
+  if (stderr === void 0) {
+    if (dependencies.writeLog) await dependencies.writeLog("stdout", unavailableAgentLogsNotice);
+    else process.stdout.write(unavailableAgentLogsNotice);
+    return;
+  }
+  await replayExecutionTranscript(
+    { stdout, stderr },
+    {
+      ...dependencies.writeLog === void 0 ? {} : { write: dependencies.writeLog },
+      ...dependencies.commandToken === void 0 ? {} : { commandToken: dependencies.commandToken }
+    }
+  );
+}
 function taskFailurePhase(task) {
   if (task?.phase === "succeeded" || task?.phase === "failed" || task?.phase === "cancelled") {
     return task.phase;
@@ -30823,20 +30869,15 @@ async function runWorkflow(config, workspace, dependencies) {
       providerConnectionStageV3 = terminal.phase === "cancelled" ? void 0 : classifyProviderConnectionStageV3(terminal.failureReason);
     }
     await dependencies.setOutput("status", terminal.phase);
+    stage = "output";
+    await replayTaskLogs(terminal.taskUid, dependencies);
     if (!failed) {
-      stage = "output";
-      const transcript = await extractOutputArchive(
+      await extractOutputArchive(
         await dependencies.client.downloadTaskOutputs(terminal.taskUid),
         workspace,
         outputPaths,
         terminal.diagnostics ?? { executionLog: "off" }
       );
-      if (transcript) {
-        await replayExecutionTranscript(transcript, {
-          ...dependencies.writeLog === void 0 ? {} : { write: dependencies.writeLog },
-          ...dependencies.commandToken === void 0 ? {} : { commandToken: dependencies.commandToken }
-        });
-      }
       result = terminal;
     }
   } catch (error) {

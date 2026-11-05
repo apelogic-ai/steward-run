@@ -332,6 +332,18 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         observations.operations.push("download-outputs");
         response.writeHead(200, { "content-type": "application/x-tar" });
         response.end(await outputArchive(payload, directTask));
+      } else if (
+        request.method === "GET" &&
+        (url.pathname === `/v1/tasks/${taskUid}/logs/stdout` ||
+          url.pathname === `/v1/tasks/${taskUid}/logs/stderr`)
+      ) {
+        const stream = url.pathname.endsWith("/stdout") ? "stdout" : "stderr";
+        response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+        response.end(
+          stream === "stdout"
+            ? directTask?.stdout ?? "mock agent stdout\n"
+            : directTask?.stderr ?? "mock agent stderr\n",
+        );
       } else if (request.method === "DELETE" && url.pathname === `/v1/tasks/${taskUid}`) {
         if (options.finalizationMarker) {
           await writeFile(options.finalizationMarker, `${taskUid}\n`, "utf8");
