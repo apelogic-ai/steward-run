@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { getGitHubOidcToken } from "../src/oidc.ts";
@@ -216,6 +217,72 @@ test("direct-package submission accepts Steward's complete v2 Task status", asyn
   assert.equal(created.contractVersion, "steward.task/v2");
   assert.equal(created.evidence?.invocationKind, "implicit");
   assert.equal(created.evidence?.promptSource, "inline");
+});
+
+test("direct-package submission accepts Steward's published v2 Task status fixture", async () => {
+  // Copied verbatim from Steward v0.3.26
+  // docs/contracts/task/v2/fixtures/positive/direct-task-status.json: the producer's real shape,
+  // including the optional requested* and taskRuntimeMinutesLimit evidence fields.
+  const published = JSON.parse(
+    readFileSync(new URL("./fixtures/steward-contract/direct-task-status.v0.3.26.json", import.meta.url), "utf8"),
+  ) as typeof directTaskStatus;
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () => jsonResponse(published, 202),
+  });
+
+  const created = await client.submitTask(
+    { contractVersion: "steward.task/v2", invocationPath: ".steward/tasks/cve-analysis/invocation.json" },
+    "c".repeat(64),
+  );
+
+  assert.equal(created.taskUid, published.taskUid);
+  assert.equal(created.runtimeUid, null);
+  assert.equal(created.phase, "submitted");
+  assert.deepEqual(created.evidence?.diagnostics, created.diagnostics);
+});
+
+test("direct Task evidence accepts each optional Steward evidence field and rejects a malformed one", async () => {
+  const optional: Record<string, unknown> = {
+    requestedRequirements: directTaskStatus.evidence.effectiveRequirements,
+    taskRuntimeMinutesLimit: "30",
+    requestedDiagnostics: { executionLog: "full" },
+    requestedWorkspace: [{ path: "in", kind: "directory" }],
+    workspace: { entries: [] },
+  };
+  const malformed: Record<string, unknown> = {
+    requestedRequirements: "all",
+    taskRuntimeMinutesLimit: { minutes: 30 },
+    requestedDiagnostics: { executionLog: "verbose" },
+    requestedWorkspace: "in",
+    workspace: [],
+  };
+  for (const [field, value] of Object.entries(optional)) {
+    const client = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => "token",
+      fetch: async () =>
+        jsonResponse({ ...directTaskStatus, evidence: { ...directTaskStatus.evidence, [field]: value } }, 201),
+    });
+    await client.submitTask({ contractVersion: "steward.task/v2", invocationPath: "i.json" }, "d".repeat(64));
+
+    const refusing = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => "token",
+      fetch: async () =>
+        jsonResponse(
+          { ...directTaskStatus, evidence: { ...directTaskStatus.evidence, [field]: malformed[field] } },
+          201,
+        ),
+    });
+    await assert.rejects(
+      refusing.submitTask({ contractVersion: "steward.task/v2", invocationPath: "i.json" }, "e".repeat(64)),
+      (error: unknown) =>
+        error instanceof StewardRequestFailure && error.category === "malformed-response",
+      field,
+    );
+  }
 });
 
 test("package-path submission sends the exact v2 diagnostics contract", async () => {
