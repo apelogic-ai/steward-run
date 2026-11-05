@@ -188,6 +188,40 @@ test("the Steward client accepts an idempotent Task submission replay", async ()
   assert.equal(submission, 2);
 });
 
+test("the Steward client reads terminal agent streams and tolerates older servers", async () => {
+  const requests: Request[] = [];
+  const responses = [
+    new Response("agent stdout\n", {
+      status: 200,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    }),
+    new Response(undefined, { status: 404 }),
+    new Response(undefined, { status: 405 }),
+  ];
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test/control/",
+    getToken: async () => "token",
+    fetch: async (input, init) => {
+      requests.push(new Request(input, init));
+      return responses.shift() ?? new Response(undefined, { status: 500 });
+    },
+  });
+
+  assert.equal((await client.downloadTaskLog(task.taskUid, "stdout"))?.toString("utf8"), "agent stdout\n");
+  assert.equal(await client.downloadTaskLog(task.taskUid, "stderr"), undefined);
+  assert.equal(await client.downloadTaskLog(task.taskUid, "stdout"), undefined);
+  assert.deepEqual(
+    requests.map((request) => new URL(request.url).pathname),
+    [
+      `/control/v1/tasks/${task.taskUid}/logs/stdout`,
+      `/control/v1/tasks/${task.taskUid}/logs/stderr`,
+      `/control/v1/tasks/${task.taskUid}/logs/stdout`,
+    ],
+  );
+  assert.equal(requests[0]?.headers.get("authorization"), "Bearer token");
+  assert.equal(requests[0]?.headers.get("accept"), "text/plain");
+});
+
 test("direct-package submission accepts Steward's complete v2 Task status", async () => {
   let request: Request | undefined;
   const client = new StewardClient({
