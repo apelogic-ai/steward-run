@@ -285,6 +285,39 @@ test("direct Task evidence accepts each optional Steward evidence field and reje
   }
 });
 
+test("fields this client doesn't know are ignored at every level", async () => {
+  const withUnknown = {
+    ...directTaskStatus,
+    futureTopLevel: { any: "shape" },
+    deltas: [
+      { dimension: "budget", requested: "10.00", ceiling: "5.00", currency: "USD", note: "x" },
+      { dimension: "futureDimension", requested: 1, ceiling: 2 },
+    ],
+    diagnostics: { ...directTaskStatus.diagnostics, futureDiagnostic: true },
+    evidence: {
+      ...directTaskStatus.evidence,
+      futureEvidence: [1, 2, 3],
+      diagnostics: { ...directTaskStatus.evidence.diagnostics, futureDiagnostic: true },
+    },
+  };
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () => jsonResponse(withUnknown, 201),
+  });
+
+  const created = await client.submitTask(
+    { contractVersion: "steward.task/v2", invocationPath: "i.json" },
+    "f".repeat(64),
+  );
+
+  assert.equal(created.taskUid, directTaskStatus.taskUid);
+  assert.deepEqual(created.deltas, [
+    { dimension: "budget", requested: "10.00", ceiling: "5.00", currency: "USD" },
+  ]);
+  assert.deepEqual(created.diagnostics, { executionLog: "full" });
+});
+
 test("package-path submission sends the exact v2 diagnostics contract", async () => {
   let request: Request | undefined;
   const client = new StewardClient({
@@ -330,10 +363,6 @@ test("direct Task evidence fails closed when malformed or inconsistent with stat
     {
       ...directTaskStatus,
       evidence: { ...directTaskStatus.evidence, invocation: null },
-    },
-    {
-      ...directTaskStatus,
-      evidence: { ...directTaskStatus.evidence, unknown: true },
     },
   ]) {
     const client = new StewardClient({
@@ -480,7 +509,6 @@ test("pending runtime binding fails closed on null misuse and response contradic
     { ...task, runtimeUid: null, runtimeOwnership: "adopted" },
     { ...task, runtimeUid: null, failureReason: privateBody },
     { ...task, runtimeUid: null, phase: "cancelled", failureReason: privateBody },
-    { ...task, runtimeUid: null, unknown: privateBody },
   ];
 
   for (const payload of incompatible) {
