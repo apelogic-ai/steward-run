@@ -8,7 +8,11 @@ import tar from "tar-stream";
 import type { WorkflowConfig } from "../src/config.ts";
 import { StewardRunFailure } from "../src/failure-metadata.ts";
 import { runWorkflow, type TaskClient } from "../src/lifecycle.ts";
-import type { Task, TaskSubmissionRequest } from "../src/steward-client.ts";
+import {
+  StewardRequestFailure,
+  type Task,
+  type TaskSubmissionRequest,
+} from "../src/steward-client.ts";
 
 const taskUid = "2f9f6ade-261d-4090-9532-9e157b59db2e";
 
@@ -76,6 +80,7 @@ class LogClient implements TaskClient {
   readonly direct: boolean;
   readonly terminalPhase: "succeeded" | "failed";
   logsAvailable = true;
+  logError?: Error;
 
   constructor(direct: boolean, terminalPhase: "succeeded" | "failed") {
     this.direct = direct;
@@ -106,6 +111,7 @@ class LogClient implements TaskClient {
 
   async downloadTaskLog(_uid: string, stream: "stdout" | "stderr"): Promise<Buffer | undefined> {
     this.calls.push(`log:${stream}`);
+    if (this.logError) throw this.logError;
     if (!this.logsAvailable) return undefined;
     return Buffer.from(
       stream === "stdout" ? "agent stdout\n::error::must stay inert\n" : "agent stderr\n",
@@ -217,3 +223,30 @@ test("an older server without the Task logs route emits one notice and continues
     await rm(root, { recursive: true, force: true });
   }
 });
+
+for (const [name, error] of [
+  ["a 500 response", new StewardRequestFailure("output", "dependency", { httpStatus: 500 })],
+  [
+    "an unexpected content type",
+    new StewardRequestFailure("output", "malformed-response", { httpStatus: 200 }),
+  ],
+] as const) {
+  test(`${name} while reading logs does not fail a succeeded Task`, async () => {
+    const root = await workspace();
+    const client = new LogClient(false, "succeeded");
+    client.logError = error;
+    const writes: Array<{ channel: "stdout" | "stderr"; value: Buffer }> = [];
+    try {
+      assert.equal(
+        (await runWorkflow(sources[0]!.config, root, dependencies(client, writes))).phase,
+        "succeeded",
+      );
+      const visible = Buffer.concat(writes.map((entry) => entry.value)).toString("utf8");
+      assert.equal(visible.match(/Agent logs could not be retrieved; continuing without them\./g)?.length, 1);
+      assert.equal(client.calls.includes("download"), true);
+      assert.equal(client.calls.at(-1), "finalize");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
