@@ -78,7 +78,7 @@ jobs:
           docker pull --platform linux/${{ matrix.architecture }} "$image"
           # shellcheck disable=SC2016
           docker run --rm --platform linux/${{ matrix.architecture }} --entrypoint /bin/bash "$image" -c \
-            'test "$(dpkg-query -W -f=\${Version} openssl)" = "3.0.13-0ubuntu3.16" && test "$(dpkg-query -W -f=\${Version} libssl3t64)" = "3.0.13-0ubuntu3.16"'
+            'test "$(dpkg-query -W -f=\${Version} openssl)" = "3.0.13-0ubuntu3.15" && test "$(dpkg-query -W -f=\${Version} libssl3t64)" = "3.0.13-0ubuntu3.15"'
       - name: Export image vulnerability report
         run: >-
           docker run --rm
