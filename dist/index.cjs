@@ -30095,27 +30095,34 @@ var StewardRequestFailure = class extends Error {
 function record2(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
 }
-function hasOnlyKeys(value, keys) {
-  const allowed2 = new Set(keys);
-  return Object.keys(value).every((key) => allowed2.has(key));
-}
 function parseModelRef(value) {
   const item = record2(value);
-  return item && hasOnlyKeys(item, ["provider", "model"]) && typeof item.provider === "string" && item.provider && typeof item.model === "string" && item.model ? { provider: item.provider, model: item.model } : void 0;
+  return item && typeof item.provider === "string" && item.provider && typeof item.model === "string" && item.model ? { provider: item.provider, model: item.model } : void 0;
 }
 function parseToolGrant(value) {
   const item = record2(value);
-  return item && hasOnlyKeys(item, ["provider", "resource", "action"]) && typeof item.provider === "string" && item.provider && typeof item.resource === "string" && item.resource && typeof item.action === "string" && item.action ? { provider: item.provider, resource: item.resource, action: item.action } : void 0;
+  return item && typeof item.provider === "string" && item.provider && typeof item.resource === "string" && item.resource && typeof item.action === "string" && item.action ? { provider: item.provider, resource: item.resource, action: item.action } : void 0;
 }
 function parseItems(value, parse) {
   if (!Array.isArray(value)) return void 0;
   const parsed = value.map(parse);
   return parsed.every((item) => item !== void 0) ? parsed : void 0;
 }
+var knownDeltaDimensions = /* @__PURE__ */ new Set([
+  "budget",
+  "singleRunBudget",
+  "ttl",
+  "models",
+  "tools",
+  "runnerPlatforms",
+  "runnerMemory",
+  "runnerCompute",
+  "runnerStorage"
+]);
 function parseTaskDelta(value) {
   const delta = record2(value);
   if (!delta || typeof delta.dimension !== "string") return void 0;
-  if (delta.dimension === "budget" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling", "currency"]) && typeof delta.requested === "string" && typeof delta.ceiling === "string" && typeof delta.currency === "string") {
+  if (delta.dimension === "budget" && typeof delta.requested === "string" && typeof delta.ceiling === "string" && typeof delta.currency === "string") {
     return {
       dimension: "budget",
       requested: delta.requested,
@@ -30123,7 +30130,7 @@ function parseTaskDelta(value) {
       currency: delta.currency
     };
   }
-  if (delta.dimension === "singleRunBudget" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling", "currency"]) && (delta.requested === null || typeof delta.requested === "string") && typeof delta.ceiling === "string" && typeof delta.currency === "string") {
+  if (delta.dimension === "singleRunBudget" && (delta.requested === null || typeof delta.requested === "string") && typeof delta.ceiling === "string" && typeof delta.currency === "string") {
     return {
       dimension: "singleRunBudget",
       requested: delta.requested,
@@ -30131,26 +30138,26 @@ function parseTaskDelta(value) {
       currency: delta.currency
     };
   }
-  if (delta.dimension === "ttl" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"]) && typeof delta.requested === "string" && typeof delta.ceiling === "string") {
+  if (delta.dimension === "ttl" && typeof delta.requested === "string" && typeof delta.ceiling === "string") {
     return { dimension: "ttl", requested: delta.requested, ceiling: delta.ceiling };
   }
-  if (delta.dimension === "models" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])) {
+  if (delta.dimension === "models") {
     const requested = parseItems(delta.requested, parseModelRef);
     const ceiling = parseItems(delta.ceiling, parseModelRef);
     if (requested && ceiling) return { dimension: "models", requested, ceiling };
   }
-  if (delta.dimension === "tools" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])) {
+  if (delta.dimension === "tools") {
     const requested = parseItems(delta.requested, parseToolGrant);
     const ceiling = parseItems(delta.ceiling, parseToolGrant);
     if (requested && ceiling) return { dimension: "tools", requested, ceiling };
   }
-  if (delta.dimension === "runnerPlatforms" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])) {
+  if (delta.dimension === "runnerPlatforms") {
     const parsePlatform = (item) => item === "linux" || item === "mac" || item === "windows" ? item : void 0;
     const requested = parseItems(delta.requested, parsePlatform);
     const ceiling = parseItems(delta.ceiling, parsePlatform);
     if (requested && ceiling) return { dimension: "runnerPlatforms", requested, ceiling };
   }
-  if ((delta.dimension === "runnerMemory" || delta.dimension === "runnerCompute" || delta.dimension === "runnerStorage") && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"]) && typeof delta.requested === "string" && (delta.ceiling === null || typeof delta.ceiling === "string")) {
+  if ((delta.dimension === "runnerMemory" || delta.dimension === "runnerCompute" || delta.dimension === "runnerStorage") && typeof delta.requested === "string" && (delta.ceiling === null || typeof delta.ceiling === "string")) {
     return {
       dimension: delta.dimension,
       requested: delta.requested,
@@ -30161,29 +30168,11 @@ function parseTaskDelta(value) {
 }
 function parseTaskDiagnostics(value) {
   const diagnostics = record2(value);
-  return diagnostics && hasOnlyKeys(diagnostics, ["executionLog"]) && (diagnostics.executionLog === "off" || diagnostics.executionLog === "full") ? { executionLog: diagnostics.executionLog } : void 0;
+  return diagnostics && (diagnostics.executionLog === "off" || diagnostics.executionLog === "full") ? { executionLog: diagnostics.executionLog } : void 0;
 }
 function parseDirectTaskEvidence(value) {
   const evidence = record2(value);
-  if (!evidence || !hasOnlyKeys(evidence, [
-    "schemaVersion",
-    "taskUid",
-    "sourceProvenance",
-    "invocation",
-    "package",
-    "closure",
-    "closureDigest",
-    "envelope",
-    "effectiveRequirements",
-    "diagnostics",
-    "invocationKind",
-    "promptSource",
-    "requestedRequirements",
-    "taskRuntimeMinutesLimit",
-    "requestedDiagnostics",
-    "requestedWorkspace",
-    "workspace"
-  ]) || evidence.schemaVersion !== "steward.task/source-authority-evidence/v1" || typeof evidence.taskUid !== "string" || !evidence.taskUid || typeof evidence.closureDigest !== "string" || !evidence.closureDigest) {
+  if (!evidence || evidence.schemaVersion !== "steward.task/source-authority-evidence/v1" || typeof evidence.taskUid !== "string" || !evidence.taskUid || typeof evidence.closureDigest !== "string" || !evidence.closureDigest) {
     return void 0;
   }
   const sourceProvenance = record2(evidence.sourceProvenance);
@@ -30221,21 +30210,13 @@ function isUnboundFinalizationTask(task) {
 function parseTask(payload) {
   const value = record2(payload);
   const rawDeltas = value?.deltas ?? [];
-  const deltas = parseItems(rawDeltas, parseTaskDelta);
+  const deltas = Array.isArray(rawDeltas) ? parseItems(
+    rawDeltas.filter((item) => knownDeltaDimensions.has(String(record2(item)?.dimension))),
+    parseTaskDelta
+  ) : void 0;
   const diagnostics = value?.diagnostics === void 0 ? void 0 : parseTaskDiagnostics(value.diagnostics);
   const evidence = value?.evidence === void 0 ? void 0 : parseDirectTaskEvidence(value.evidence);
-  if (!value || !hasOnlyKeys(value, [
-    "taskUid",
-    "contractVersion",
-    "runtimeUid",
-    "phase",
-    "runtimeOwnership",
-    "finalized",
-    "failureReason",
-    "deltas",
-    "diagnostics",
-    "evidence"
-  ]) || typeof value.taskUid !== "string" || !value.taskUid || value.contractVersion !== void 0 && value.contractVersion !== "steward.task/v2" || value.contractVersion === "steward.task/v2" !== (diagnostics !== void 0) || value.contractVersion === "steward.task/v2" !== (evidence !== void 0) || value.runtimeUid !== null && (typeof value.runtimeUid !== "string" || !value.runtimeUid) || typeof value.phase !== "string" || !taskPhases.includes(value.phase) || value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted" || typeof value.finalized !== "boolean" || value.failureReason !== void 0 && typeof value.failureReason !== "string" || !deltas || value.diagnostics !== void 0 && diagnostics === void 0 || value.evidence !== void 0 && evidence === void 0 || evidence !== void 0 && evidence.taskUid !== value.taskUid || evidence !== void 0 && evidence.diagnostics.executionLog !== diagnostics?.executionLog) {
+  if (!value || typeof value.taskUid !== "string" || !value.taskUid || value.contractVersion !== void 0 && value.contractVersion !== "steward.task/v2" || value.contractVersion === "steward.task/v2" !== (diagnostics !== void 0) || value.contractVersion === "steward.task/v2" !== (evidence !== void 0) || value.runtimeUid !== null && (typeof value.runtimeUid !== "string" || !value.runtimeUid) || typeof value.phase !== "string" || !taskPhases.includes(value.phase) || value.runtimeOwnership !== "provisioned" && value.runtimeOwnership !== "adopted" || typeof value.finalized !== "boolean" || value.failureReason !== void 0 && typeof value.failureReason !== "string" || !deltas || value.diagnostics !== void 0 && diagnostics === void 0 || value.evidence !== void 0 && evidence === void 0 || evidence !== void 0 && evidence.taskUid !== value.taskUid || evidence !== void 0 && evidence.diagnostics.executionLog !== diagnostics?.executionLog) {
     throw new Error("Steward returned an incompatible Task response");
   }
   const task = {
