@@ -7,6 +7,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.6] - 2026-11-05
+
 ### Changed
 
 - Every governed Task now replays bounded agent stdout and stderr into separate GitHub Actions log
@@ -383,7 +385,8 @@ v0.8.1, which carries these changes unchanged.
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.5...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.6...HEAD
+[0.8.6]: https://github.com/apelogic-ai/steward-run/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/apelogic-ai/steward-run/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/apelogic-ai/steward-run/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/apelogic-ai/steward-run/compare/v0.8.2...v0.8.3
