@@ -18,7 +18,7 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
     dockerfile,
     /ARG SOURCE_REPOSITORY=https:\/\/github\.com\/apelogic-ai\/steward-run/u,
   );
-  assert.match(dockerfile, /ARG UBUNTU_SNAPSHOT=20260928T000000Z/u);
+  assert.match(dockerfile, /ARG UBUNTU_SNAPSHOT=20261027T000000Z/u);
   assert.match(
     dockerfile,
     /https:\/\/snapshot\.ubuntu\.com\/ubuntu\/\$\{UBUNTU_SNAPSHOT\}\//u,
@@ -32,9 +32,9 @@ test("the ARC image pins runner and Node images and remains a thin shell", async
   assert.doesNotMatch(dockerfile, /apt-get (?:dist-)?upgrade/u);
   for (const pinnedPackage of [
     "libc6=2.39-0ubuntu8.9", "libc-bin=2.39-0ubuntu8.9",
-    "libcurl3t64-gnutls=8.5.0-2ubuntu10.15",
+    "libbrotli1=1.1.0-2ubuntu0.1", "libcurl3t64-gnutls=8.5.0-2ubuntu10.16",
     "libperl5.38t64=5.38.2-3.2ubuntu0.6", "perl=5.38.2-3.2ubuntu0.6",
-    "libssl3t64=3.0.13-0ubuntu3.15", "openssl=3.0.13-0ubuntu3.15",
+    "libssl3t64=3.0.13-0ubuntu3.16", "openssl=3.0.13-0ubuntu3.16",
     "perl-base=5.38.2-3.2ubuntu0.6", "perl-modules-5.38=5.38.2-3.2ubuntu0.6",
   ]) {
     assert.ok(dockerfile.includes(pinnedPackage), pinnedPackage);
