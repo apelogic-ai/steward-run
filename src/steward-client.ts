@@ -764,6 +764,34 @@ export class StewardClient {
     return Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
   }
 
+  async downloadTaskLog(
+    taskUid: string,
+    stream: "stdout" | "stderr",
+  ): Promise<Buffer | undefined> {
+    const response = await this.#request(
+      "GET",
+      `v1/tasks/${encodeURIComponent(taskUid)}/logs/${stream}`,
+      {
+        stage: "output",
+        expectedStatus: [200, 404, 405],
+        headers: { accept: "text/plain" },
+      },
+    );
+    if (response.status === 404 || response.status === 405) {
+      await response.body?.cancel().catch(() => undefined);
+      return undefined;
+    }
+    if (!response.headers.get("content-type")?.startsWith("text/plain")) {
+      await response.body?.cancel().catch(() => undefined);
+      const correlationId = responseCorrelationId(response);
+      throw new StewardRequestFailure("output", "malformed-response", {
+        httpStatus: response.status,
+        ...(correlationId === undefined ? {} : { correlationId }),
+      });
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
+
   async finalizeTask(taskUid: string): Promise<Task> {
     return this.#taskResponse(
       await this.#request("DELETE", `v1/tasks/${encodeURIComponent(taskUid)}`, {

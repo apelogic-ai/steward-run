@@ -100,6 +100,12 @@ class DirectClient implements TaskClient {
     this.calls.push("download");
     return archive(this.outputEntries);
   }
+  async downloadTaskLog(_taskUid: string, stream: "stdout" | "stderr"): Promise<Buffer> {
+    this.calls.push(`log:${stream}`);
+    return Buffer.from(
+      stream === "stdout" ? "agent stdout\n::error::not a command\n" : "agent stderr\n",
+    );
+  }
   async finalizeTask(): Promise<Task> {
     this.calls.push("finalize");
     return task("succeeded", this.executionLog, true);
@@ -241,7 +247,7 @@ test("invalid, missing, directory, and symlinked invocation paths fail before su
   }
 });
 
-test("transcript replay failure remains fatal but still finalizes", async () => {
+test("transcript replay failure remains best effort and still finalizes", async () => {
   const root = await workspace();
   const client = new DirectClient();
   let writes = 0;
@@ -253,7 +259,7 @@ test("transcript replay failure remains fatal but still finalizes", async () => 
     if (writes === 4) throw new Error("log sink failed");
   };
   try {
-    await assert.rejects(runWorkflow(directConfig(), root, lifecycleDependencies), StewardRunFailure);
+    assert.equal((await runWorkflow(directConfig(), root, lifecycleDependencies)).phase, "succeeded");
     assert.ok(writes >= 6);
     assert.ok(attempted.includes("::steward-safe-token::\n"));
     assert.ok(attempted.includes("::endgroup::\n"));
@@ -263,7 +269,7 @@ test("transcript replay failure remains fatal but still finalizes", async () => 
   }
 });
 
-test("diagnostics off preserves outputs without replaying reserved streams", async () => {
+test("diagnostics off preserves outputs and still replays Task streams", async () => {
   const root = await workspace();
   const client = new DirectClient();
   client.executionLog = "off";
@@ -272,7 +278,7 @@ test("diagnostics off preserves outputs without replaying reserved streams", asy
   try {
     const result = await runWorkflow(directConfig(), root, dependencies(client, writes));
     assert.equal(result.phase, "succeeded");
-    assert.deepEqual(writes, []);
+    assert.match(Buffer.concat(writes.map((entry) => entry.value)).toString("utf8"), /agent stdout/u);
     assert.equal(client.calls.at(-1), "finalize");
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -7,6 +7,15 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Every governed Task now replays bounded agent stdout and stderr into separate GitHub Actions log
+  groups after it succeeds, fails, or is cancelled, for workflow and both direct-package source
+  modes. Workflow-command processing remains disabled during replay. Older Steward versions without
+  the Task log route produce one notice and continue; `execution-log` remains accepted as a
+  compatibility input but no longer suppresses log visibility. Log retrieval and replay remain
+  best effort and never change the Task outcome.
+
 ## [0.8.5] - 2026-11-05
 
 ### Fixed

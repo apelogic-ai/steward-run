@@ -39,6 +39,7 @@ export interface TaskClient {
   uploadTaskInputs(taskUid: string, createArchive: () => Promise<Readable>): Promise<void>;
   executeTask(taskUid: string): Promise<Task>;
   getTask(taskUid: string, options?: TaskRequestOptions): Promise<Task>;
+  downloadTaskLog(taskUid: string, stream: "stdout" | "stderr"): Promise<Buffer | undefined>;
   downloadTaskOutputs(taskUid: string): Promise<Readable>;
   finalizeTask(taskUid: string): Promise<Task>;
 }
@@ -252,6 +253,52 @@ async function finalizeAndConfirm(
 
 type WorkflowStage = "input" | "submit" | "upload" | "execute" | "poll" | "output";
 
+const unavailableAgentLogsNotice =
+  "Agent logs are unavailable from this server; continuing without them.\n";
+const failedAgentLogsNotice =
+  "Agent logs could not be retrieved; continuing without them.\n";
+
+async function writeAgentLogNotice(
+  dependencies: LifecycleDependencies,
+  notice: string,
+): Promise<void> {
+  try {
+    if (dependencies.writeLog) await dependencies.writeLog("stdout", notice);
+    else process.stdout.write(notice);
+  } catch {
+    // Best-effort agent logging must never change the Task outcome.
+  }
+}
+
+async function replayTaskLogs(
+  taskUid: string,
+  dependencies: LifecycleDependencies,
+): Promise<void> {
+  try {
+    const stdout = await dependencies.client.downloadTaskLog(taskUid, "stdout");
+    if (stdout === undefined) {
+      await writeAgentLogNotice(dependencies, unavailableAgentLogsNotice);
+      return;
+    }
+    const stderr = await dependencies.client.downloadTaskLog(taskUid, "stderr");
+    if (stderr === undefined) {
+      await writeAgentLogNotice(dependencies, unavailableAgentLogsNotice);
+      return;
+    }
+    await replayExecutionTranscript(
+      { stdout, stderr },
+      {
+        ...(dependencies.writeLog === undefined ? {} : { write: dependencies.writeLog }),
+        ...(dependencies.commandToken === undefined
+          ? {}
+          : { commandToken: dependencies.commandToken }),
+      },
+    );
+  } catch {
+    await writeAgentLogNotice(dependencies, failedAgentLogsNotice);
+  }
+}
+
 function taskFailurePhase(task: Task | undefined): FailurePhase {
   if (
     task?.phase === "succeeded" ||
@@ -415,22 +462,15 @@ export async function runWorkflow(
         : classifyProviderConnectionStageV3(terminal.failureReason);
     }
     await dependencies.setOutput("status", terminal.phase);
+    stage = "output";
+    await replayTaskLogs(terminal.taskUid, dependencies);
     if (!failed) {
-      stage = "output";
-      const transcript = await extractOutputArchive(
+      await extractOutputArchive(
         await dependencies.client.downloadTaskOutputs(terminal.taskUid),
         workspace,
         outputPaths,
         terminal.diagnostics ?? { executionLog: "off" },
       );
-      if (transcript) {
-        await replayExecutionTranscript(transcript, {
-          ...(dependencies.writeLog === undefined ? {} : { write: dependencies.writeLog }),
-          ...(dependencies.commandToken === undefined
-            ? {}
-            : { commandToken: dependencies.commandToken }),
-        });
-      }
       result = terminal;
     }
   } catch (error) {
