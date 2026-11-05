@@ -7,6 +7,20 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Direct-package Tasks (`invocation-path`, `package-path`) no longer fail at
+  submit with `malformed-response` against Steward 0.3.16 and later. Response
+  parsing now validates only the fields this client knows; unknown fields,
+  evidence entries and admission-delta kinds are ignored.
+
+### Security
+
+- The governed job image picks up Ubuntu's fixed `libbrotli1`
+  (`1.1.0-2ubuntu0.1`, CVE-2026-111497) from the 2026-10-27 package snapshot,
+  with the curl (`8.5.0-2ubuntu10.16`) and OpenSSL (`3.0.13-0ubuntu3.16`)
+  versions current at that snapshot.
+
 ## [0.8.4] - 2026-10-26
 
 ### Added

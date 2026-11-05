@@ -5,7 +5,7 @@ FROM ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b7
 ARG VERSION=0.0.0-dev
 ARG REVISION=unknown
 ARG SOURCE_REPOSITORY=https://github.com/apelogic-ai/steward-run
-ARG UBUNTU_SNAPSHOT=20260928T000000Z
+ARG UBUNTU_SNAPSHOT=20261027T000000Z
 LABEL org.opencontainers.image.title="steward-run" \
       org.opencontainers.image.description="Thin ARC runner for governed Steward jobs" \
       org.opencontainers.image.version="${VERSION}" \
@@ -29,10 +29,11 @@ RUN test -n "$SOURCE_REPOSITORY" \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --only-upgrade \
        libc6=2.39-0ubuntu8.9 \
        libc-bin=2.39-0ubuntu8.9 \
-       libcurl3t64-gnutls=8.5.0-2ubuntu10.15 \
+       libbrotli1=1.1.0-2ubuntu0.1 \
+       libcurl3t64-gnutls=8.5.0-2ubuntu10.16 \
        libperl5.38t64=5.38.2-3.2ubuntu0.6 \
-       libssl3t64=3.0.13-0ubuntu3.15 \
-       openssl=3.0.13-0ubuntu3.15 \
+       libssl3t64=3.0.13-0ubuntu3.16 \
+       openssl=3.0.13-0ubuntu3.16 \
        perl=5.38.2-3.2ubuntu0.6 \
        perl-base=5.38.2-3.2ubuntu0.6 \
        perl-modules-5.38=5.38.2-3.2ubuntu0.6 \

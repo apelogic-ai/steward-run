@@ -149,15 +149,9 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  const allowed = new Set(keys);
-  return Object.keys(value).every((key) => allowed.has(key));
-}
-
 function parseModelRef(value: unknown): ModelRef | undefined {
   const item = record(value);
   return item &&
-    hasOnlyKeys(item, ["provider", "model"]) &&
     typeof item.provider === "string" &&
     item.provider &&
     typeof item.model === "string" &&
@@ -169,7 +163,6 @@ function parseModelRef(value: unknown): ModelRef | undefined {
 function parseToolGrant(value: unknown): ToolGrant | undefined {
   const item = record(value);
   return item &&
-    hasOnlyKeys(item, ["provider", "resource", "action"]) &&
     typeof item.provider === "string" &&
     item.provider &&
     typeof item.resource === "string" &&
@@ -186,12 +179,23 @@ function parseItems<T>(value: unknown, parse: (item: unknown) => T | undefined):
   return parsed.every((item): item is T => item !== undefined) ? parsed : undefined;
 }
 
+const knownDeltaDimensions = new Set([
+  "budget",
+  "singleRunBudget",
+  "ttl",
+  "models",
+  "tools",
+  "runnerPlatforms",
+  "runnerMemory",
+  "runnerCompute",
+  "runnerStorage",
+]);
+
 function parseTaskDelta(value: unknown): TaskAdmissionDelta | undefined {
   const delta = record(value);
   if (!delta || typeof delta.dimension !== "string") return undefined;
   if (
     delta.dimension === "budget" &&
-    hasOnlyKeys(delta, ["dimension", "requested", "ceiling", "currency"]) &&
     typeof delta.requested === "string" &&
     typeof delta.ceiling === "string" &&
     typeof delta.currency === "string"
@@ -205,7 +209,6 @@ function parseTaskDelta(value: unknown): TaskAdmissionDelta | undefined {
   }
   if (
     delta.dimension === "singleRunBudget" &&
-    hasOnlyKeys(delta, ["dimension", "requested", "ceiling", "currency"]) &&
     (delta.requested === null || typeof delta.requested === "string") &&
     typeof delta.ceiling === "string" &&
     typeof delta.currency === "string"
@@ -219,26 +222,22 @@ function parseTaskDelta(value: unknown): TaskAdmissionDelta | undefined {
   }
   if (
     delta.dimension === "ttl" &&
-    hasOnlyKeys(delta, ["dimension", "requested", "ceiling"]) &&
     typeof delta.requested === "string" &&
     typeof delta.ceiling === "string"
   ) {
     return { dimension: "ttl", requested: delta.requested, ceiling: delta.ceiling };
   }
-  if (delta.dimension === "models" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])) {
+  if (delta.dimension === "models") {
     const requested = parseItems(delta.requested, parseModelRef);
     const ceiling = parseItems(delta.ceiling, parseModelRef);
     if (requested && ceiling) return { dimension: "models", requested, ceiling };
   }
-  if (delta.dimension === "tools" && hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])) {
+  if (delta.dimension === "tools") {
     const requested = parseItems(delta.requested, parseToolGrant);
     const ceiling = parseItems(delta.ceiling, parseToolGrant);
     if (requested && ceiling) return { dimension: "tools", requested, ceiling };
   }
-  if (
-    delta.dimension === "runnerPlatforms" &&
-    hasOnlyKeys(delta, ["dimension", "requested", "ceiling"])
-  ) {
+  if (delta.dimension === "runnerPlatforms") {
     const parsePlatform = (item: unknown): "linux" | "mac" | "windows" | undefined =>
       item === "linux" || item === "mac" || item === "windows" ? item : undefined;
     const requested = parseItems(delta.requested, parsePlatform);
@@ -249,7 +248,6 @@ function parseTaskDelta(value: unknown): TaskAdmissionDelta | undefined {
     (delta.dimension === "runnerMemory" ||
       delta.dimension === "runnerCompute" ||
       delta.dimension === "runnerStorage") &&
-    hasOnlyKeys(delta, ["dimension", "requested", "ceiling"]) &&
     typeof delta.requested === "string" &&
     (delta.ceiling === null || typeof delta.ceiling === "string")
   ) {
@@ -267,7 +265,6 @@ function parseTaskDiagnostics(
 ): { executionLog: "off" | "full" } | undefined {
   const diagnostics = record(value);
   return diagnostics &&
-      hasOnlyKeys(diagnostics, ["executionLog"]) &&
       (diagnostics.executionLog === "off" || diagnostics.executionLog === "full")
     ? { executionLog: diagnostics.executionLog }
     : undefined;
@@ -277,20 +274,6 @@ function parseDirectTaskEvidence(value: unknown): DirectTaskEvidence | undefined
   const evidence = record(value);
   if (
     !evidence ||
-    !hasOnlyKeys(evidence, [
-      "schemaVersion",
-      "taskUid",
-      "sourceProvenance",
-      "invocation",
-      "package",
-      "closure",
-      "closureDigest",
-      "envelope",
-      "effectiveRequirements",
-      "diagnostics",
-      "invocationKind",
-      "promptSource",
-    ]) ||
     evidence.schemaVersion !== "steward.task/source-authority-evidence/v1" ||
     typeof evidence.taskUid !== "string" ||
     !evidence.taskUid ||
@@ -314,6 +297,13 @@ function parseDirectTaskEvidence(value: unknown): DirectTaskEvidence | undefined
     !envelope ||
     !effectiveRequirements ||
     !diagnostics ||
+    (evidence.requestedRequirements !== undefined && !record(evidence.requestedRequirements)) ||
+    (evidence.taskRuntimeMinutesLimit !== undefined &&
+      (typeof evidence.taskRuntimeMinutesLimit !== "string" || !evidence.taskRuntimeMinutesLimit)) ||
+    (evidence.requestedDiagnostics !== undefined &&
+      parseTaskDiagnostics(evidence.requestedDiagnostics) === undefined) ||
+    (evidence.requestedWorkspace !== undefined && !Array.isArray(evidence.requestedWorkspace)) ||
+    (evidence.workspace !== undefined && !record(evidence.workspace)) ||
     (evidence.invocationKind !== undefined &&
       evidence.invocationKind !== "manifest" && evidence.invocationKind !== "implicit") ||
     (evidence.promptSource !== undefined &&
@@ -361,7 +351,13 @@ function isUnboundFinalizationTask(task: Task): boolean {
 function parseTask(payload: unknown): Task {
   const value = record(payload);
   const rawDeltas = value?.deltas ?? [];
-  const deltas = parseItems(rawDeltas, parseTaskDelta);
+  // Validate only the delta kinds this client knows; newer Steward kinds are skipped.
+  const deltas = Array.isArray(rawDeltas)
+    ? parseItems(
+        rawDeltas.filter((item) => knownDeltaDimensions.has(String(record(item)?.dimension))),
+        parseTaskDelta,
+      )
+    : undefined;
   const diagnostics = value?.diagnostics === undefined
     ? undefined
     : parseTaskDiagnostics(value.diagnostics);
@@ -370,18 +366,6 @@ function parseTask(payload: unknown): Task {
     : parseDirectTaskEvidence(value.evidence);
   if (
     !value ||
-    !hasOnlyKeys(value, [
-      "taskUid",
-      "contractVersion",
-      "runtimeUid",
-      "phase",
-      "runtimeOwnership",
-      "finalized",
-      "failureReason",
-      "deltas",
-      "diagnostics",
-      "evidence",
-    ]) ||
     typeof value.taskUid !== "string" ||
     !value.taskUid ||
     (value.contractVersion !== undefined && value.contractVersion !== "steward.task/v2") ||

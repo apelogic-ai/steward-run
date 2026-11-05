@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { getGitHubOidcToken } from "../src/oidc.ts";
@@ -218,6 +219,121 @@ test("direct-package submission accepts Steward's complete v2 Task status", asyn
   assert.equal(created.evidence?.promptSource, "inline");
 });
 
+test("direct-package submission accepts Steward's published v2 Task status fixture", async () => {
+  // Copied verbatim from Steward v0.3.26
+  // docs/contracts/task/v2/fixtures/positive/direct-task-status.json: the producer's real shape,
+  // including the optional requested* and taskRuntimeMinutesLimit evidence fields.
+  const published = JSON.parse(
+    readFileSync(new URL("./fixtures/steward-contract/direct-task-status.v0.3.26.json", import.meta.url), "utf8"),
+  ) as typeof directTaskStatus;
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () => jsonResponse(published, 202),
+  });
+
+  const created = await client.submitTask(
+    { contractVersion: "steward.task/v2", invocationPath: ".steward/tasks/cve-analysis/invocation.json" },
+    "c".repeat(64),
+  );
+
+  assert.equal(created.taskUid, published.taskUid);
+  assert.equal(created.runtimeUid, null);
+  assert.equal(created.phase, "submitted");
+  assert.deepEqual(created.evidence?.diagnostics, created.diagnostics);
+});
+
+test("direct Task evidence accepts each optional Steward evidence field and rejects a malformed one", async () => {
+  const optional: Record<string, unknown> = {
+    requestedRequirements: directTaskStatus.evidence.effectiveRequirements,
+    taskRuntimeMinutesLimit: "30",
+    requestedDiagnostics: { executionLog: "full" },
+    requestedWorkspace: [{ path: "in", kind: "directory" }],
+    workspace: { entries: [] },
+  };
+  const malformed: Record<string, unknown> = {
+    requestedRequirements: "all",
+    taskRuntimeMinutesLimit: { minutes: 30 },
+    requestedDiagnostics: { executionLog: "verbose" },
+    requestedWorkspace: "in",
+    workspace: [],
+  };
+  for (const [field, value] of Object.entries(optional)) {
+    const client = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => "token",
+      fetch: async () =>
+        jsonResponse({ ...directTaskStatus, evidence: { ...directTaskStatus.evidence, [field]: value } }, 201),
+    });
+    await client.submitTask({ contractVersion: "steward.task/v2", invocationPath: "i.json" }, "d".repeat(64));
+
+    const refusing = new StewardClient({
+      baseUrl: "https://steward.example.test",
+      getToken: async () => "token",
+      fetch: async () =>
+        jsonResponse(
+          { ...directTaskStatus, evidence: { ...directTaskStatus.evidence, [field]: malformed[field] } },
+          201,
+        ),
+    });
+    await assert.rejects(
+      refusing.submitTask({ contractVersion: "steward.task/v2", invocationPath: "i.json" }, "e".repeat(64)),
+      (error: unknown) =>
+        error instanceof StewardRequestFailure && error.category === "malformed-response",
+      field,
+    );
+  }
+});
+
+test("fields this client doesn't know are ignored at every level", async () => {
+  const withUnknown = {
+    ...directTaskStatus,
+    futureTopLevel: { any: "shape" },
+    deltas: [
+      { dimension: "budget", requested: "10.00", ceiling: "5.00", currency: "USD", note: "x" },
+      { dimension: "futureDimension", requested: 1, ceiling: 2 },
+    ],
+    diagnostics: { ...directTaskStatus.diagnostics, futureDiagnostic: true },
+    evidence: {
+      ...directTaskStatus.evidence,
+      futureEvidence: [1, 2, 3],
+      diagnostics: { ...directTaskStatus.evidence.diagnostics, futureDiagnostic: true },
+    },
+  };
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () => jsonResponse(withUnknown, 201),
+  });
+
+  const created = await client.submitTask(
+    { contractVersion: "steward.task/v2", invocationPath: "i.json" },
+    "f".repeat(64),
+  );
+
+  assert.equal(created.taskUid, directTaskStatus.taskUid);
+  assert.deepEqual(created.deltas, [
+    { dimension: "budget", requested: "10.00", ceiling: "5.00", currency: "USD" },
+  ]);
+  assert.deepEqual(created.diagnostics, { executionLog: "full" });
+});
+
+test("a known admission delta with a malformed shape is still refused", async () => {
+  const client = new StewardClient({
+    baseUrl: "https://steward.example.test",
+    getToken: async () => "token",
+    fetch: async () =>
+      jsonResponse(
+        { ...directTaskStatus, deltas: [{ dimension: "budget", requested: 10, ceiling: "5.00", currency: "USD" }] },
+        201,
+      ),
+  });
+  await assert.rejects(
+    client.submitTask({ contractVersion: "steward.task/v2", invocationPath: "i.json" }, "g".repeat(64)),
+    (error: unknown) => error instanceof StewardRequestFailure && error.category === "malformed-response",
+  );
+});
+
 test("package-path submission sends the exact v2 diagnostics contract", async () => {
   let request: Request | undefined;
   const client = new StewardClient({
@@ -263,10 +379,6 @@ test("direct Task evidence fails closed when malformed or inconsistent with stat
     {
       ...directTaskStatus,
       evidence: { ...directTaskStatus.evidence, invocation: null },
-    },
-    {
-      ...directTaskStatus,
-      evidence: { ...directTaskStatus.evidence, unknown: true },
     },
   ]) {
     const client = new StewardClient({
@@ -413,7 +525,6 @@ test("pending runtime binding fails closed on null misuse and response contradic
     { ...task, runtimeUid: null, runtimeOwnership: "adopted" },
     { ...task, runtimeUid: null, failureReason: privateBody },
     { ...task, runtimeUid: null, phase: "cancelled", failureReason: privateBody },
-    { ...task, runtimeUid: null, unknown: privateBody },
   ];
 
   for (const payload of incompatible) {
