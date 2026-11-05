@@ -99,7 +99,7 @@ test("the final runner image excludes unused build-only package chains", async (
   for (const packageName of ["openssl", "libssl3t64"]) {
     assert.match(
       ciWorkflow,
-      new RegExp(`dpkg-query -W -f=\\\\\\$\\{Version\\} ${packageName}\\)" = "3\\.0\\.13-0ubuntu3\\.15"`),
+      new RegExp(`dpkg-query -W -f=\\\\\\$\\{Version\\} ${packageName}\\)" = "3\\.0\\.13-0ubuntu3\\.16"`),
     );
   }
   assert.match(ciWorkflow, /Runner\.Listener --version/);
