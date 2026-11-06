@@ -112,11 +112,45 @@ export interface FailureMetadata {
   requestStage?: RequestStage;
   httpStatus?: number;
   correlationId?: string;
+  errorCode?: string;
+  failureReason?: string;
 }
 
 export interface FailureMetadataSink {
-  writeAnnotation(value: string): Promise<void>;
+  writeAnnotation(value: string, title?: string): Promise<void>;
   writeStepSummary(value: string): Promise<void>;
+}
+
+const maximumErrorCodeLength = 128;
+const maximumFailureReasonLength = 512;
+
+function sanitizedRefusalValue(value: unknown, maximumLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return Array.from(value.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, "")).slice(0, maximumLength).join("");
+}
+
+export function sanitizeRefusalDetails(
+  errorCode: unknown,
+  failureReason: unknown,
+): { errorCode?: string; failureReason?: string } {
+  const safeErrorCode = sanitizedRefusalValue(errorCode, maximumErrorCodeLength);
+  const safeFailureReason = sanitizedRefusalValue(failureReason, maximumFailureReasonLength);
+  return {
+    ...(safeErrorCode === undefined ? {} : { errorCode: safeErrorCode }),
+    ...(safeFailureReason === undefined ? {} : { failureReason: safeFailureReason }),
+  };
+}
+
+export function formatRefusalDetails(
+  errorCode: unknown,
+  failureReason: unknown,
+): string | undefined {
+  const safe = sanitizeRefusalDetails(errorCode, failureReason);
+  if (safe.errorCode === undefined && safe.failureReason === undefined) return undefined;
+  const githubCommandValue = (value: string) => value.replace(/%/gu, "%25");
+  return `${safe.errorCode === undefined ? "" : `error-code=${githubCommandValue(safe.errorCode)}`}` +
+    `${safe.errorCode === undefined || safe.failureReason === undefined ? "" : " "}` +
+    `${safe.failureReason === undefined ? "" : `failure-reason=${githubCommandValue(safe.failureReason)}`}`;
 }
 
 const agentExitCategories = new Map<number, FailureCategory>([
@@ -276,6 +310,9 @@ export function sanitizeFailureMetadata(value: FailureMetadata): FailureMetadata
   const correlationId = requestStage === undefined
     ? undefined
     : sanitizeCorrelationId(value.correlationId);
+  const refusal = requestStage === undefined
+    ? {}
+    : sanitizeRefusalDetails(value.errorCode, value.failureReason);
   return {
     version: FAILURE_METADATA_VERSION,
     phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
@@ -290,6 +327,7 @@ export function sanitizeFailureMetadata(value: FailureMetadata): FailureMetadata
     ...(requestStage === undefined ? {} : { requestStage }),
     ...(httpStatus === undefined ? {} : { httpStatus }),
     ...(correlationId === undefined ? {} : { correlationId }),
+    ...refusal,
   };
 }
 
@@ -309,6 +347,13 @@ export async function publishFailureMetadata(
         `${safe.httpStatus === undefined ? "" : ` status=${safe.httpStatus}`}` +
         `${safe.correlationId === undefined ? "" : ` correlation-id=${safe.correlationId}`}`,
     );
+    const refusal = formatRefusalDetails(safe.errorCode, safe.failureReason);
+    if (refusal !== undefined) {
+      await sink.writeAnnotation(
+        refusal,
+        "Steward request refused",
+      );
+    }
     if (
       safe.requestStage === "exchange" &&
       (safe.httpStatus === 400 || safe.httpStatus === 401 || safe.httpStatus === 403)

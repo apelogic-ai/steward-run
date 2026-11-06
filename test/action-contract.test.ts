@@ -60,7 +60,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
   assert.equal(action.inputs["coding-agent-runtime"], undefined);
   assert.deepEqual(
     Object.keys(action.outputs).sort(),
-    ["failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
+    ["error-code", "failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
   );
   const nodeProbe = action.runs.steps.find((step) => step.id === "node24");
   assert.match(nodeProbe?.run ?? "", /command -v node/u);

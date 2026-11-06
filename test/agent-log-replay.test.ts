@@ -225,7 +225,14 @@ test("an older server without the Task logs route emits one notice and continues
 });
 
 for (const [name, error] of [
-  ["a 500 response", new StewardRequestFailure("output", "dependency", { httpStatus: 500 })],
+  [
+    "a 500 response",
+    new StewardRequestFailure("output", "dependency", {
+      httpStatus: 500,
+      errorCode: "task.log_refused",
+      failureReason: "Task logs are not available to this caller",
+    }),
+  ],
   [
     "an unexpected content type",
     new StewardRequestFailure("output", "malformed-response", { httpStatus: 200 }),
@@ -243,6 +250,12 @@ for (const [name, error] of [
       );
       const visible = Buffer.concat(writes.map((entry) => entry.value)).toString("utf8");
       assert.equal(visible.match(/Agent logs could not be retrieved; continuing without them\./g)?.length, 1);
+      if (name === "a 500 response") {
+        assert.match(
+          visible,
+          /::error title=Steward request refused::error-code=task\.log_refused failure-reason=Task logs are not available to this caller/u,
+        );
+      }
       assert.equal(client.calls.includes("download"), true);
       assert.equal(client.calls.at(-1), "finalize");
     } finally {

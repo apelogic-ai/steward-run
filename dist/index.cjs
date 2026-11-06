@@ -29463,6 +29463,26 @@ var cleanupCategories = [
   "identity-mismatch",
   "unknown"
 ];
+var maximumErrorCodeLength = 128;
+var maximumFailureReasonLength = 512;
+function sanitizedRefusalValue(value, maximumLength) {
+  if (typeof value !== "string") return void 0;
+  return Array.from(value.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, "")).slice(0, maximumLength).join("");
+}
+function sanitizeRefusalDetails(errorCode, failureReason) {
+  const safeErrorCode = sanitizedRefusalValue(errorCode, maximumErrorCodeLength);
+  const safeFailureReason = sanitizedRefusalValue(failureReason, maximumFailureReasonLength);
+  return {
+    ...safeErrorCode === void 0 ? {} : { errorCode: safeErrorCode },
+    ...safeFailureReason === void 0 ? {} : { failureReason: safeFailureReason }
+  };
+}
+function formatRefusalDetails(errorCode, failureReason) {
+  const safe = sanitizeRefusalDetails(errorCode, failureReason);
+  if (safe.errorCode === void 0 && safe.failureReason === void 0) return void 0;
+  const githubCommandValue = (value) => value.replace(/%/gu, "%25");
+  return `${safe.errorCode === void 0 ? "" : `error-code=${githubCommandValue(safe.errorCode)}`}${safe.errorCode === void 0 || safe.failureReason === void 0 ? "" : " "}${safe.failureReason === void 0 ? "" : `failure-reason=${githubCommandValue(safe.failureReason)}`}`;
+}
 var agentExitCategories = /* @__PURE__ */ new Map([
   [70, "provider-connection"],
   [71, "provider-token-grant"],
@@ -29581,6 +29601,7 @@ function sanitizeFailureMetadata(value) {
   const requestStage = allowed(requestFailureCategories, failureCategory) && allowed(requestStages, value.requestStage) ? value.requestStage : void 0;
   const httpStatus = requestStage !== void 0 && Number.isInteger(value.httpStatus) && value.httpStatus >= 100 && value.httpStatus <= 599 ? value.httpStatus : void 0;
   const correlationId = requestStage === void 0 ? void 0 : sanitizeCorrelationId(value.correlationId);
+  const refusal = requestStage === void 0 ? {} : sanitizeRefusalDetails(value.errorCode, value.failureReason);
   return {
     version: FAILURE_METADATA_VERSION,
     phase: allowed(failurePhases, value.phase) ? value.phase : "unavailable",
@@ -29592,7 +29613,8 @@ function sanitizeFailureMetadata(value) {
     ...providerConnectionStageV3 === void 0 ? {} : { providerConnectionStageV3 },
     ...requestStage === void 0 ? {} : { requestStage },
     ...httpStatus === void 0 ? {} : { httpStatus },
-    ...correlationId === void 0 ? {} : { correlationId }
+    ...correlationId === void 0 ? {} : { correlationId },
+    ...refusal
   };
 }
 function compact(metadata) {
@@ -29605,6 +29627,13 @@ async function publishFailureMetadata(metadata, sink) {
     await sink.writeAnnotation(
       `${REQUEST_FAILURE_METADATA_VERSION} stage=${safe.requestStage} category=${safe.failureCategory}${safe.httpStatus === void 0 ? "" : ` status=${safe.httpStatus}`}${safe.correlationId === void 0 ? "" : ` correlation-id=${safe.correlationId}`}`
     );
+    const refusal = formatRefusalDetails(safe.errorCode, safe.failureReason);
+    if (refusal !== void 0) {
+      await sink.writeAnnotation(
+        refusal,
+        "Steward request refused"
+      );
+    }
     if (safe.requestStage === "exchange" && (safe.httpStatus === 400 || safe.httpStatus === 401 || safe.httpStatus === 403)) {
       await sink.writeAnnotation(
         `${IDENTITY_EXCHANGE_FAILURE_METADATA_VERSION} result=denied operator-action=check-policy-subject-event-ref`
@@ -30081,6 +30110,8 @@ var StewardRequestFailure = class extends Error {
   category;
   httpStatus;
   correlationId;
+  errorCode;
+  failureReason;
   constructor(stage, category, details = {}) {
     super(
       `Steward request failed (stage=${stage}, category=${category}${details.httpStatus === void 0 ? "" : `, status=${details.httpStatus}`})`
@@ -30090,6 +30121,9 @@ var StewardRequestFailure = class extends Error {
     this.category = category;
     this.httpStatus = details.httpStatus;
     this.correlationId = sanitizeCorrelationId(details.correlationId);
+    const refusal = sanitizeRefusalDetails(details.errorCode, details.failureReason);
+    this.errorCode = refusal.errorCode;
+    this.failureReason = refusal.failureReason;
   }
 };
 function record2(value) {
@@ -30346,6 +30380,14 @@ async function readJsonResponse(response, signal) {
     reader.releaseLock();
   }
 }
+async function refusalDetails(response, signal) {
+  try {
+    const payload = record2(await readJsonResponse(response, signal));
+    return sanitizeRefusalDetails(payload?.error, payload?.failureReason);
+  } catch {
+    return {};
+  }
+}
 var StewardClient = class {
   #baseUrl;
   #getToken;
@@ -30442,11 +30484,15 @@ var StewardClient = class {
         }
         continue;
       }
-      await response.body?.cancel().catch(() => void 0);
       const correlationId = responseCorrelationId(response);
+      const refusal = await boundedOperation(
+        (signal) => refusalDetails(response, signal),
+        options
+      ).catch(() => ({}));
       throw new StewardRequestFailure(options.stage, httpFailureCategory(response.status), {
         httpStatus: response.status,
-        ...correlationId === void 0 ? {} : { correlationId }
+        ...correlationId === void 0 ? {} : { correlationId },
+        ...refusal
       });
     }
     throw new StewardRequestFailure(options.stage, "transport");
@@ -30697,10 +30743,12 @@ async function pollUntilTerminal(initial, client, sleep, signal) {
 }
 var FinalizationFailure = class extends Error {
   category;
-  constructor(category) {
+  requestFailure;
+  constructor(category, requestFailure) {
     super("Steward Task finalization failed");
     this.name = "FinalizationFailure";
     this.category = category;
+    this.requestFailure = requestFailure;
   }
 };
 async function finalizeAndConfirm(task, client, sleep) {
@@ -30722,7 +30770,10 @@ async function finalizeAndConfirm(task, client, sleep) {
     if (!current.finalized) throw new FinalizationFailure("confirmation-timeout");
   } catch (error) {
     if (error instanceof FinalizationFailure) throw error;
-    throw new FinalizationFailure("request-failed");
+    throw new FinalizationFailure(
+      "request-failed",
+      error instanceof StewardRequestFailure ? error : void 0
+    );
   }
 }
 var unavailableAgentLogsNotice = "Agent logs are unavailable from this server; continuing without them.\n";
@@ -30732,6 +30783,16 @@ async function writeAgentLogNotice(dependencies, notice) {
     if (dependencies.writeLog) await dependencies.writeLog("stdout", notice);
     else process.stdout.write(notice);
   } catch {
+  }
+}
+async function writeRefusalNotice(dependencies, failure) {
+  const refusal = formatRefusalDetails(failure.errorCode, failure.failureReason);
+  if (refusal !== void 0) {
+    await writeAgentLogNotice(
+      dependencies,
+      `::error title=Steward request refused::${refusal}
+`
+    );
   }
 }
 async function replayTaskLogs(taskUid, dependencies) {
@@ -30753,7 +30814,10 @@ async function replayTaskLogs(taskUid, dependencies) {
         ...dependencies.commandToken === void 0 ? {} : { commandToken: dependencies.commandToken }
       }
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof StewardRequestFailure) {
+      await writeRefusalNotice(dependencies, error);
+    }
     await writeAgentLogNotice(dependencies, failedAgentLogsNotice);
   }
 }
@@ -30804,6 +30868,8 @@ async function runWorkflow(config, workspace, dependencies) {
   let requestStage;
   let httpStatus;
   let correlationId;
+  let errorCode;
+  let requestFailureReason;
   let failed = false;
   let stage = "input";
   try {
@@ -30899,6 +30965,8 @@ async function runWorkflow(config, workspace, dependencies) {
         requestStage = error.stage;
         httpStatus = error.httpStatus;
         correlationId = error.correlationId;
+        errorCode = error.errorCode;
+        requestFailureReason = error.failureReason;
       }
     }
     if (created && error instanceof Error && error.name === "AbortError") {
@@ -30915,6 +30983,18 @@ async function runWorkflow(config, workspace, dependencies) {
       cleanupCategory = "confirmed";
     } catch (error) {
       cleanupCategory = error instanceof FinalizationFailure ? error.category : "unknown";
+      const requestFailure = error instanceof FinalizationFailure ? error.requestFailure : void 0;
+      if (requestFailure !== void 0 && failed) {
+        await writeRefusalNotice(dependencies, requestFailure);
+      }
+      if (requestFailure !== void 0 && !failed && requestStage === void 0) {
+        failureCategory = requestFailure.category;
+        requestStage = requestFailure.stage;
+        httpStatus = requestFailure.httpStatus;
+        correlationId = requestFailure.correlationId;
+        errorCode = requestFailure.errorCode;
+        requestFailureReason = requestFailure.failureReason;
+      }
       failed = true;
       failurePhase = terminal ? taskFailurePhase(terminal) : failurePhase;
     }
@@ -30931,7 +31011,9 @@ async function runWorkflow(config, workspace, dependencies) {
       ...providerConnectionStageV3 === void 0 ? {} : { providerConnectionStageV3 },
       ...requestStage === void 0 ? {} : { requestStage },
       ...httpStatus === void 0 ? {} : { httpStatus },
-      ...correlationId === void 0 ? {} : { correlationId }
+      ...correlationId === void 0 ? {} : { correlationId },
+      ...errorCode === void 0 ? {} : { errorCode },
+      ...requestFailureReason === void 0 ? {} : { failureReason: requestFailureReason }
     });
   }
   return result;
@@ -31010,9 +31092,12 @@ function safeFailure(error) {
 async function reportActionFailure(failure, setActionOutput) {
   const safe = sanitizeFailureMetadata(failure.metadata);
   await publishFailureMetadata(safe, {
-    writeAnnotation: async (value) => {
-      process.stdout.write(`::error title=Steward governed Task failed::${value}
-`);
+    writeAnnotation: async (value, title) => {
+      process.stdout.write(
+        title === void 0 ? `::error title=Steward governed Task failed::${value}
+` : `::error title=${title}::${value}
+`
+      );
     },
     writeStepSummary: async (value) => {
       const path = process.env.GITHUB_STEP_SUMMARY?.trim();
@@ -31027,6 +31112,7 @@ async function reportActionFailure(failure, setActionOutput) {
     await setActionOutput("outcome", "failure");
     await setActionOutput("failure-category", safe.failureCategory);
     await setActionOutput("http-status", safe.httpStatus?.toString() ?? "");
+    await setActionOutput("error-code", safe.errorCode ?? "");
   } catch {
   }
 }
@@ -31123,6 +31209,7 @@ async function main(args = process.argv.slice(2)) {
     await setActionOutput("outcome", "success");
     await setActionOutput("failure-category", "");
     await setActionOutput("http-status", "");
+    await setActionOutput("error-code", "");
   } catch (error) {
     const failure = safeFailure(error);
     await reportActionFailure(failure, setActionOutput);

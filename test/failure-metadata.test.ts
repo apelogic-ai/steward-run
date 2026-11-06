@@ -132,6 +132,38 @@ test("request failures publish a separate bounded diagnostic contract", async ()
   );
 });
 
+test("request refusals publish either stable field without copying other data", async () => {
+  for (const [errorCode, failureReason, expected] of [
+    ["task.admission_rejected", undefined, "error-code=task.admission_rejected"],
+    [undefined, "This Envelope does not allow that model", "failure-reason=This Envelope does not allow that model"],
+  ] as const) {
+    const annotations: Array<{ value: string; title?: string }> = [];
+    await publishFailureMetadata(
+      {
+        version: FAILURE_METADATA_VERSION,
+        phase: "unavailable",
+        failureCategory: "validation",
+        cleanupCategory: "not-required",
+        requestStage: "submit",
+        httpStatus: 422,
+        ...(errorCode === undefined ? {} : { errorCode }),
+        ...(failureReason === undefined ? {} : { failureReason }),
+      },
+      {
+        writeAnnotation: async (value, title) => void annotations.push({
+          value,
+          ...(title === undefined ? {} : { title }),
+        }),
+        writeStepSummary: async () => undefined,
+      },
+    );
+    assert.deepEqual(annotations.at(-1), {
+      value: expected,
+      title: "Steward request refused",
+    });
+  }
+});
+
 test("Identity exchange denials publish a fixed operator action", async () => {
   assert.equal(
     IDENTITY_EXCHANGE_FAILURE_METADATA_VERSION,

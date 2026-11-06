@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { Readable } from "node:stream";
 import {
+  sanitizeRefusalDetails,
   sanitizeCorrelationId,
   type RequestFailureCategory,
   type RequestStage,
@@ -118,6 +119,8 @@ interface RequestOptions {
 interface RequestFailureDetails {
   httpStatus?: number;
   correlationId?: string;
+  errorCode?: string;
+  failureReason?: string;
 }
 
 export class StewardRequestFailure extends Error {
@@ -125,6 +128,8 @@ export class StewardRequestFailure extends Error {
   readonly category: RequestFailureCategory;
   readonly httpStatus: number | undefined;
   readonly correlationId: string | undefined;
+  readonly errorCode: string | undefined;
+  readonly failureReason: string | undefined;
 
   constructor(
     stage: RequestStage,
@@ -140,6 +145,9 @@ export class StewardRequestFailure extends Error {
     this.category = category;
     this.httpStatus = details.httpStatus;
     this.correlationId = sanitizeCorrelationId(details.correlationId);
+    const refusal = sanitizeRefusalDetails(details.errorCode, details.failureReason);
+    this.errorCode = refusal.errorCode;
+    this.failureReason = refusal.failureReason;
   }
 }
 
@@ -534,6 +542,18 @@ async function readJsonResponse(response: Response, signal: AbortSignal): Promis
   }
 }
 
+async function refusalDetails(
+  response: Response,
+  signal: AbortSignal,
+): Promise<{ errorCode?: string; failureReason?: string }> {
+  try {
+    const payload = record(await readJsonResponse(response, signal));
+    return sanitizeRefusalDetails(payload?.error, payload?.failureReason);
+  } catch {
+    return {};
+  }
+}
+
 export class StewardClient {
   readonly #baseUrl: URL;
   readonly #getToken: (signal?: AbortSignal) => Promise<string>;
@@ -645,11 +665,15 @@ export class StewardClient {
         }
         continue;
       }
-      await response.body?.cancel().catch(() => undefined);
       const correlationId = responseCorrelationId(response);
+      const refusal = await boundedOperation(
+        (signal) => refusalDetails(response, signal),
+        options,
+      ).catch(() => ({}));
       throw new StewardRequestFailure(options.stage, httpFailureCategory(response.status), {
         httpStatus: response.status,
         ...(correlationId === undefined ? {} : { correlationId }),
+        ...refusal,
       });
     }
     throw new StewardRequestFailure(options.stage, "transport");

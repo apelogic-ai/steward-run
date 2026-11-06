@@ -1011,6 +1011,35 @@ test("finalization tolerates real sandbox teardown latency and cancellation repo
   }
 });
 
+test("a finalization refusal preserves its stable code and reason", async () => {
+  const root = await fixture();
+  try {
+    const client = new FakeClient();
+    client.finalizeTask = async () => {
+      throw new StewardRequestFailure("finalize", "validation", {
+        httpStatus: 422,
+        errorCode: "task.finalization_rejected",
+        failureReason: "This Task cannot be finalized yet",
+      });
+    };
+
+    await assert.rejects(
+      runWorkflow(config, root, dependencies(client, {})),
+      (error: unknown) => {
+        assert.ok(error instanceof StewardRunFailure);
+        assert.equal(error.metadata.cleanupCategory, "request-failed");
+        assert.equal(error.metadata.requestStage, "finalize");
+        assert.equal(error.metadata.httpStatus, 422);
+        assert.equal(error.metadata.errorCode, "task.finalization_rejected");
+        assert.equal(error.metadata.failureReason, "This Task cannot be finalized yet");
+        return true;
+      },
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("finalization identity and timeout failures use distinct bounded cleanup categories", async () => {
   const root = await fixture();
   try {

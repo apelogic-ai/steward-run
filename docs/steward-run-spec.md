@@ -194,6 +194,7 @@ both direct and proxied TLS connections.
 | `outcome` | Action result: exactly `success` or `failure` |
 | `failure-category` | Bounded failure category; empty on success |
 | `http-status` | Numeric Steward or Identity exchange request status when available; empty otherwise |
+| `error-code` | Stable Steward `error` code from a JSON non-2xx response; empty otherwise |
 | `status` | Terminal phase of the Task |
 | `task-uid` | The Steward Task UID (for audit correlation) |
 | `runtime-uid` | The provisioned/adopted `AgentRuntime` UID (for audit correlation) |
@@ -234,8 +235,11 @@ failure record. The request signal contains only an allowlisted stage, its bound
 optional integer HTTP status, and an optional correlation identifier accepted only from
 `X-Correlation-ID` or `X-Request-ID` after strict length and character validation. Validation
 (400/422), authentication (401), authorization (403), conflict (409), dependency (including 503),
-timeout, transport, and malformed-response remain distinct. Response bodies and arbitrary headers
-are never parsed into diagnostics.
+timeout, transport, and malformed-response remain distinct. For Steward non-2xx responses only,
+a JSON object may contribute string `error` and `failureReason` fields to one additional error
+annotation. Both values have control and line-separator characters removed and are length-bounded;
+the stable `error` also becomes the `error-code` output. Every other body field, non-JSON body, and
+arbitrary header remains excluded.
 
 An Identity exchange HTTP failure uses the same bounded request signal with
 stage `exchange`. HTTP 400, 401, and 403 are attempted once and retain their
@@ -245,9 +249,10 @@ exchange also emits only the fixed `steward-run.identity-exchange/v1`
 operator action to check the repository, subject, event, and ref selectors;
 OAuth descriptions and response bodies are never rendered.
 
-Only those literals are rendered on failure. Arbitrary failure reasons, command output, HTTP bodies
-or headers, JWTs, assertions, provider tokens, API keys, cookies, credentials, and Kubernetes Secret
-values are neither rendered nor persisted by failure reporting. A finalization failure never
+Only those literals and the bounded Steward refusal fields above are rendered on failure. Arbitrary
+Task failure reasons, command output, other HTTP body fields or headers, JWTs, assertions, provider
+tokens, API keys, cookies, credentials, and Kubernetes Secret values are neither rendered nor
+persisted by failure reporting. A finalization failure never
 replaces the primary failure category. Successful runs retain their existing outputs and publish no
 annotation or summary failure metadata. Both success and failure publish the bounded action outputs
 above; a direct caller uses `continue-on-error: true` when it needs to branch on outputs after a
