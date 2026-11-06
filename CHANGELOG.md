@@ -7,6 +7,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-11-06
+
 ### Fixed
 
 - Steward API refusals now show the stable `error` code and plain `failureReason` sentence in one
@@ -391,7 +393,8 @@ v0.8.1, which carries these changes unchanged.
 Releases v0.1.0 through v0.3.9 and their immutable tags are available in the
 [GitHub release history](https://github.com/apelogic-ai/steward-run/releases).
 
-[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.6...HEAD
+[Unreleased]: https://github.com/apelogic-ai/steward-run/compare/v0.8.7...HEAD
+[0.8.7]: https://github.com/apelogic-ai/steward-run/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/apelogic-ai/steward-run/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/apelogic-ai/steward-run/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/apelogic-ai/steward-run/compare/v0.8.3...v0.8.4
