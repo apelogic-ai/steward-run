@@ -42,25 +42,27 @@ outputs, and always requests finalization.
 
 Failed runs publish the bounded `steward-run.failure/v1` contract as both a GitHub error
 annotation and step summary. The visible fields are only terminal phase, an allowlisted failure
-category, and an independent finalization category. Raw Steward reasons, response data,
-stdout/stderr, headers, tokens, assertions, credentials, and Secret values are never copied into
-GitHub metadata or the terminal error. Unknown details map to `unknown`; successful runs do not
-publish failure metadata.
+category, and an independent finalization category. Raw terminal Task reasons, response data other
+than the bounded refusal fields described below, stdout/stderr, headers, tokens, assertions,
+credentials, and Secret values are never copied into GitHub metadata or the terminal error. Unknown
+details map to `unknown`; successful runs do not publish failure metadata.
 
 The action and all three reusable workflows in this source tree also emit
-bounded `outcome`, `failure-category`, and `http-status` step outputs.
-`outcome` is exactly `success` or `failure`; the other two are empty when not
+bounded `outcome`, `failure-category`, `http-status`, and `error-code` step outputs.
+`outcome` is exactly `success` or `failure`; the other three are empty when not
 applicable. Existing `status`, `task-uid`, and `runtime-uid` retain their
 meanings. A calling job that needs to inspect failure outputs must give the
 action step `continue-on-error: true` and branch on those bounded values; no
-response body or credential is exposed.
+other response-body data or credential is exposed.
 
 When a Steward API request itself fails, the existing failure contract is accompanied by
 `steward-run.request-failure/v1`. That bounded signal identifies the request stage and category,
 plus the numeric HTTP status and a syntactically constrained `X-Correlation-ID` or `X-Request-ID`
 when the response supplies them. Submit failures distinguish validation (400/422), authentication
 (401), authorization (403), conflict (409), dependency failures (including 503), timeout,
-transport, and malformed successful responses. Failure response bodies and all other headers are
+transport, and malformed successful responses. When a non-2xx response body is JSON with a string
+`error` and/or `failureReason`, the action adds one bounded, single-line error annotation containing
+only those fields; `error-code` receives the stable code. All other body fields and headers are
 ignored.
 
 An Identity exchange 400, 401, or 403 is attempted once and reported at the
@@ -283,7 +285,8 @@ The minimal local invocation contract is:
   from the Task archive;
 - read successful `outcome`, `status`, `task-uid`, and `runtime-uid` values from
   the selected outputs file; on failure, read only `outcome`, `failure-category`, optional
-  `http-status`, and the versioned bounded annotations/summary described above.
+  `http-status`, optional `error-code`, and the versioned bounded annotations/summary described
+  above.
 
 The token file itself is never a result artifact. Harnesses must mount it outside the declared
 input/output paths and remove it with the disposable cluster.

@@ -85,6 +85,9 @@ on:
       http-status:
         description: HTTP status for a classified Steward or Identity exchange failure; empty otherwise
         value: ${{ jobs.governed.outputs.http-status }}
+      error-code:
+        description: Stable Steward refusal code for a JSON API failure; empty otherwise
+        value: ${{ jobs.governed.outputs.error-code }}
       status:
         description: Terminal Steward Task phase
         value: ${{ jobs.governed.outputs.status }}
@@ -105,6 +108,7 @@ jobs:
       outcome: ${{ steps.task.outputs.outcome }}
       failure-category: ${{ steps.task.outputs.failure-category }}
       http-status: ${{ steps.task.outputs.http-status }}
+      error-code: ${{ steps.task.outputs.error-code }}
       status: ${{ steps.task.outputs.status }}
       task-uid: ${{ steps.task.outputs.task-uid }}
       runtime-uid: ${{ steps.task.outputs.runtime-uid }}

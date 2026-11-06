@@ -19,11 +19,11 @@ test("the customer workflow executes only its own immutable action with GitHub O
   assert.equal(job?.["timeout-minutes"], "${{ inputs.job-timeout-minutes }}");
   assert.deepEqual(
     Object.keys(workflow.on.workflow_call.outputs).sort(),
-    ["failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
+    ["error-code", "failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
   );
   assert.deepEqual(
     Object.keys(existing.on.workflow_call.outputs).sort(),
-    ["failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
+    ["error-code", "failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
   );
   assert.deepEqual(Object.keys(workflow.on.workflow_call.inputs).sort(), Object.keys(existing.on.workflow_call.inputs).sort());
   for (const required of ["runner-label", "input-artifact", "output-artifact", "steward-api-url"]) {

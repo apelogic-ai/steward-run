@@ -35,6 +35,7 @@ function requiredEnvironment(name: string): string {
 }
 
 type ActionOutputName =
+  | "error-code"
   | "failure-category"
   | "http-status"
   | "outcome"
@@ -71,8 +72,12 @@ async function reportActionFailure(
 ): Promise<void> {
   const safe = sanitizeFailureMetadata(failure.metadata);
   await publishFailureMetadata(safe, {
-    writeAnnotation: async (value) => {
-      process.stdout.write(`::error title=Steward governed Task failed::${value}\n`);
+    writeAnnotation: async (value, title) => {
+      process.stdout.write(
+        title === undefined
+          ? `::error title=Steward governed Task failed::${value}\n`
+          : `::error title=${title}::${value}\n`,
+      );
     },
     writeStepSummary: async (value) => {
       const path = process.env.GITHUB_STEP_SUMMARY?.trim();
@@ -88,6 +93,7 @@ async function reportActionFailure(
     await setActionOutput("outcome", "failure");
     await setActionOutput("failure-category", safe.failureCategory);
     await setActionOutput("http-status", safe.httpStatus?.toString() ?? "");
+    await setActionOutput("error-code", safe.errorCode ?? "");
   } catch {
     // Output publication must never replace or disclose the primary governed failure.
   }
@@ -190,6 +196,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     await setActionOutput("outcome", "success");
     await setActionOutput("failure-category", "");
     await setActionOutput("http-status", "");
+    await setActionOutput("error-code", "");
   } catch (error) {
     const failure = safeFailure(error);
     await reportActionFailure(failure, setActionOutput);

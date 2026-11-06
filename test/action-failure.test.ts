@@ -11,6 +11,67 @@ function testJwt(nowSeconds: number): string {
   return `${encode({ alg: "none", typ: "JWT" })}.${encode({ iat: nowSeconds, exp: nowSeconds + 300 })}.test-signature-secret`;
 }
 
+async function runSubmitFailure(body: string, contentType = "application/json") {
+  const workspace = await mkdtemp(join(tmpdir(), "steward-run-refusal-"));
+  const outputFile = join(workspace, "github-output");
+  const summaryFile = join(workspace, "github-summary");
+  const bearerFile = join(workspace, "projected-token.jwt");
+  const bearer = testJwt(Math.floor(Date.now() / 1_000));
+  const server = createServer((_request, response) => {
+    response.writeHead(422, { "content-type": contentType });
+    response.end(body);
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    await mkdir(join(workspace, "in"));
+    await writeFile(join(workspace, "in", "request.txt"), "bounded request");
+    await writeFile(outputFile, "");
+    await writeFile(summaryFile, "");
+    await writeFile(bearerFile, bearer);
+
+    const child = spawn(process.execPath, ["--import", "tsx", "src/main.ts"], {
+      cwd: new URL("..", import.meta.url),
+      env: {
+        ...process.env,
+        GITHUB_JOB: "agent",
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_REPOSITORY: "apelogic-ai/example",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_RUN_ID: "123",
+        GITHUB_STEP_SUMMARY: summaryFile,
+        GITHUB_WORKSPACE: workspace,
+        STEWARD_RUN_API_URL: `http://127.0.0.1:${address.port}`,
+        STEWARD_RUN_BEARER_TOKEN_FILE: bearerFile,
+        STEWARD_RUN_INPUTS: "in",
+        STEWARD_RUN_OUTPUTS: "out",
+        STEWARD_RUN_WORKFLOW: "repository-review@1",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += String(chunk)));
+    child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
+    const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+    return {
+      code,
+      stdout,
+      stderr,
+      summary: await readFile(summaryFile, "utf8"),
+      outputs: await readFile(outputFile, "utf8"),
+      bearer,
+    };
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(workspace, { recursive: true, force: true });
+  }
+}
+
 test("the action publishes sanitized failure metadata and never raw failure data", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "steward-run-failure-"));
   const outputFile = join(workspace, "github-output");
@@ -138,6 +199,63 @@ test("submit diagnostics never disclose a file-backed bearer or response body", 
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+test("a Steward refusal prints only its stable code and user-facing reason", async () => {
+  const refusal = {
+    error: "task.admission_rejected",
+    failureReason: "Model anthropic/claude-sonnet-4-6 is not one of the models this Envelope allows",
+    token: "private-extra-token",
+    headers: { authorization: "private-extra-authorization" },
+  };
+  const result = await runSubmitFailure(JSON.stringify(refusal));
+  const rendered = `${result.stdout}\n${result.stderr}\n${result.summary}\n${result.outputs}`;
+
+  assert.equal(result.code, 1);
+  assert.match(
+    result.stdout,
+    /::error title=Steward request refused::error-code=task\.admission_rejected failure-reason=Model anthropic\/claude-sonnet-4-6 is not one of the models this Envelope allows\n/u,
+  );
+  assert.match(result.outputs, /^error-code=task\.admission_rejected$/mu);
+  for (const forbidden of [
+    "private-extra-token",
+    "private-extra-authorization",
+    result.bearer,
+    "test-signature-secret",
+  ]) {
+    assert.doesNotMatch(rendered, new RegExp(forbidden, "u"));
+  }
+});
+
+test("non-JSON Steward failures print no refusal details", async () => {
+  const result = await runSubmitFailure(
+    "<html><body>private upstream failure</body></html>",
+    "text/html",
+  );
+  const rendered = `${result.stdout}\n${result.stderr}\n${result.summary}`;
+
+  assert.equal(result.code, 1);
+  assert.doesNotMatch(rendered, /Steward request refused|private upstream failure/u);
+  assert.match(result.outputs, /^error-code=$/mu);
+});
+
+test("refusal details are bounded, single-line, and contain no control characters", async () => {
+  const result = await runSubmitFailure(JSON.stringify({
+    error: `task.\u0000admission_rejected-${"e".repeat(500)}`,
+    failureReason: `first line\nsecond line\t\u2028%0A${"r".repeat(2_000)}`,
+  }));
+  const refusalLines = result.stdout
+    .split("\n")
+    .filter((line) => line.includes("Steward request refused"));
+
+  assert.equal(refusalLines.length, 1);
+  assert.ok((refusalLines[0]?.length ?? Number.POSITIVE_INFINITY) <= 768);
+  assert.doesNotMatch(refusalLines[0] ?? "", /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u);
+  assert.match(refusalLines[0] ?? "", /error-code=task\.admission_rejected-/u);
+  assert.match(refusalLines[0] ?? "", /failure-reason=first linesecond line/u);
+  assert.match(refusalLines[0] ?? "", /%250A/u);
+  assert.doesNotMatch(refusalLines[0] ?? "", /%0A/u);
+  assert.match(result.outputs, /^error-code=task\.admission_rejected-/mu);
 });
 
 test("an Identity exchange 401 is attempted once and reported as authentication", async () => {

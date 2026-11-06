@@ -495,6 +495,7 @@ jobs:
           action_metadata="$(cat action.yml)"
           owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           grep -Fq "failure-category:" <<<"$action_metadata"
+          grep -Fq "error-code:" <<<"$action_metadata"
           grep -Fq "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020" <<<"$action_metadata"
           grep -Fq "if: steps.node24.outputs.available != 'true'" <<<"$action_metadata"
           grep -Fq "package-manager-cache: false" <<<"$action_metadata"
@@ -505,6 +506,9 @@ jobs:
           done
           grep -Fq "failure-category:" .github/workflows/steward-task.yml
           grep -Fq "failure-category:" .github/workflows/steward-task-self-hosted.yml
+          grep -Fq "error-code:" .github/workflows/steward-task.yml
+          grep -Fq "error-code:" .github/workflows/steward-task-self-hosted.yml
+          grep -Fq "error-code:" .github/workflows/steward-task-customer.yml
           job_container_image="$(sed -n 's/^[[:space:]]*image: \(ghcr.io\/[^[:space:]]*\)$/\1/p' \
             .github/workflows/steward-task.yml)"
           [[ "$job_container_image" =~ ^ghcr\.io/$owner/steward-run@sha256:[a-f0-9]{64}$ ]]

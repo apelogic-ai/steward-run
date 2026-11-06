@@ -292,13 +292,14 @@ test("the reusable ARC workflow transfers artifacts around an immutable remote a
   assert.notEqual(workflow.on.workflow_call.inputs.workflow?.required, true);
   assert.deepEqual(
     Object.keys(workflow.on.workflow_call.outputs).sort(),
-    ["failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
+    ["error-code", "failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
   );
 
   const job = workflow.jobs.governed;
   assert.equal(job?.outputs?.outcome, "${{ steps.task.outputs.outcome }}");
   assert.equal(job?.outputs?.["failure-category"], "${{ steps.task.outputs.failure-category }}");
   assert.equal(job?.outputs?.["http-status"], "${{ steps.task.outputs.http-status }}");
+  assert.equal(job?.outputs?.["error-code"], "${{ steps.task.outputs.error-code }}");
   assert.equal(job?.permissions?.contents, "read");
   assert.equal(job?.permissions?.["id-token"], "write");
   assert.equal(job?.["runs-on"], "${{ inputs.runner-label }}");
@@ -370,11 +371,12 @@ test("the self-hosted reusable workflow preserves GitHub OIDC provenance without
   assert.ok(workflow.on.workflow_call);
   assert.deepEqual(
     Object.keys(workflow.on.workflow_call.outputs).sort(),
-    ["failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
+    ["error-code", "failure-category", "http-status", "outcome", "runtime-uid", "status", "task-uid"],
   );
   assert.equal(workflow.jobs.governed?.outputs?.outcome, "${{ steps.task.outputs.outcome }}");
   assert.equal(workflow.jobs.governed?.outputs?.["failure-category"], "${{ steps.task.outputs.failure-category }}");
   assert.equal(workflow.jobs.governed?.outputs?.["http-status"], "${{ steps.task.outputs.http-status }}");
+  assert.equal(workflow.jobs.governed?.outputs?.["error-code"], "${{ steps.task.outputs.error-code }}");
   assert.equal(workflow.jobs.governed?.["runs-on"], "${{ inputs.runner-label }}");
   assert.equal(workflow.jobs.governed?.["timeout-minutes"], "${{ inputs.job-timeout-minutes }}");
   assert.equal(workflow.on.workflow_call.inputs["job-timeout-minutes"]?.default, 15);
@@ -521,9 +523,13 @@ test("portable OSS release publishes verified attestations, signatures, checksum
   assert.match(release, /grep -Fq "actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020" <<<"\$action_metadata"/u);
   assert.match(release, /grep -Fq "if: steps\.node24\.outputs\.available != 'true'" <<<"\$action_metadata"/u);
   assert.match(release, /grep -Fq "package-manager-cache: false" <<<"\$action_metadata"/u);
+  assert.match(release, /grep -Fq "error-code:" <<<"\$action_metadata"/u);
   assert.match(release, /RELEASE_IDENTITY=.*refs\/tags\/\$RELEASE_TAG/u);
   assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task\.yml/u);
   assert.match(release, /grep -Fq "failure-category:" \.github\/workflows\/steward-task-self-hosted\.yml/u);
+  assert.match(release, /grep -Fq "error-code:" \.github\/workflows\/steward-task\.yml/u);
+  assert.match(release, /grep -Fq "error-code:" \.github\/workflows\/steward-task-self-hosted\.yml/u);
+  assert.match(release, /grep -Fq "error-code:" \.github\/workflows\/steward-task-customer\.yml/u);
   assert.match(release, /job_container_image=[\s\S]*?steward-task\.yml/u);
   assert.match(release, /job_container_image.*\^ghcr\\\.io\/\$owner\/steward-run@sha256/u);
   assert.match(release, /github\.com\/apelogic-ai\/steward-run[\s\S]*?artifacthub-repo\.yml/u);
@@ -618,7 +624,8 @@ test("failure diagnostics are versioned, bounded, and GitHub-visible", async () 
     assert.match(document, /provider-protocol/u);
     assert.match(document, /workflow-cleanup/u);
     assert.match(document, /confirmation-timeout/u);
-    assert.match(document, /Raw Steward reasons|Arbitrary failure reasons/u);
+    assert.match(document, /bounded Steward refusal fields|bounded, single-line error annotation/u);
+    assert.match(document, /all other body fields|Every other body field/iu);
   }
   assert.match(main, /GITHUB_STEP_SUMMARY/u);
   assert.match(main, /::error title=Steward governed Task failed::/u);

@@ -704,6 +704,45 @@ test("Task submission preserves bounded HTTP failure classification", async (con
   }
 });
 
+test("every Steward request stage preserves only stable refusal details", async (context) => {
+  const refusal = {
+    error: "task.admission_rejected",
+    failureReason: "Model anthropic/claude-sonnet-4-6 is not one of the models this Envelope allows",
+    privateTrace: "must-not-escape",
+  };
+  const operations = [
+    ["submit", (client: StewardClient) =>
+      client.submitTask({ workflow: "code-review@1" }, "a".repeat(64))],
+    ["upload", (client: StewardClient) =>
+      client.uploadTaskInputs(task.taskUid, async () => Readable.from("archive"))],
+    ["execute", (client: StewardClient) => client.executeTask(task.taskUid)],
+    ["poll", (client: StewardClient) => client.getTask(task.taskUid)],
+    ["output", (client: StewardClient) => client.downloadTaskOutputs(task.taskUid)],
+    ["finalize", (client: StewardClient) => client.finalizeTask(task.taskUid)],
+  ] as const;
+
+  for (const [stage, operation] of operations) {
+    await context.test(stage, async () => {
+      const client = new StewardClient({
+        baseUrl: "https://steward.example.test",
+        getToken: async () => "private-bearer-token",
+        fetch: async () => jsonResponse(refusal, 422),
+        maxAttempts: 1,
+      });
+
+      await assert.rejects(operation(client), (error: unknown) => {
+        assert.ok(error instanceof StewardRequestFailure);
+        assert.equal(error.stage, stage);
+        assert.equal(error.errorCode, refusal.error);
+        assert.equal(error.failureReason, refusal.failureReason);
+        assert.doesNotMatch(error.message, /must-not-escape|private-bearer-token/u);
+        assert.equal("privateTrace" in error, false);
+        return true;
+      });
+    });
+  }
+});
+
 test("Task submission rejects malformed successful responses without exposing their body", async () => {
   const secretBody = "private-malformed-response";
   const client = new StewardClient({

@@ -18,6 +18,7 @@ import {
   classifyProviderConnectionStage,
   classifyProviderConnectionStageV2,
   classifyProviderConnectionStageV3,
+  formatRefusalDetails,
   type AssertionStage,
   type CleanupCategory,
   type FailureCategory,
@@ -206,11 +207,16 @@ async function pollUntilTerminal(
 
 class FinalizationFailure extends Error {
   readonly category: Exclude<CleanupCategory, "confirmed" | "not-required">;
+  readonly requestFailure: StewardRequestFailure | undefined;
 
-  constructor(category: Exclude<CleanupCategory, "confirmed" | "not-required">) {
+  constructor(
+    category: Exclude<CleanupCategory, "confirmed" | "not-required">,
+    requestFailure?: StewardRequestFailure,
+  ) {
     super("Steward Task finalization failed");
     this.name = "FinalizationFailure";
     this.category = category;
+    this.requestFailure = requestFailure;
   }
 }
 
@@ -247,7 +253,10 @@ async function finalizeAndConfirm(
     if (!current.finalized) throw new FinalizationFailure("confirmation-timeout");
   } catch (error) {
     if (error instanceof FinalizationFailure) throw error;
-    throw new FinalizationFailure("request-failed");
+    throw new FinalizationFailure(
+      "request-failed",
+      error instanceof StewardRequestFailure ? error : undefined,
+    );
   }
 }
 
@@ -267,6 +276,19 @@ async function writeAgentLogNotice(
     else process.stdout.write(notice);
   } catch {
     // Best-effort agent logging must never change the Task outcome.
+  }
+}
+
+async function writeRefusalNotice(
+  dependencies: LifecycleDependencies,
+  failure: StewardRequestFailure,
+): Promise<void> {
+  const refusal = formatRefusalDetails(failure.errorCode, failure.failureReason);
+  if (refusal !== undefined) {
+    await writeAgentLogNotice(
+      dependencies,
+      `::error title=Steward request refused::${refusal}\n`,
+    );
   }
 }
 
@@ -294,7 +316,10 @@ async function replayTaskLogs(
           : { commandToken: dependencies.commandToken }),
       },
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof StewardRequestFailure) {
+      await writeRefusalNotice(dependencies, error);
+    }
     await writeAgentLogNotice(dependencies, failedAgentLogsNotice);
   }
 }
@@ -358,6 +383,8 @@ export async function runWorkflow(
   let requestStage: FailureMetadata["requestStage"];
   let httpStatus: FailureMetadata["httpStatus"];
   let correlationId: FailureMetadata["correlationId"];
+  let errorCode: FailureMetadata["errorCode"];
+  let requestFailureReason: FailureMetadata["failureReason"];
   let failed = false;
   let stage: WorkflowStage = "input";
   try {
@@ -484,6 +511,8 @@ export async function runWorkflow(
         requestStage = error.stage;
         httpStatus = error.httpStatus;
         correlationId = error.correlationId;
+        errorCode = error.errorCode;
+        requestFailureReason = error.failureReason;
       }
     }
     if (created && error instanceof Error && error.name === "AbortError") {
@@ -502,6 +531,20 @@ export async function runWorkflow(
       cleanupCategory = "confirmed";
     } catch (error) {
       cleanupCategory = error instanceof FinalizationFailure ? error.category : "unknown";
+      const requestFailure = error instanceof FinalizationFailure
+        ? error.requestFailure
+        : undefined;
+      if (requestFailure !== undefined && failed) {
+        await writeRefusalNotice(dependencies, requestFailure);
+      }
+      if (requestFailure !== undefined && !failed && requestStage === undefined) {
+        failureCategory = requestFailure.category;
+        requestStage = requestFailure.stage;
+        httpStatus = requestFailure.httpStatus;
+        correlationId = requestFailure.correlationId;
+        errorCode = requestFailure.errorCode;
+        requestFailureReason = requestFailure.failureReason;
+      }
       failed = true;
       failurePhase = terminal ? taskFailurePhase(terminal) : failurePhase;
     }
@@ -520,6 +563,8 @@ export async function runWorkflow(
       ...(requestStage === undefined ? {} : { requestStage }),
       ...(httpStatus === undefined ? {} : { httpStatus }),
       ...(correlationId === undefined ? {} : { correlationId }),
+      ...(errorCode === undefined ? {} : { errorCode }),
+      ...(requestFailureReason === undefined ? {} : { failureReason: requestFailureReason }),
     });
   }
   return result;

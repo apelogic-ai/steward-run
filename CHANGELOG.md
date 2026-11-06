@@ -7,6 +7,12 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Steward API refusals now show the stable `error` code and plain `failureReason` sentence in one
+  bounded, single-line job error, and expose the code as `error-code`. Other response fields,
+  headers, non-JSON bodies, and credentials remain excluded.
+
 ## [0.8.6] - 2026-11-05
 
 ### Changed
