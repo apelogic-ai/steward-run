@@ -102,7 +102,7 @@ jobs:
     runs-on: ${{ inputs.runner-label }}
     timeout-minutes: ${{ inputs.job-timeout-minutes }}
     container:
-      image: ghcr.io/apelogic-ai/steward-run@sha256:25914ac61760050ce6df4084e221aa24e895d9031cd9b53f63e42a82d59d0159
+      image: ghcr.io/apelogic-ai/steward-run@sha256:8716420f708c7776b192fe4feb36942fbd836b03bc3f8db54b7e1083fa3bc66a
     permissions:
       contents: read
       id-token: write
