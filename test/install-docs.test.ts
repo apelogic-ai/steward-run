@@ -232,7 +232,7 @@ test("current authentication, task sources, timeout, links, and examples cannot 
   assert.match(releaseNotes, /TaskIdempotencyConflict/u);
   assert.match(releaseNotes, /idempotency-key/u);
   assert.match(releaseNotes, /STEWARD_RUN_IDEMPOTENCY_KEY/u);
-  assert.match(releaseNotes, /reusable workflow called twice/u);
+  assert.match(releaseNotes, /reusable workflow\s+called twice/u);
   assert.match(refusalReleaseNotes, /error-code/u);
   assert.match(refusalReleaseNotes, /failureReason/u);
   assert.match(refusalReleaseNotes, /non-JSON bodies/u);
