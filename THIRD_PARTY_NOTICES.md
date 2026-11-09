@@ -1,6 +1,6 @@
 # Third-party notices
 
-This inventory applies to `steward-run` v0.8.7. The root [MIT license](LICENSE)
+This inventory applies to `steward-run` v0.8.8. The root [MIT license](LICENSE)
 covers ApeLogic's first-party source and charts; it does not relicense the
 components below.
 
