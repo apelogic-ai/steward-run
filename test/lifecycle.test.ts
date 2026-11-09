@@ -1076,14 +1076,14 @@ test("finalization identity and timeout failures use distinct bounded cleanup ca
   }
 });
 
-test("idempotency keys are stable for one job identity", () => {
+test("idempotency keys are stable for one job identity and Task", () => {
   const identity = {
     GITHUB_REPOSITORY: "apelogic-ai/example",
     GITHUB_RUN_ID: "123",
     GITHUB_RUN_ATTEMPT: "1",
     GITHUB_JOB: "agent",
   };
-  assert.equal(createIdempotencyKey(identity), createIdempotencyKey(identity));
+  assert.equal(createIdempotencyKey(identity, config), createIdempotencyKey(identity, config));
   for (const [field, value] of [
     ["GITHUB_REPOSITORY", "apelogic-ai/other"],
     ["GITHUB_RUN_ID", "456"],
@@ -1091,12 +1091,37 @@ test("idempotency keys are stable for one job identity", () => {
     ["GITHUB_JOB", "other"],
   ] as const) {
     assert.notEqual(
-      createIdempotencyKey(identity),
-      createIdempotencyKey({ ...identity, [field]: value }),
+      createIdempotencyKey(identity, config),
+      createIdempotencyKey({ ...identity, [field]: value }, config),
       field,
     );
   }
-  assert.match(createIdempotencyKey(identity), /^[a-f0-9]{64}$/);
+  assert.match(createIdempotencyKey(identity, config), /^[a-f0-9]{64}$/);
+});
+
+test("different Tasks from the same job attempt get different idempotency keys", () => {
+  const identity = {
+    GITHUB_REPOSITORY: "apelogic-ai/example",
+    GITHUB_RUN_ID: "123",
+    GITHUB_RUN_ATTEMPT: "1",
+    GITHUB_JOB: "agent",
+  };
+  const common = { inputPaths: "in", outputPaths: "results", apiUrl: "https://steward.example.test" };
+  const digest = `steward:sha256:${"a".repeat(64)}`;
+  const tasks: WorkflowConfig[] = [
+    { ...common, invocationPath: ".steward/tasks/first.json" },
+    { ...common, invocationPath: ".steward/tasks/second.json" },
+    { ...common, invocationPath: ".steward/tasks/first.json", envelopeDigest: digest },
+    { ...common, packagePath: ".steward/tasks/first.json", executionLog: "off" },
+    { ...common, workflow: "repository-review@1" },
+    { ...common, workflow: "repository-review@2" },
+  ];
+  const keys = tasks.map((task) => createIdempotencyKey(identity, task));
+  assert.equal(new Set(keys).size, tasks.length);
+  assert.equal(
+    createIdempotencyKey(identity, { ...common, invocationPath: ".steward/tasks/first.json" }),
+    keys[0],
+  );
 });
 
 test("an explicit caller idempotency key overrides GitHub job identity", async () => {

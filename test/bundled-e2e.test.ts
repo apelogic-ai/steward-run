@@ -86,6 +86,103 @@ test("the checked-in bundle accepts explicit caller flags outside GitHub Actions
   }
 });
 
+test("the checked-in bundle sends the explicit caller idempotency key", async () => {
+  for (const source of ["flag", "environment"] as const) {
+    const workspace = await mkdtemp(join(tmpdir(), "steward-run-caller-key-explicit-"));
+    const bearerFile = join(workspace, "projected-token.jwt");
+    const issuedAt = Math.floor(Date.now() / 1_000);
+    const bearer = jwt({ aud: "steward-task-api", exp: issuedAt + 300, iat: issuedAt });
+    const mock = await startMockSteward({ acceptedBearerToken: bearer });
+    try {
+      await mkdir(join(workspace, "in"));
+      await writeFile(join(workspace, "in", "payload.bin"), "caller fixture");
+      await writeFile(bearerFile, bearer);
+      const child = spawn(
+        process.execPath,
+        [
+          "dist/index.cjs",
+          ...(source === "flag" ? ["--idempotency-key", "review.first:1"] : []),
+          "--workspace",
+          workspace,
+          "--outputs-file",
+          "caller-outputs",
+        ],
+        {
+          cwd: new URL("..", import.meta.url),
+          env: environmentWithoutGitHub({
+            STEWARD_RUN_API_URL: mock.url,
+            STEWARD_RUN_BEARER_TOKEN_FILE: bearerFile,
+            ...(source === "environment" ? { STEWARD_RUN_IDEMPOTENCY_KEY: "review.first:1" } : {}),
+            STEWARD_RUN_INPUTS: "in",
+            STEWARD_RUN_OUTPUTS: "out/payload.bin",
+            STEWARD_RUN_WORKFLOW: "repository-review@1",
+          }),
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let stderr = "";
+      child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += String(chunk)));
+      const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+
+      assert.equal(code, 0, `${source}: ${stderr}`);
+      assert.equal(mock.observations.idempotencyKey, "review.first:1", source);
+    } finally {
+      await mock.close();
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }
+});
+
+test("the checked-in bundle refuses an invalid explicit idempotency key before any request", async () => {
+  for (const source of ["flag", "environment"] as const) {
+    const workspace = await mkdtemp(join(tmpdir(), "steward-run-caller-key-invalid-"));
+    const mock = await startMockSteward();
+    try {
+      await mkdir(join(workspace, "in"));
+      await writeFile(join(workspace, "in", "payload.bin"), "caller fixture");
+      const invalid = "has space/and slash";
+      const child = spawn(
+        process.execPath,
+        [
+          "dist/index.cjs",
+          ...(source === "flag" ? ["--idempotency-key", invalid] : []),
+          "--workspace",
+          workspace,
+          "--outputs-file",
+          "caller-outputs",
+        ],
+        {
+          cwd: new URL("..", import.meta.url),
+          env: {
+            ...environmentWithoutGitHub({
+              STEWARD_RUN_API_URL: mock.url,
+              ...(source === "environment" ? { STEWARD_RUN_IDEMPOTENCY_KEY: invalid } : {}),
+              STEWARD_RUN_INPUTS: "in",
+              STEWARD_RUN_OUTPUTS: "out/payload.bin",
+              STEWARD_RUN_WORKFLOW: "repository-review@1",
+            }),
+            // A complete job identity proves the refusal comes from the explicit key.
+            GITHUB_REPOSITORY: "apelogic-ai/example",
+            GITHUB_RUN_ID: "123",
+            GITHUB_RUN_ATTEMPT: "1",
+            GITHUB_JOB: "agent",
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+
+      assert.equal(code, 1, source);
+      assert.deepEqual(mock.observations.operations, [], source);
+      assert.equal(mock.observations.protectedResourceDiscoveryRequests, 0, source);
+      assert.equal(mock.observations.identityDiscoveryRequests, 0, source);
+    } finally {
+      await mock.close();
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }
+});
+
 test("the checked-in bundle refuses a missing caller idempotency key before submission", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "steward-run-caller-key-"));
   const mock = await startMockSteward();

@@ -34,6 +34,7 @@ export interface MockSteward {
     stewardTokenAtSteward: number;
     operations: MockOperation[];
     taskSubmission?: unknown;
+    idempotencyKey?: string;
   };
   close: () => Promise<void>;
 }
@@ -283,6 +284,8 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
       if (request.method === "POST" && url.pathname === "/v1/tasks") {
         const createRequest: unknown = JSON.parse((await requestBody(request)).toString("utf8"));
         observations.taskSubmission = createRequest;
+        const idempotencyKey = request.headers["idempotency-key"];
+        if (typeof idempotencyKey === "string") observations.idempotencyKey = idempotencyKey;
         const expectedSubmission = options.directPackage
           ? {
               contractVersion: "steward.task/v2",
