@@ -6,6 +6,7 @@ import {
 import { shortLivedBearerTokenFileProvider } from "./auth.js";
 import {
   parseCallerOptions,
+  validateIdempotencyKey,
   validateOutputsFileOption,
   validateWorkspaceOption,
 } from "./cli.js";
@@ -115,7 +116,10 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
       ? requiredEnvironment("GITHUB_OUTPUT")
       : await validateOutputsFileOption(workspace, options.outputsFile);
     setActionOutput = actionOutputWriter(outputsFile);
-    const idempotencyKey = options.idempotencyKey ?? createIdempotencyKey(process.env);
+    const explicitIdempotencyKey = options.idempotencyKey ??
+      (process.env.STEWARD_RUN_IDEMPOTENCY_KEY
+        ? validateIdempotencyKey(process.env.STEWARD_RUN_IDEMPOTENCY_KEY)
+        : undefined);
     for (const input of usedCompatibilityInputs(process.env)) {
       process.stdout.write(
         `::warning title=Deprecated steward-run input::${compatibilityInputNotice(input)}\n`,
@@ -128,6 +132,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
       );
     }
     const config = readActionConfig(process.env);
+    const idempotencyKey = explicitIdempotencyKey ?? createIdempotencyKey(process.env, config);
     const githubFetch = await createStewardFetch();
     transports.add(githubFetch);
     const stewardFetch = await createStewardFetch(config.caCertificateFile);

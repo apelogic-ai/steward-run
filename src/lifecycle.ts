@@ -68,12 +68,41 @@ function identityField(environment: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
-export function createIdempotencyKey(environment: NodeJS.ProcessEnv): string {
+export function taskSubmissionRequest(config: WorkflowConfig): TaskSubmissionRequest {
+  if ("invocationPath" in config) {
+    return {
+      contractVersion: "steward.task/v2",
+      invocationPath: config.invocationPath,
+      ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
+    };
+  }
+  if ("packagePath" in config) {
+    return {
+      contractVersion: "steward.task/v2",
+      packagePath: config.packagePath,
+      diagnostics: { executionLog: config.executionLog },
+      ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
+    };
+  }
+  return {
+    workflow: config.workflow,
+    ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
+    ...(config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}),
+  };
+}
+
+// One job attempt can submit several Tasks, so the key also covers the Task request itself.
+// Retrying the same Task in the same attempt yields the same key.
+export function createIdempotencyKey(
+  environment: NodeJS.ProcessEnv,
+  config: WorkflowConfig,
+): string {
   const identity = [
     identityField(environment, "GITHUB_REPOSITORY"),
     identityField(environment, "GITHUB_RUN_ID"),
     identityField(environment, "GITHUB_RUN_ATTEMPT"),
     identityField(environment, "GITHUB_JOB"),
+    JSON.stringify(taskSubmissionRequest(config)),
   ].join("\0");
   return createHash("sha256").update(identity).digest("hex");
 }
@@ -398,25 +427,8 @@ export async function runWorkflow(
     initialArchive = await createInputArchive(workspace, inputPaths);
     stage = "submit";
     created = await dependencies.client.submitTask(
-      "invocationPath" in config
-        ? {
-            contractVersion: "steward.task/v2",
-            invocationPath: config.invocationPath,
-            ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
-          }
-        : "packagePath" in config
-          ? {
-              contractVersion: "steward.task/v2",
-              packagePath: config.packagePath,
-              diagnostics: { executionLog: config.executionLog },
-              ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
-            }
-        : {
-            workflow: config.workflow,
-            ...(config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}),
-            ...(config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}),
-          },
-      dependencies.idempotencyKey ?? createIdempotencyKey(dependencies.environment),
+      taskSubmissionRequest(config),
+      dependencies.idempotencyKey ?? createIdempotencyKey(dependencies.environment, config),
     );
     if (
       ("invocationPath" in config || "packagePath" in config) &&

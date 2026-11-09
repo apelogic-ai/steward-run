@@ -21,6 +21,7 @@ test("the composite action exposes the versioned steward-run contract", async ()
       "execution-log",
       "identity-exchange-url",
       "identity-exchange-audience",
+      "idempotency-key",
       "invocation-path",
       "package-path",
       "inputs",
@@ -45,6 +46,9 @@ test("the composite action exposes the versioned steward-run contract", async ()
   assert.notEqual(action.inputs["steward-ca-certificate-file"]?.required, true);
   assert.notEqual(action.inputs["envelope-digest"]?.required, true);
   assert.equal(action.inputs["runtime-binding-timeout-minutes"]?.default, "10");
+  assert.notEqual(action.inputs["idempotency-key"]?.required, true);
+  assert.equal(action.inputs["idempotency-key"]?.default, "");
+  assert.match(source, /STEWARD_RUN_IDEMPOTENCY_KEY:\s*\$\{\{ inputs\.idempotency-key \}\}/u);
   assert.match(source, /STEWARD_RUN_RUNTIME_BINDING_TIMEOUT_MINUTES:\s*\$\{\{ inputs\.runtime-binding-timeout-minutes \}\}/u);
   for (const name of [
     "identity-exchange-url",

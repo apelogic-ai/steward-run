@@ -7,6 +7,19 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Different Tasks submitted from the same job attempt, such as a reusable workflow called twice,
+  no longer share one idempotency key and get refused with `TaskIdempotencyConflict`. The derived
+  key now also covers the Task request (source path or Workflow, `envelope-digest`,
+  `agent-runtime`); retrying the same Task in the same job attempt still reuses its key.
+
+### Added
+
+- Optional `idempotency-key` action input (`STEWARD_RUN_IDEMPOTENCY_KEY`) overrides the derived
+  key. It and `--idempotency-key` must be 1 to 128 characters from `A-Z`, `a-z`, `0-9`, `.`, `_`,
+  `:` and `-`, and an invalid key is refused before any network request.
+
 ## [0.8.7] - 2026-11-06
 
 ### Fixed

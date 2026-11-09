@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   parseCallerOptions,
+  validateIdempotencyKey,
   validateOutputsFileOption,
   validateWorkspaceOption,
 } from "../src/cli.ts";
@@ -26,6 +27,19 @@ test("caller flags accept explicit non-empty values", () => {
     },
   );
   assert.throws(() => parseCallerOptions(["--idempotency-key", ""]), /must not be empty/u);
+});
+
+test("an explicit idempotency key must be bounded and use safe characters", () => {
+  assert.equal(validateIdempotencyKey("release-summary.v1:retry_2"), "release-summary.v1:retry_2");
+  assert.equal(validateIdempotencyKey("a".repeat(128)), "a".repeat(128));
+  for (const invalid of ["a".repeat(129), "has space", "slash/key", "new\nline", "caf\u00e9", ""]) {
+    assert.throws(() => validateIdempotencyKey(invalid), /idempotency-key must be/u, invalid);
+    assert.throws(
+      () => parseCallerOptions(["--idempotency-key", invalid]),
+      /idempotency-key must/u,
+      invalid,
+    );
+  }
 });
 
 test("workspace and outputs-file flags reject symbolic-link traversal", async () => {

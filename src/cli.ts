@@ -19,6 +19,17 @@ function nonEmptyOption(
   return normalized;
 }
 
+const idempotencyKeyPattern = /^[A-Za-z0-9._:-]{1,128}$/u;
+
+export function validateIdempotencyKey(value: string): string {
+  if (!idempotencyKeyPattern.test(value)) {
+    throw new Error(
+      "idempotency-key must be 1 to 128 characters from A-Z, a-z, 0-9, '.', '_', ':' and '-'",
+    );
+  }
+  return value;
+}
+
 export function parseCallerOptions(args: readonly string[]): CallerOptions {
   const { values } = parseArgs({
     args: [...args],
@@ -30,7 +41,10 @@ export function parseCallerOptions(args: readonly string[]): CallerOptions {
     } as const,
     strict: true,
   });
-  const idempotencyKey = nonEmptyOption("idempotency-key", values["idempotency-key"], false);
+  const rawIdempotencyKey = nonEmptyOption("idempotency-key", values["idempotency-key"], false);
+  const idempotencyKey = rawIdempotencyKey === undefined
+    ? undefined
+    : validateIdempotencyKey(rawIdempotencyKey);
   const outputsFile = nonEmptyOption("outputs-file", values["outputs-file"]);
   const workspace = nonEmptyOption("workspace", values.workspace);
   return {
