@@ -132,6 +132,7 @@ the resumed invocation (a new job, new token).
 | `bearer-token-file` *(authentication choice)* | Filesystem path to a rotating JWT with a maximum one-hour lifetime |
 | `agent-runtime` *(optional)* | Adopt an existing `AgentRuntime` id for the existing Workflow path only (D2) |
 | `runtime-binding-timeout-minutes` *(optional)* | Whole-minute controller-binding deadline from 1 through 360; default `10` |
+| `idempotency-key` *(optional, default `""`)* | Task submission idempotency key, 1 to 128 characters from `A-Z`, `a-z`, `0-9`, `.`, `_`, `:` and `-`; overrides the derived key |
 
 Exactly one of `invocation-path`, `package-path`, and `workflow` is required.
 The runner verifies that either direct path is canonical, exists at the clean
@@ -145,6 +146,12 @@ Steward resolves `envelope-digest` within the authenticated owner's active envel
 versioned Workflow or direct-package invocation, so the selector cannot cross an ownership
 boundary. When it is omitted, submission succeeds only if exactly one active envelope is
 available; zero or multiple active envelopes are explicit admission errors.
+
+Without `idempotency-key`, the submission key is the SHA-256 of `GITHUB_REPOSITORY`,
+`GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `GITHUB_JOB`, and the exact Task submission request. A retry
+of the same Task in the same job attempt reuses the key; different Tasks from one job, such as a
+reusable workflow called twice, do not collide. An invalid explicit key is refused before any
+network request.
 
 With no explicit authentication choice, production uses discovery. The action
 derives `/.well-known/oauth-protected-resource` from the exact Steward resource,

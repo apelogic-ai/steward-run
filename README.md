@@ -177,6 +177,12 @@ existing versioned Workflow flow. `agent-runtime` applies only to the latter. Ev
 also supply `envelope-digest` as an exact
 `steward:sha256:<64 lowercase hex>` selector. Steward resolves it only among the caller's active
 envelopes. Omitting it remains valid only when that owner has exactly one active envelope.
+The Task submission idempotency key defaults to a hash of the GitHub job attempt
+(`GITHUB_REPOSITORY`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `GITHUB_JOB`) and the Task request
+(source path or Workflow, `envelope-digest`, `agent-runtime`). Retrying the same Task in the same
+job attempt reuses the key, while different Tasks from one job get different keys. Set
+`idempotency-key` to override it, for example to submit the same Task twice in one job. It must be
+1 to 128 characters from `A-Z`, `a-z`, `0-9`, `.`, `_`, `:` and `-`.
 `package-path` also accepts `execution-log: off|full` (default `off`) for compatibility; the value
 is still sent to Steward but no longer suppresses agent logs. The input is rejected with the other
 two source modes. Steward 0.3.10 or later must advertise
@@ -276,10 +282,11 @@ The minimal local invocation contract is:
   `steward-api-url`, and `bearer-token-file` through the action inputs (or their corresponding
   `STEWARD_RUN_*` environment variables when executing the bundled entry point);
 - pass `--idempotency-key`, `--workspace`, and `--outputs-file` to the bundled entry point.
-  The key must be non-empty. The output file must be inside the workspace; the workspace itself
+  The key follows the `idempotency-key` input rules above, and `STEWARD_RUN_IDEMPOTENCY_KEY`
+  supplies it when the flag is absent. The output file must be inside the workspace; the workspace itself
   and every existing output-path component must not be symbolic links. In GitHub Actions these
   flags are optional: the existing
-  `GITHUB_REPOSITORY`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, and `GITHUB_JOB` identity-derived key,
+  job-attempt-and-Task derived key,
   `GITHUB_WORKSPACE`, and `GITHUB_OUTPUT` remain the defaults;
 - pre-create every declared input path. Steward-run creates only declared output paths recovered
   from the Task archive;

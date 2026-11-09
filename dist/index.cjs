@@ -29188,6 +29188,15 @@ function nonEmptyOption(name, value, trim = true) {
   if (!normalized) throw new Error(`--${name} must not be empty`);
   return normalized;
 }
+var idempotencyKeyPattern = /^[A-Za-z0-9._:-]{1,128}$/u;
+function validateIdempotencyKey(value) {
+  if (!idempotencyKeyPattern.test(value)) {
+    throw new Error(
+      "idempotency-key must be 1 to 128 characters from A-Z, a-z, 0-9, '.', '_', ':' and '-'"
+    );
+  }
+  return value;
+}
 function parseCallerOptions(args) {
   const { values } = (0, import_node_util.parseArgs)({
     args: [...args],
@@ -29199,7 +29208,8 @@ function parseCallerOptions(args) {
     },
     strict: true
   });
-  const idempotencyKey = nonEmptyOption("idempotency-key", values["idempotency-key"], false);
+  const rawIdempotencyKey = nonEmptyOption("idempotency-key", values["idempotency-key"], false);
+  const idempotencyKey = rawIdempotencyKey === void 0 ? void 0 : validateIdempotencyKey(rawIdempotencyKey);
   const outputsFile = nonEmptyOption("outputs-file", values["outputs-file"]);
   const workspace = nonEmptyOption("workspace", values.workspace);
   return {
@@ -30635,12 +30645,35 @@ function identityField(environment, name) {
   if (!value) throw new Error(`required GitHub job identity ${name} is missing`);
   return value;
 }
-function createIdempotencyKey(environment) {
+function taskSubmissionRequest(config) {
+  if ("invocationPath" in config) {
+    return {
+      contractVersion: "steward.task/v2",
+      invocationPath: config.invocationPath,
+      ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}
+    };
+  }
+  if ("packagePath" in config) {
+    return {
+      contractVersion: "steward.task/v2",
+      packagePath: config.packagePath,
+      diagnostics: { executionLog: config.executionLog },
+      ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}
+    };
+  }
+  return {
+    workflow: config.workflow,
+    ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {},
+    ...config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}
+  };
+}
+function createIdempotencyKey(environment, config) {
   const identity = [
     identityField(environment, "GITHUB_REPOSITORY"),
     identityField(environment, "GITHUB_RUN_ID"),
     identityField(environment, "GITHUB_RUN_ATTEMPT"),
-    identityField(environment, "GITHUB_JOB")
+    identityField(environment, "GITHUB_JOB"),
+    JSON.stringify(taskSubmissionRequest(config))
   ].join("\0");
   return (0, import_node_crypto3.createHash)("sha256").update(identity).digest("hex");
 }
@@ -30883,21 +30916,8 @@ async function runWorkflow(config, workspace, dependencies) {
     initialArchive = await createInputArchive(workspace, inputPaths);
     stage = "submit";
     created = await dependencies.client.submitTask(
-      "invocationPath" in config ? {
-        contractVersion: "steward.task/v2",
-        invocationPath: config.invocationPath,
-        ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}
-      } : "packagePath" in config ? {
-        contractVersion: "steward.task/v2",
-        packagePath: config.packagePath,
-        diagnostics: { executionLog: config.executionLog },
-        ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {}
-      } : {
-        workflow: config.workflow,
-        ...config.envelopeDigest ? { envelopeDigest: config.envelopeDigest } : {},
-        ...config.agentRuntime ? { agentRuntimeUid: config.agentRuntime } : {}
-      },
-      dependencies.idempotencyKey ?? createIdempotencyKey(dependencies.environment)
+      taskSubmissionRequest(config),
+      dependencies.idempotencyKey ?? createIdempotencyKey(dependencies.environment, config)
     );
     if (("invocationPath" in config || "packagePath" in config) && (created.contractVersion !== "steward.task/v2" || created.diagnostics === void 0)) {
       throw new Error("Steward omitted the direct Task contract projection");
@@ -31128,7 +31148,7 @@ async function main(args = process.argv.slice(2)) {
     const workspace = options.workspace === void 0 ? requiredEnvironment("GITHUB_WORKSPACE") : await validateWorkspaceOption(options.workspace);
     const outputsFile = options.outputsFile === void 0 ? requiredEnvironment("GITHUB_OUTPUT") : await validateOutputsFileOption(workspace, options.outputsFile);
     setActionOutput = actionOutputWriter(outputsFile);
-    const idempotencyKey = options.idempotencyKey ?? createIdempotencyKey(process.env);
+    const explicitIdempotencyKey = options.idempotencyKey ?? (process.env.STEWARD_RUN_IDEMPOTENCY_KEY ? validateIdempotencyKey(process.env.STEWARD_RUN_IDEMPOTENCY_KEY) : void 0);
     for (const input of usedCompatibilityInputs(process.env)) {
       process.stdout.write(
         `::warning title=Deprecated steward-run input::${compatibilityInputNotice(input)}
@@ -31143,6 +31163,7 @@ async function main(args = process.argv.slice(2)) {
       );
     }
     const config = readActionConfig(process.env);
+    const idempotencyKey = explicitIdempotencyKey ?? createIdempotencyKey(process.env, config);
     const githubFetch = await createStewardFetch();
     transports.add(githubFetch);
     const stewardFetch = await createStewardFetch(config.caCertificateFile);
