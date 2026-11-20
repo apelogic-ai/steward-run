@@ -166,13 +166,30 @@ async function stewardClient(
   });
 }
 
+function cancelFailureReason(error: unknown): string {
+  if (!(error instanceof StewardRequestFailure)) return "unknown";
+  return error.httpStatus === undefined
+    ? error.category
+    : `${error.category} (HTTP ${error.httpStatus})`;
+}
+
+function cancelFailureNotice(detail: string): void {
+  process.stdout.write(`Couldn't cancel Steward run${detail}\n`);
+  process.stdout.write(`::error title=Steward Task cancel failed::Couldn't cancel Steward run${detail}\n`);
+}
+
 // The UID of the Task this step submitted stays recorded until its cleanup was requested, so the
 // action's final step can still cancel it when the job is stopped without a signal reaching this
 // process (a container job's `docker exec` never forwards SIGINT or SIGTERM).
-function recordingSubmittedTask(client: TaskClient, stateFile: string): TaskClient {
+function cancellableTasks(
+  client: TaskClient,
+  stateFile: string | undefined,
+  stopped: () => boolean,
+): TaskClient {
   return {
     submitTask: async (request, idempotencyKey) => {
       const task = await client.submitTask(request, idempotencyKey);
+      if (stateFile === undefined) return task;
       try {
         await writeFile(stateFile, `${task.taskUid}\n`, { encoding: "utf8", flag: "wx" });
       } catch {
@@ -188,18 +205,21 @@ function recordingSubmittedTask(client: TaskClient, stateFile: string): TaskClie
     downloadTaskLog: (taskUid, stream) => client.downloadTaskLog(taskUid, stream),
     downloadTaskOutputs: (taskUid) => client.downloadTaskOutputs(taskUid),
     finalizeTask: async (taskUid) => {
-      const task = await client.finalizeTask(taskUid);
-      await rm(stateFile, { force: true }).catch(() => undefined);
+      let task;
+      try {
+        task = await client.finalizeTask(taskUid);
+      } catch (error) {
+        if (stopped()) cancelFailureNotice(` ${taskUid}: ${cancelFailureReason(error)}`);
+        throw error;
+      }
+      if (stateFile !== undefined) await rm(stateFile, { force: true }).catch(() => undefined);
+      if (stopped()) process.stdout.write(`Cancelled Steward run ${taskUid}\n`);
       return task;
     },
   };
 }
 
 const taskUidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
-
-function cancelFailureNotice(detail: string): void {
-  process.stdout.write(`::error title=Steward Task cancel failed::${detail}\n`);
-}
 
 // Runs as the action's final step. It cancels only the Task UID this action invocation recorded
 // after its own submission, and never fails the step: the primary outcome stays the run's own.
@@ -211,12 +231,12 @@ async function cancelRecordedTask(): Promise<void> {
     recorded = await readFile(stateFile, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    cancelFailureNotice("the recorded Steward Task could not be read");
+    cancelFailureNotice(": the recorded Steward Task could not be read");
     return;
   }
   const taskUid = recorded.endsWith("\n") ? recorded.slice(0, -1) : recorded;
   if (!taskUidPattern.test(taskUid)) {
-    cancelFailureNotice("the recorded value is not a Steward Task UID");
+    cancelFailureNotice(": the recorded value is not a Steward Task UID");
     return;
   }
   const controller = new AbortController();
@@ -225,13 +245,9 @@ async function cancelRecordedTask(): Promise<void> {
     const client = await stewardClient(readActionConfig(process.env), controller.signal, transports);
     await client.finalizeTask(taskUid);
     await rm(stateFile, { force: true }).catch(() => undefined);
-    process.stdout.write(`Requested cancellation of Steward Task ${taskUid}\n`);
+    process.stdout.write(`Cancelled Steward run ${taskUid}\n`);
   } catch (error) {
-    const status = error instanceof StewardRequestFailure && error.httpStatus !== undefined
-      ? ` (HTTP ${error.httpStatus})`
-      : "";
-    const category = error instanceof StewardRequestFailure ? error.category : "unknown";
-    cancelFailureNotice(`Steward Task ${taskUid} was not cancelled: ${category}${status}`);
+    cancelFailureNotice(` ${taskUid}: ${cancelFailureReason(error)}`);
   } finally {
     await Promise.allSettled([...transports].map((transport) => transport.close()));
   }
@@ -281,7 +297,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     const client = await stewardClient(config, controller.signal, transports);
     const stateFile = process.env.STEWARD_RUN_CANCEL_STATE_FILE?.trim() || undefined;
     await runWorkflow(config, workspace, {
-      client: stateFile === undefined ? client : recordingSubmittedTask(client, stateFile),
+      client: cancellableTasks(client, stateFile, () => stopped),
       environment: process.env,
       idempotencyKey,
       setOutput: setActionOutput,

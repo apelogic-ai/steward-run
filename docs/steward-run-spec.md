@@ -88,8 +88,9 @@ SIGTERM the action sends it at once and reports `outcome: cancelled`. A containe
 `docker exec` never forwards those signals, so the action records the submitted Task UID in a
 per-invocation file under `RUNNER_TEMP` until its own cleanup request was accepted, and a final
 `always()` step that the runner does not cancel sends the cleanup request for exactly that recorded
-UID. That step sends nothing when no UID is recorded, reports a failed request as a job error, and
-never changes the step's outcome.
+UID. That step sends nothing when no UID is recorded and never changes the step's outcome. Every
+cancel attempt prints one line, `Cancelled Steward run <uid>` or
+`Couldn't cancel Steward run <uid>: <reason>`, and a failed one is also a job error.
 
 The controller-binding wait has a configurable wall-clock deadline of 1–360 minutes and defaults
 to ten minutes. Cancellation and that deadline propagate through binding sleeps, token acquisition, and the

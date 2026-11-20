@@ -31195,10 +31195,21 @@ async function stewardClient(config, signal, transports) {
     fetch: stewardFetch
   });
 }
-function recordingSubmittedTask(client, stateFile) {
+function cancelFailureReason(error) {
+  if (!(error instanceof StewardRequestFailure)) return "unknown";
+  return error.httpStatus === void 0 ? error.category : `${error.category} (HTTP ${error.httpStatus})`;
+}
+function cancelFailureNotice(detail) {
+  process.stdout.write(`Couldn't cancel Steward run${detail}
+`);
+  process.stdout.write(`::error title=Steward Task cancel failed::Couldn't cancel Steward run${detail}
+`);
+}
+function cancellableTasks(client, stateFile, stopped) {
   return {
     submitTask: async (request, idempotencyKey) => {
       const task = await client.submitTask(request, idempotencyKey);
+      if (stateFile === void 0) return task;
       try {
         await (0, import_promises8.writeFile)(stateFile, `${task.taskUid}
 `, { encoding: "utf8", flag: "wx" });
@@ -31215,17 +31226,21 @@ function recordingSubmittedTask(client, stateFile) {
     downloadTaskLog: (taskUid, stream) => client.downloadTaskLog(taskUid, stream),
     downloadTaskOutputs: (taskUid) => client.downloadTaskOutputs(taskUid),
     finalizeTask: async (taskUid) => {
-      const task = await client.finalizeTask(taskUid);
-      await (0, import_promises8.rm)(stateFile, { force: true }).catch(() => void 0);
+      let task;
+      try {
+        task = await client.finalizeTask(taskUid);
+      } catch (error) {
+        if (stopped()) cancelFailureNotice(` ${taskUid}: ${cancelFailureReason(error)}`);
+        throw error;
+      }
+      if (stateFile !== void 0) await (0, import_promises8.rm)(stateFile, { force: true }).catch(() => void 0);
+      if (stopped()) process.stdout.write(`Cancelled Steward run ${taskUid}
+`);
       return task;
     }
   };
 }
 var taskUidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
-function cancelFailureNotice(detail) {
-  process.stdout.write(`::error title=Steward Task cancel failed::${detail}
-`);
-}
 async function cancelRecordedTask() {
   const stateFile = process.env.STEWARD_RUN_CANCEL_STATE_FILE?.trim();
   if (!stateFile) return;
@@ -31234,12 +31249,12 @@ async function cancelRecordedTask() {
     recorded = await (0, import_promises8.readFile)(stateFile, "utf8");
   } catch (error) {
     if (error.code === "ENOENT") return;
-    cancelFailureNotice("the recorded Steward Task could not be read");
+    cancelFailureNotice(": the recorded Steward Task could not be read");
     return;
   }
   const taskUid = recorded.endsWith("\n") ? recorded.slice(0, -1) : recorded;
   if (!taskUidPattern.test(taskUid)) {
-    cancelFailureNotice("the recorded value is not a Steward Task UID");
+    cancelFailureNotice(": the recorded value is not a Steward Task UID");
     return;
   }
   const controller = new AbortController();
@@ -31248,12 +31263,10 @@ async function cancelRecordedTask() {
     const client = await stewardClient(readActionConfig(process.env), controller.signal, transports);
     await client.finalizeTask(taskUid);
     await (0, import_promises8.rm)(stateFile, { force: true }).catch(() => void 0);
-    process.stdout.write(`Requested cancellation of Steward Task ${taskUid}
+    process.stdout.write(`Cancelled Steward run ${taskUid}
 `);
   } catch (error) {
-    const status = error instanceof StewardRequestFailure && error.httpStatus !== void 0 ? ` (HTTP ${error.httpStatus})` : "";
-    const category = error instanceof StewardRequestFailure ? error.category : "unknown";
-    cancelFailureNotice(`Steward Task ${taskUid} was not cancelled: ${category}${status}`);
+    cancelFailureNotice(` ${taskUid}: ${cancelFailureReason(error)}`);
   } finally {
     await Promise.allSettled([...transports].map((transport) => transport.close()));
   }
@@ -31297,7 +31310,7 @@ async function main(args = process.argv.slice(2)) {
     const client = await stewardClient(config, controller.signal, transports);
     const stateFile = process.env.STEWARD_RUN_CANCEL_STATE_FILE?.trim() || void 0;
     await runWorkflow(config, workspace, {
-      client: stateFile === void 0 ? client : recordingSubmittedTask(client, stateFile),
+      client: cancellableTasks(client, stateFile, () => stopped),
       environment: process.env,
       idempotencyKey,
       setOutput: setActionOutput,

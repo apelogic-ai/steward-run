@@ -60,6 +60,8 @@ export interface MockStewardOptions {
   packagePathSupported?: boolean | null;
   // Keep the Task running until a cleanup request cancels it, as Steward does for a live Task.
   runUntilCancelled?: boolean;
+  // Refuse every cleanup request with this HTTP status.
+  refuseCleanupStatus?: number;
 }
 
 type MockDirectTask =
@@ -354,6 +356,12 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
             ? directTask?.stdout ?? "mock agent stdout\n"
             : directTask?.stderr ?? "mock agent stderr\n",
         );
+      } else if (
+        request.method === "DELETE" &&
+        url.pathname === `/v1/tasks/${taskUid}` &&
+        options.refuseCleanupStatus !== undefined
+      ) {
+        json(response, options.refuseCleanupStatus, { error: "TaskCleanupRefused" });
       } else if (request.method === "DELETE" && url.pathname === `/v1/tasks/${taskUid}`) {
         if (options.finalizationMarker) {
           await writeFile(options.finalizationMarker, `${taskUid}\n`, "utf8");

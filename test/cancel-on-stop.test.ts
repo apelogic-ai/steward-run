@@ -39,7 +39,7 @@ interface Fixture {
 }
 
 async function withFixture(
-  options: { runUntilCancelled?: boolean },
+  options: { runUntilCancelled?: boolean; refuseCleanupStatus?: number },
   body: (fixture: Fixture) => Promise<void>,
 ): Promise<void> {
   const workspace = await mkdtemp(join(tmpdir(), "steward-run-cancel-"));
@@ -102,6 +102,7 @@ async function stoppedRun(
     elapsed: number;
     operations: string[];
     outputs: string;
+    stdout: string;
   } | undefined;
   await withFixture({ runUntilCancelled: true }, async ({ mock, outputFile, start }) => {
     const run = start();
@@ -114,6 +115,7 @@ async function stoppedRun(
       elapsed: Date.now() - stoppedAt,
       operations: [...mock.observations.operations],
       outputs: await readFile(outputFile, "utf8"),
+      stdout: run.stdout(),
     };
   });
   if (!result) throw new Error("stopped run did not complete");
@@ -135,8 +137,33 @@ for (const signals of [["SIGTERM"], ["SIGINT"], ["SIGINT", "SIGTERM"]] as const)
     assert.match(run.outputs, /^failure-category=cancelled$/mu);
     assert.match(run.outputs, new RegExp(`^task-uid=${submittedTaskUid}$`, "mu"));
     assert.doesNotMatch(run.outputs, /^outcome=failure$/mu);
+    assert.match(run.stdout, new RegExp(`^Cancelled Steward run ${submittedTaskUid}$`, "mu"));
   });
 }
+
+test("a refused cancel on SIGTERM is reported and keeps the cancelled outcome", async () => {
+  await withFixture(
+    { runUntilCancelled: true, refuseCleanupStatus: 409 },
+    async ({ mock, outputFile, start }) => {
+      const run = start();
+      await until(() => mock.observations.operations.includes("poll"));
+      run.kill("SIGTERM");
+      assert.notEqual(await run.exited, 0);
+
+      assert.deepEqual(
+        mock.observations.requests.filter((r) => r.startsWith("DELETE ")),
+        [deleteSubmittedTask],
+      );
+      assert.match(
+        run.stdout(),
+        new RegExp(`^Couldn't cancel Steward run ${submittedTaskUid}: conflict \\(HTTP 409\\)$`, "mu"),
+      );
+      const outputs = await readFile(outputFile, "utf8");
+      assert.match(outputs, /^outcome=cancelled$/mu);
+      assert.match(outputs, /^failure-category=cancelled$/mu);
+    },
+  );
+});
 
 test("a run killed without a signal leaves its Task for the cancel step, which cancels exactly that Task", async () => {
   // A container job runs the step through `docker exec`, which never forwards SIGINT or SIGTERM;
@@ -157,7 +184,7 @@ test("a run killed without a signal leaves its Task for the cancel step, which c
       mock.observations.requests.filter((r) => r.startsWith("DELETE ")),
       [deleteSubmittedTask],
     );
-    assert.match(cancel.stdout(), new RegExp(`Requested cancellation of Steward Task ${submittedTaskUid}`, "u"));
+    assert.equal(cancel.stdout(), `Cancelled Steward run ${submittedTaskUid}\n`);
     await assert.rejects(readFile(stateFile, "utf8"), { code: "ENOENT" });
   });
 });
@@ -172,6 +199,10 @@ test("the cancel step reports a refused cancel without failing the step", async 
     assert.deepEqual(
       mock.observations.requests.filter((r) => r.startsWith("DELETE ")),
       ["DELETE /v1/tasks/0b0e3a35-7d7a-4c4e-9f43-7ff3c0b6d0a1"],
+    );
+    assert.match(
+      cancel.stdout(),
+      /^Couldn't cancel Steward run 0b0e3a35-7d7a-4c4e-9f43-7ff3c0b6d0a1: dependency \(HTTP 404\)$/mu,
     );
     assert.match(cancel.stdout(), /::error title=Steward Task cancel failed::/u);
   });
@@ -202,6 +233,7 @@ test("refusal: the cancel step never sends a request for a recorded value that i
 
       assert.equal(code, 0, cancel.stderr());
       assert.deepEqual(mock.observations.requests, [], JSON.stringify(recorded));
+      assert.match(cancel.stdout(), /^Couldn't cancel Steward run: the recorded value is not a Steward Task UID$/mu);
       assert.match(cancel.stdout(), /::error title=Steward Task cancel failed::/u);
     });
   }
