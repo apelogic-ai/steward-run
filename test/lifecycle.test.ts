@@ -108,7 +108,7 @@ class FakeClient implements TaskClient {
   async downloadTaskLog(): Promise<Buffer> {
     return Buffer.alloc(0);
   }
-  async finalizeTask(): Promise<Task> {
+  async finalizeTask(_taskUid?: string): Promise<Task> {
     this.calls.push("finalize");
     if (this.finalizeError) throw this.finalizeError;
     this.finalizationStarted = true;

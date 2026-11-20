@@ -82,6 +82,15 @@ The action runs inside the ARC runner job and does exactly two categories of thi
    `runtimeUid: null` while the cancelled Task reaches `finalized: true`; the action confirms that
    cleanup without inventing or publishing a runtime UID.
 
+When the calling job is cancelled or times out after submission, the Task is cancelled too: the
+cleanup request (`DELETE /v1/tasks/{taskUid}`) cancels a Task that has not finished. On SIGINT or
+SIGTERM the action sends it at once and reports `outcome: cancelled`. A container job's
+`docker exec` never forwards those signals, so the action records the submitted Task UID in a
+per-invocation file under `RUNNER_TEMP` until its own cleanup request was accepted, and a final
+`always()` step that the runner does not cancel sends the cleanup request for exactly that recorded
+UID. That step sends nothing when no UID is recorded, reports a failed request as a job error, and
+never changes the step's outcome.
+
 The controller-binding wait has a configurable wall-clock deadline of 1–360 minutes and defaults
 to ten minutes. Cancellation and that deadline propagate through binding sleeps, token acquisition, and the
 in-flight Task-status request; a stalled credential provider or HTTP fetch cannot extend the wait.
@@ -198,7 +207,7 @@ both direct and proxied TLS connections.
 
 | Output | Meaning |
 |---|---|
-| `outcome` | Action result: exactly `success` or `failure` |
+| `outcome` | Action result: exactly `success`, `failure`, or `cancelled` when the job was stopped |
 | `failure-category` | Bounded failure category; empty on success |
 | `http-status` | Numeric Steward or Identity exchange request status when available; empty otherwise |
 | `error-code` | Stable Steward `error` code from a JSON non-2xx response; empty otherwise |

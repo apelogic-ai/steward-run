@@ -7,6 +7,18 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A cancelled or timed-out caller job now cancels its Steward Task instead of leaving it running.
+  This includes jobs that run in a container, where `docker exec` never delivers the runner's
+  SIGINT or SIGTERM: a final step of the action cancels the Task this step submitted if the step
+  did not finish its own cleanup. A cancel failure is reported in the job log and never replaces
+  the primary result.
+
+### Changed
+
+- `outcome` is `cancelled` when the job was stopped (a cancel or a timeout), instead of `failure`.
+
 ## [0.8.8] - 2026-11-09
 
 ### Fixed

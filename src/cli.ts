@@ -3,6 +3,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 
 export interface CallerOptions {
+  cancelRecordedTask?: true;
   idempotencyKey?: string;
   outputsFile?: string;
   workspace?: string;
@@ -35,6 +36,7 @@ export function parseCallerOptions(args: readonly string[]): CallerOptions {
     args: [...args],
     allowPositionals: false,
     options: {
+      "cancel-recorded-task": { type: "boolean" },
       "idempotency-key": { type: "string" },
       "outputs-file": { type: "string" },
       workspace: { type: "string" },
@@ -48,6 +50,7 @@ export function parseCallerOptions(args: readonly string[]): CallerOptions {
   const outputsFile = nonEmptyOption("outputs-file", values["outputs-file"]);
   const workspace = nonEmptyOption("workspace", values.workspace);
   return {
+    ...(values["cancel-recorded-task"] ? { cancelRecordedTask: true as const } : {}),
     ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
     ...(outputsFile === undefined ? {} : { outputsFile }),
     ...(workspace === undefined ? {} : { workspace }),

@@ -16332,7 +16332,7 @@ var require_snapshot_utils = __commonJS({
 var require_snapshot_recorder = __commonJS({
   "node_modules/undici/lib/mock/snapshot-recorder.js"(exports2, module2) {
     "use strict";
-    var { writeFile, readFile: readFile4, mkdir: mkdir2 } = require("node:fs/promises");
+    var { writeFile: writeFile2, readFile: readFile5, mkdir: mkdir2 } = require("node:fs/promises");
     var { dirname: dirname2, resolve: resolve2 } = require("node:path");
     var { setTimeout: setTimeout2, clearTimeout: clearTimeout2 } = require("node:timers");
     var { InvalidArgumentError, UndiciError } = require_errors2();
@@ -16534,7 +16534,7 @@ var require_snapshot_recorder = __commonJS({
           throw new InvalidArgumentError("Snapshot path is required");
         }
         try {
-          const data = await readFile4(resolve2(path), "utf8");
+          const data = await readFile5(resolve2(path), "utf8");
           const parsed = JSON.parse(data);
           if (Array.isArray(parsed)) {
             this.#snapshots.clear();
@@ -16569,7 +16569,7 @@ var require_snapshot_recorder = __commonJS({
           hash,
           snapshot
         }));
-        await writeFile(resolvedPath, JSON.stringify(data, null, 2), { flush: true });
+        await writeFile2(resolvedPath, JSON.stringify(data, null, 2), { flush: true });
       }
       /**
        * Clears all recorded snapshots
@@ -29202,6 +29202,7 @@ function parseCallerOptions(args) {
     args: [...args],
     allowPositionals: false,
     options: {
+      "cancel-recorded-task": { type: "boolean" },
       "idempotency-key": { type: "string" },
       "outputs-file": { type: "string" },
       workspace: { type: "string" }
@@ -29213,6 +29214,7 @@ function parseCallerOptions(args) {
   const outputsFile = nonEmptyOption("outputs-file", values["outputs-file"]);
   const workspace = nonEmptyOption("workspace", values.workspace);
   return {
+    ...values["cancel-recorded-task"] ? { cancelRecordedTask: true } : {},
     ...idempotencyKey === void 0 ? {} : { idempotencyKey },
     ...outputsFile === void 0 ? {} : { outputsFile },
     ...workspace === void 0 ? {} : { workspace }
@@ -31109,7 +31111,7 @@ function safeFailure(error) {
   };
   return new StewardRunFailure(metadata);
 }
-async function reportActionFailure(failure, setActionOutput) {
+async function reportActionFailure(failure, setActionOutput, stopped) {
   const safe = sanitizeFailureMetadata(failure.metadata);
   await publishFailureMetadata(safe, {
     writeAnnotation: async (value, title) => {
@@ -31129,22 +31131,150 @@ async function reportActionFailure(failure, setActionOutput) {
     }
   });
   try {
-    await setActionOutput("outcome", "failure");
+    await setActionOutput("outcome", stopped ? "cancelled" : "failure");
     await setActionOutput("failure-category", safe.failureCategory);
     await setActionOutput("http-status", safe.httpStatus?.toString() ?? "");
     await setActionOutput("error-code", safe.errorCode ?? "");
   } catch {
   }
 }
+async function stewardClient(config, signal, transports) {
+  const githubFetch = await createStewardFetch();
+  transports.add(githubFetch);
+  const stewardFetch = await createStewardFetch(config.caCertificateFile);
+  transports.add(stewardFetch);
+  const discovered = "packagePath" in config ? await discoverTaskAuthentication(
+    config.apiUrl,
+    stewardFetch,
+    signal
+  ) : void 0;
+  if (discovered && !discovered.packagePathSupported) {
+    process.stdout.write(
+      "::error title=Unsupported Steward capability::package-path requires Steward 0.3.10 or later with advertised package-path support\n"
+    );
+    throw new Error("Steward does not advertise package-path support");
+  }
+  const getToken = (() => {
+    switch (config.authentication.kind) {
+      case "github-oidc-discovery":
+        if (discovered) {
+          return identityExchangeTokenProvider(
+            process.env,
+            discovered.exchangeUrl,
+            githubFetch,
+            void 0,
+            discovered.githubOidcAudience,
+            stewardFetch
+          );
+        }
+        return discoveredIdentityExchangeTokenProvider(
+          process.env,
+          config.apiUrl,
+          githubFetch,
+          void 0,
+          stewardFetch
+        );
+      case "github-oidc-exchange":
+        return identityExchangeTokenProvider(
+          process.env,
+          config.authentication.url,
+          githubFetch,
+          void 0,
+          config.authentication.audience,
+          stewardFetch
+        );
+      case "github-oidc":
+        return oidcTokenProvider(process.env, config.authentication.audience, githubFetch);
+      case "bearer-token-file":
+        return shortLivedBearerTokenFileProvider(config.authentication.path);
+    }
+  })();
+  return new StewardClient({
+    baseUrl: config.apiUrl,
+    getToken,
+    fetch: stewardFetch
+  });
+}
+function recordingSubmittedTask(client, stateFile) {
+  return {
+    submitTask: async (request, idempotencyKey) => {
+      const task = await client.submitTask(request, idempotencyKey);
+      try {
+        await (0, import_promises8.writeFile)(stateFile, `${task.taskUid}
+`, { encoding: "utf8", flag: "wx" });
+      } catch {
+        process.stdout.write(
+          "::warning title=Steward Task cancel unavailable::the submitted Task could not be recorded for cancellation if this job is stopped\n"
+        );
+      }
+      return task;
+    },
+    uploadTaskInputs: (taskUid, createArchive) => client.uploadTaskInputs(taskUid, createArchive),
+    executeTask: (taskUid) => client.executeTask(taskUid),
+    getTask: (taskUid, options) => client.getTask(taskUid, options),
+    downloadTaskLog: (taskUid, stream) => client.downloadTaskLog(taskUid, stream),
+    downloadTaskOutputs: (taskUid) => client.downloadTaskOutputs(taskUid),
+    finalizeTask: async (taskUid) => {
+      const task = await client.finalizeTask(taskUid);
+      await (0, import_promises8.rm)(stateFile, { force: true }).catch(() => void 0);
+      return task;
+    }
+  };
+}
+var taskUidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+function cancelFailureNotice(detail) {
+  process.stdout.write(`::error title=Steward Task cancel failed::${detail}
+`);
+}
+async function cancelRecordedTask() {
+  const stateFile = process.env.STEWARD_RUN_CANCEL_STATE_FILE?.trim();
+  if (!stateFile) return;
+  let recorded;
+  try {
+    recorded = await (0, import_promises8.readFile)(stateFile, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    cancelFailureNotice("the recorded Steward Task could not be read");
+    return;
+  }
+  const taskUid = recorded.endsWith("\n") ? recorded.slice(0, -1) : recorded;
+  if (!taskUidPattern.test(taskUid)) {
+    cancelFailureNotice("the recorded value is not a Steward Task UID");
+    return;
+  }
+  const controller = new AbortController();
+  const transports = /* @__PURE__ */ new Set();
+  try {
+    const client = await stewardClient(readActionConfig(process.env), controller.signal, transports);
+    await client.finalizeTask(taskUid);
+    await (0, import_promises8.rm)(stateFile, { force: true }).catch(() => void 0);
+    process.stdout.write(`Requested cancellation of Steward Task ${taskUid}
+`);
+  } catch (error) {
+    const status = error instanceof StewardRequestFailure && error.httpStatus !== void 0 ? ` (HTTP ${error.httpStatus})` : "";
+    const category = error instanceof StewardRequestFailure ? error.category : "unknown";
+    cancelFailureNotice(`Steward Task ${taskUid} was not cancelled: ${category}${status}`);
+  } finally {
+    await Promise.allSettled([...transports].map((transport) => transport.close()));
+  }
+}
 async function main(args = process.argv.slice(2)) {
   const controller = new AbortController();
   const transports = /* @__PURE__ */ new Set();
   let setActionOutput = actionOutputWriter(process.env.GITHUB_OUTPUT?.trim());
-  const cancel = () => controller.abort();
-  process.once("SIGINT", cancel);
-  process.once("SIGTERM", cancel);
+  let stopped = false;
+  const cancel = () => {
+    stopped = true;
+    controller.abort();
+  };
+  process.on("SIGINT", cancel);
+  process.on("SIGTERM", cancel);
   try {
     const options = parseCallerOptions(args);
+    if (options.cancelRecordedTask) {
+      await cancelRecordedTask();
+      return;
+    }
     const workspace = options.workspace === void 0 ? requiredEnvironment("GITHUB_WORKSPACE") : await validateWorkspaceOption(options.workspace);
     const outputsFile = options.outputsFile === void 0 ? requiredEnvironment("GITHUB_OUTPUT") : await validateOutputsFileOption(workspace, options.outputsFile);
     setActionOutput = actionOutputWriter(outputsFile);
@@ -31164,63 +31294,10 @@ async function main(args = process.argv.slice(2)) {
     }
     const config = readActionConfig(process.env);
     const idempotencyKey = explicitIdempotencyKey ?? createIdempotencyKey(process.env, config);
-    const githubFetch = await createStewardFetch();
-    transports.add(githubFetch);
-    const stewardFetch = await createStewardFetch(config.caCertificateFile);
-    transports.add(stewardFetch);
-    const discovered = "packagePath" in config ? await discoverTaskAuthentication(
-      config.apiUrl,
-      stewardFetch,
-      controller.signal
-    ) : void 0;
-    if (discovered && !discovered.packagePathSupported) {
-      process.stdout.write(
-        "::error title=Unsupported Steward capability::package-path requires Steward 0.3.10 or later with advertised package-path support\n"
-      );
-      throw new Error("Steward does not advertise package-path support");
-    }
-    const getToken = (() => {
-      switch (config.authentication.kind) {
-        case "github-oidc-discovery":
-          if (discovered) {
-            return identityExchangeTokenProvider(
-              process.env,
-              discovered.exchangeUrl,
-              githubFetch,
-              void 0,
-              discovered.githubOidcAudience,
-              stewardFetch
-            );
-          }
-          return discoveredIdentityExchangeTokenProvider(
-            process.env,
-            config.apiUrl,
-            githubFetch,
-            void 0,
-            stewardFetch
-          );
-        case "github-oidc-exchange":
-          return identityExchangeTokenProvider(
-            process.env,
-            config.authentication.url,
-            githubFetch,
-            void 0,
-            config.authentication.audience,
-            stewardFetch
-          );
-        case "github-oidc":
-          return oidcTokenProvider(process.env, config.authentication.audience, githubFetch);
-        case "bearer-token-file":
-          return shortLivedBearerTokenFileProvider(config.authentication.path);
-      }
-    })();
-    const client = new StewardClient({
-      baseUrl: config.apiUrl,
-      getToken,
-      fetch: stewardFetch
-    });
+    const client = await stewardClient(config, controller.signal, transports);
+    const stateFile = process.env.STEWARD_RUN_CANCEL_STATE_FILE?.trim() || void 0;
     await runWorkflow(config, workspace, {
-      client,
+      client: stateFile === void 0 ? client : recordingSubmittedTask(client, stateFile),
       environment: process.env,
       idempotencyKey,
       setOutput: setActionOutput,
@@ -31233,7 +31310,7 @@ async function main(args = process.argv.slice(2)) {
     await setActionOutput("error-code", "");
   } catch (error) {
     const failure = safeFailure(error);
-    await reportActionFailure(failure, setActionOutput);
+    await reportActionFailure(failure, setActionOutput, stopped);
     throw failure;
   } finally {
     process.off("SIGINT", cancel);
