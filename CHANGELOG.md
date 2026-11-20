@@ -7,6 +7,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.9] - 2026-11-20
+
 ### Fixed
 
 - A cancelled or timed-out caller job now cancels its Steward Task instead of leaving it running.
