@@ -158,7 +158,9 @@ jobs:
             job="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" \
               --jq ".jobs[] | select(.name == \"$case job\") | \"\(.id) \(.conclusion)\"")"
             echo "job id and conclusion: $job"
-            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/${job%% *}/logs" > "$case.log"
+            # Job logs carry terminal escape sequences, which `gh api` refuses to print.
+            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/jobs/${job%% *}/logs" > "$case.log"
             grep -F -e 'The operation was canceled' -e 'maximum execution time' "$case.log" || true
             # The line must come from the action's final cancel step, not from the stopped run.
             awk -v line="Cancelled Steward run $TASK_UID" '
