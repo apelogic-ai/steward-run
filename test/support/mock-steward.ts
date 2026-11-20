@@ -205,15 +205,17 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
     operations: [],
     requests: [],
   };
-  const issuedAt = Math.floor(Date.now() / 1_000);
   const sourceToken = jwt({ aud: sourceAudience, sub: "mock-github-caller" });
-  const stewardToken = options.acceptedBearerToken ??
-    jwt({
-      aud: stewardAudience,
-      exp: issuedAt + 120,
-      iat: issuedAt,
-      sub: "mock-corporate-user",
-    });
+  const mintStewardToken = () => {
+    const issuedAt = Math.floor(Date.now() / 1_000);
+    return {
+      token: jwt({ aud: stewardAudience, exp: issuedAt + 120, iat: issuedAt, sub: "mock-corporate-user" }),
+      refreshAt: issuedAt + 60,
+    };
+  };
+  // A run can outlast one token, so an exchange near expiry issues a fresh one.
+  let minted = mintStewardToken();
+  let stewardToken = options.acceptedBearerToken ?? minted.token;
   const acceptedSourceTokens = new Set([sourceToken]);
   let payload: Buffer<ArrayBufferLike> | undefined;
   let baseUrl = "";
@@ -273,6 +275,10 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         }
         acceptedSourceTokens.add(bearer);
         observations.sourceTokenAtExchange += 1;
+        if (!options.acceptedBearerToken && Date.now() / 1_000 >= minted.refreshAt) {
+          minted = mintStewardToken();
+          stewardToken = minted.token;
+        }
         if ((await requestBody(request)).length !== 0) {
           json(response, 400, { error: "invalid_request" });
           return;
