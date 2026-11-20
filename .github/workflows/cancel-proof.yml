@@ -1,0 +1,169 @@
+name: Cancel proof
+
+# Proves that a stopped container job cancels its Steward Task. A container job runs each step
+# through `docker exec`, which never forwards the runner's SIGINT or SIGTERM, so only the action's
+# final always() step can cancel the Task. This run cancels itself, so its conclusion is
+# "cancelled" by design; the "verify cancel proof" job carries the result.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  timed-out:
+    name: timed-out job
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    container:
+      image: node:24-bookworm-slim
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: npm ci
+      - id: mock
+        name: Start the mock Steward with a Task that keeps running
+        shell: bash
+        run: |
+          mkdir -p in proof
+          printf 'cancel proof' > in/payload.bin
+          MOCK_STEWARD_RUN_UNTIL_CANCELLED=true MOCK_STEWARD_REQUEST_LOG="$PWD/proof/requests.log" \
+            nohup node --import tsx test/support/mock-steward.ts \
+            "$RUNNER_TEMP/mock-port" "$RUNNER_TEMP/mock-finalized" \
+            > proof/mock.log 2>&1 < /dev/null &
+          for _ in {1..30}; do
+            if test -s "$RUNNER_TEMP/mock-port"; then break; fi
+            sleep 1
+          done
+          test -s "$RUNNER_TEMP/mock-port"
+          echo "url=http://127.0.0.1:$(<"$RUNNER_TEMP/mock-port")" >> "$GITHUB_OUTPUT"
+      - uses: ./
+        with:
+          workflow: repository-review@1
+          inputs: in
+          outputs: out
+          steward-api-url: ${{ steps.mock.outputs.url }}
+          identity-exchange-url: ${{ steps.mock.outputs.url }}/v1/exchange
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cancel-proof-timed-out
+          path: proof/
+
+  cancelled:
+    name: cancelled job
+    needs: timed-out
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    container:
+      image: node:24-bookworm-slim
+    permissions:
+      actions: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: npm ci
+      - id: mock
+        name: Start the mock Steward with a Task that keeps running
+        shell: bash
+        run: |
+          mkdir -p in proof
+          printf 'cancel proof' > in/payload.bin
+          MOCK_STEWARD_RUN_UNTIL_CANCELLED=true MOCK_STEWARD_REQUEST_LOG="$PWD/proof/requests.log" \
+            nohup node --import tsx test/support/mock-steward.ts \
+            "$RUNNER_TEMP/mock-port" "$RUNNER_TEMP/mock-finalized" \
+            > proof/mock.log 2>&1 < /dev/null &
+          for _ in {1..30}; do
+            if test -s "$RUNNER_TEMP/mock-port"; then break; fi
+            sleep 1
+          done
+          test -s "$RUNNER_TEMP/mock-port"
+          echo "url=http://127.0.0.1:$(<"$RUNNER_TEMP/mock-port")" >> "$GITHUB_OUTPUT"
+      - name: Cancel this run once the Task is recorded
+        shell: bash
+        env:
+          CANCEL_TOKEN: ${{ github.token }}
+        run: |
+          nohup node -e '
+            const { existsSync, readdirSync } = require("node:fs");
+            const { join } = require("node:path");
+            const temp = process.env.RUNNER_TEMP;
+            const tick = setInterval(() => {
+              const recorded = readdirSync(temp).some((name) =>
+                name.startsWith("steward-run.") && existsSync(join(temp, name, "task-uid")));
+              if (!recorded) return;
+              clearInterval(tick);
+              setTimeout(async () => {
+                const url = `${process.env.GITHUB_API_URL}/repos/${process.env.GITHUB_REPOSITORY}` +
+                  `/actions/runs/${process.env.GITHUB_RUN_ID}/cancel`;
+                const response = await fetch(url, {
+                  method: "POST",
+                  headers: {
+                    accept: "application/vnd.github+json",
+                    authorization: `Bearer ${process.env.CANCEL_TOKEN}`,
+                  },
+                });
+                console.log(`run cancel requested: HTTP ${response.status}`);
+              }, 5000);
+            }, 500);
+          ' > proof/self-cancel.log 2>&1 < /dev/null &
+      - uses: ./
+        with:
+          workflow: repository-review@1
+          inputs: in
+          outputs: out
+          steward-api-url: ${{ steps.mock.outputs.url }}
+          identity-exchange-url: ${{ steps.mock.outputs.url }}/v1/exchange
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cancel-proof-cancelled
+          path: proof/
+
+  verify:
+    name: verify cancel proof
+    needs: [timed-out, cancelled]
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: cancel-proof-*
+          path: proof
+      - name: The final step cancelled each stopped job's Task exactly by its UID
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TASK_UID: 2f9f6ade-261d-4090-9532-9e157b59db2e
+        run: |
+          set -euo pipefail
+          for case in timed-out cancelled; do
+            echo "== $case job"
+            requests="proof/cancel-proof-$case/requests.log"
+            cat "$requests"
+            deletes="$(grep -c '^DELETE ' "$requests" || true)"
+            test "$deletes" -ge 1
+            if grep '^DELETE ' "$requests" | grep -vqxF "DELETE /v1/tasks/$TASK_UID"; then
+              echo "::error::$case job sent a cancel for a Task it did not submit"
+              exit 1
+            fi
+            job="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" \
+              --jq ".jobs[] | select(.name == \"$case job\") | \"\(.id) \(.conclusion)\"")"
+            echo "job id and conclusion: $job"
+            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/${job%% *}/logs" > "$case.log"
+            grep -F -e 'The operation was canceled' -e 'maximum execution time' "$case.log" || true
+            # The line must come from the action's final cancel step, not from the stopped run.
+            awk -v line="Cancelled Steward run $TASK_UID" '
+              /dist\/index\.cjs" --cancel-recorded-task/ { step = 1 }
+              step && index($0, line) { found = 1; print }
+              END { exit !found }
+            ' "$case.log"
+          done

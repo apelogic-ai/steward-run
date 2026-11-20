@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { writeFile } from "node:fs/promises";
+import { appendFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import tar from "tar-stream";
 
@@ -62,6 +62,8 @@ export interface MockStewardOptions {
   runUntilCancelled?: boolean;
   // Refuse every cleanup request with this HTTP status.
   refuseCleanupStatus?: number;
+  // Append every request line to this file, for a check that runs outside the process.
+  requestLog?: string;
 }
 
 type MockDirectTask =
@@ -219,6 +221,9 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
     void (async () => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       observations.requests.push(`${request.method ?? ""} ${url.pathname}`);
+      if (options.requestLog) {
+        await appendFile(options.requestLog, `${request.method ?? ""} ${url.pathname}\n`, "utf8");
+      }
       if (request.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
         observations.protectedResourceDiscoveryRequests += 1;
         json(response, 200, {
@@ -406,9 +411,12 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const finalizationMarker = process.argv[3];
   if (!portFile) throw new Error("mock server requires a port-file argument");
   if (!finalizationMarker) throw new Error("mock server requires a finalization-marker argument");
+  const requestLog = process.env.MOCK_STEWARD_REQUEST_LOG;
   const mock = await startMockSteward({
     finalizationMarker,
     acceptExternalGithubOidcToken: true,
+    runUntilCancelled: process.env.MOCK_STEWARD_RUN_UNTIL_CANCELLED === "true",
+    ...(requestLog ? { requestLog } : {}),
   });
   await writeFile(portFile, new URL(mock.url).port, "utf8");
   const stop = () => void mock.close().then(() => process.exit(0));
