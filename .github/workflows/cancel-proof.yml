@@ -3,10 +3,10 @@ name: Cancel proof
 # Proves that a stopped container job cancels its Steward Task. A container job runs each step
 # through `docker exec`, which never forwards the runner's SIGINT or SIGTERM, so only the action's
 # final always() step can cancel the Task. This run cancels itself, so its conclusion is
-# "cancelled" by design; the "verify cancel proof" job carries the result.
+# "cancelled" by design; the "verify cancel proof" job carries the result. It runs on dispatch only,
+# so its deliberately stopped jobs never show as failed checks on a pull request.
 
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
