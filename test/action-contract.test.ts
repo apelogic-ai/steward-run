@@ -77,6 +77,27 @@ test("the composite action exposes the versioned steward-run contract", async ()
   assert.equal(setupNode?.with?.["node-version"], "24.21.0");
   assert.equal(setupNode?.with?.["package-manager-cache"], false);
   assert.match(action.runs.steps.find((step) => step.id === "steward-run")?.run ?? "", /dist\/index\.cjs/);
+
+  // A container job never forwards the runner's stop signals, so the last step cancels the Task.
+  const steps = action.runs.steps as Array<(typeof action.runs.steps)[number] & {
+    env?: Record<string, string>;
+  }>;
+  const record = steps.findIndex((step) => step.id === "cancel-state");
+  const run = steps.findIndex((step) => step.id === "steward-run");
+  assert.ok(record >= 0 && record < run);
+  assert.match(steps[record]?.run ?? "", /mktemp -d "\$\{RUNNER_TEMP:\?\}\/steward-run\.XXXXXX"/u);
+  const cancelStep = steps.at(-1);
+  assert.equal(steps.length - 1, run + 1);
+  assert.equal(
+    cancelStep?.if,
+    "always() && steps.cancel-state.outputs.file != '' && steps.steward-run.outcome != 'skipped'",
+  );
+  assert.equal(cancelStep?.run, 'exec node "$GITHUB_ACTION_PATH/dist/index.cjs" --cancel-recorded-task');
+  assert.deepEqual(cancelStep?.env, steps[run]?.env);
+  assert.equal(
+    steps[run]?.env?.STEWARD_RUN_CANCEL_STATE_FILE,
+    "${{ steps.cancel-state.outputs.file }}",
+  );
 });
 
 test("the Steward Task API contract covers the complete lifecycle", async () => {

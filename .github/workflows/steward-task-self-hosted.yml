@@ -76,7 +76,7 @@ on:
         default: ""
     outputs:
       outcome:
-        description: Action result, exactly success or failure
+        description: Action result, exactly success, failure, or cancelled when the job was stopped
         value: ${{ jobs.governed.outputs.outcome }}
       failure-category:
         description: Bounded steward-run failure category; empty on success

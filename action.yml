@@ -59,7 +59,7 @@ inputs:
     default: "10"
 outputs:
   outcome:
-    description: Action result, exactly success or failure
+    description: Action result, exactly success, failure, or cancelled when the job was stopped
     value: ${{ steps.steward-run.outputs.outcome }}
   failure-category:
     description: Bounded steward-run failure category; empty on success
@@ -99,6 +99,13 @@ runs:
       with:
         node-version: 24.21.0
         package-manager-cache: false
+    - name: Reserve the cancellation record
+      id: cancel-state
+      shell: bash
+      run: |
+        set -euo pipefail
+        state_dir="$(mktemp -d "${RUNNER_TEMP:?}/steward-run.XXXXXX")"
+        printf 'file=%s\n' "$state_dir/task-uid" >> "$GITHUB_OUTPUT"
     - id: steward-run
       shell: bash
       env:
@@ -118,4 +125,29 @@ runs:
         STEWARD_RUN_AGENT_RUNTIME: ${{ inputs.agent-runtime }}
         STEWARD_RUN_RUNTIME_BINDING_TIMEOUT_MINUTES: ${{ inputs.runtime-binding-timeout-minutes }}
         STEWARD_RUN_IDEMPOTENCY_KEY: ${{ inputs.idempotency-key }}
+        STEWARD_RUN_CANCEL_STATE_FILE: ${{ steps.cancel-state.outputs.file }}
       run: exec node "$GITHUB_ACTION_PATH/dist/index.cjs"
+    # A container job never forwards SIGINT or SIGTERM to the step above, so this step, which the
+    # runner does not cancel, cancels the Task that step submitted if it did not finish cleanup.
+    - name: Cancel the Steward Task if the job stopped
+      if: always() && steps.cancel-state.outputs.file != '' && steps.steward-run.outcome != 'skipped'
+      shell: bash
+      env:
+        STEWARD_RUN_WORKFLOW: ${{ inputs.workflow }}
+        STEWARD_RUN_ENVELOPE_DIGEST: ${{ inputs.envelope-digest }}
+        STEWARD_RUN_INVOCATION_PATH: ${{ inputs.invocation-path }}
+        STEWARD_RUN_PACKAGE_PATH: ${{ inputs.package-path }}
+        STEWARD_RUN_EXECUTION_LOG: ${{ inputs.execution-log }}
+        STEWARD_RUN_INPUTS: ${{ inputs.inputs }}
+        STEWARD_RUN_OUTPUTS: ${{ inputs.outputs }}
+        STEWARD_RUN_API_URL: ${{ inputs.steward-api-url }}
+        STEWARD_RUN_CA_CERTIFICATE_FILE: ${{ inputs.steward-ca-certificate-file }}
+        STEWARD_RUN_IDENTITY_EXCHANGE_URL: ${{ inputs.identity-exchange-url }}
+        STEWARD_RUN_IDENTITY_EXCHANGE_AUDIENCE: ${{ inputs.identity-exchange-audience }}
+        STEWARD_RUN_OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
+        STEWARD_RUN_BEARER_TOKEN_FILE: ${{ inputs.bearer-token-file }}
+        STEWARD_RUN_AGENT_RUNTIME: ${{ inputs.agent-runtime }}
+        STEWARD_RUN_RUNTIME_BINDING_TIMEOUT_MINUTES: ${{ inputs.runtime-binding-timeout-minutes }}
+        STEWARD_RUN_IDEMPOTENCY_KEY: ${{ inputs.idempotency-key }}
+        STEWARD_RUN_CANCEL_STATE_FILE: ${{ steps.cancel-state.outputs.file }}
+      run: exec node "$GITHUB_ACTION_PATH/dist/index.cjs" --cancel-recorded-task

@@ -49,9 +49,9 @@ details map to `unknown`; successful runs do not publish failure metadata.
 
 The action and all three reusable workflows in this source tree also emit
 bounded `outcome`, `failure-category`, `http-status`, and `error-code` step outputs.
-`outcome` is exactly `success` or `failure`; the other three are empty when not
-applicable. Existing `status`, `task-uid`, and `runtime-uid` retain their
-meanings. A calling job that needs to inspect failure outputs must give the
+`outcome` is exactly `success`, `failure`, or `cancelled` when the job was stopped
+(cancelled or timed out); the other three are empty when not applicable.
+Existing `status`, `task-uid`, and `runtime-uid` retain their meanings. A calling job that needs to inspect failure outputs must give the
 action step `continue-on-error: true` and branch on those bounded values; no
 other response-body data or credential is exposed.
 

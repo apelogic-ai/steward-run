@@ -108,7 +108,7 @@ class FakeClient implements TaskClient {
   async downloadTaskLog(): Promise<Buffer> {
     return Buffer.alloc(0);
   }
-  async finalizeTask(): Promise<Task> {
+  async finalizeTask(_taskUid?: string): Promise<Task> {
     this.calls.push("finalize");
     if (this.finalizeError) throw this.finalizeError;
     this.finalizationStarted = true;
@@ -1006,6 +1006,37 @@ test("finalization tolerates real sandbox teardown latency and cancellation repo
       },
     );
     assert.equal(cancellingWithOutputError.calls.at(-1), "finalize");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("refusal: cleanup cancels only the Task this job submitted, never one Steward names later", async () => {
+  const root = await fixture();
+  const foreignTaskUid = "d296d3b4-b25f-4e78-a0c5-6fc637cf69cc";
+  try {
+    for (const foreignAt of ["binding", "execution"] as const) {
+      const client = new FakeClient();
+      const finalizedUids: string[] = [];
+      if (foreignAt === "binding") {
+        client.submittedTask = { ...baseTask, runtimeUid: null };
+        client.bindingTasks = [{ ...baseTask, runtimeUid: null, taskUid: foreignTaskUid }];
+      } else {
+        client.phases = ["running"];
+        const originalGet = client.getTask.bind(client);
+        client.getTask = async () => {
+          const current = await originalGet();
+          return client.finalizationStarted ? current : { ...current, taskUid: foreignTaskUid };
+        };
+      }
+      const originalFinalize = client.finalizeTask.bind(client);
+      client.finalizeTask = async (taskUid: string) => {
+        finalizedUids.push(taskUid);
+        return originalFinalize();
+      };
+      await assert.rejects(runWorkflow(config, root, dependencies(client, {})), StewardRunFailure);
+      assert.deepEqual(finalizedUids, [baseTask.taskUid], foreignAt);
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

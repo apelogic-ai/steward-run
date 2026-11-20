@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { writeFile } from "node:fs/promises";
+import { appendFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import tar from "tar-stream";
 
@@ -33,6 +33,7 @@ export interface MockSteward {
     stewardTokenAtExchange: number;
     stewardTokenAtSteward: number;
     operations: MockOperation[];
+    requests: string[];
     taskSubmission?: unknown;
     idempotencyKey?: string;
   };
@@ -57,6 +58,12 @@ export interface MockStewardOptions {
     stderr?: string;
   };
   packagePathSupported?: boolean | null;
+  // Keep the Task running until a cleanup request cancels it, as Steward does for a live Task.
+  runUntilCancelled?: boolean;
+  // Refuse every cleanup request with this HTTP status.
+  refuseCleanupStatus?: number;
+  // Append every request line to this file, for a check that runs outside the process.
+  requestLog?: string;
 }
 
 type MockDirectTask =
@@ -116,7 +123,7 @@ function hasExactAudience(token: string, audience: string): boolean {
 
 function task(
   finalized: boolean,
-  phase: "submitted" | "running" | "succeeded" | "failed",
+  phase: "submitted" | "running" | "succeeded" | "failed" | "cancelled",
   failureReason?: string,
   directTask?: MockDirectTask,
 ) {
@@ -196,22 +203,29 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
     stewardTokenAtExchange: 0,
     stewardTokenAtSteward: 0,
     operations: [],
+    requests: [],
   };
-  const issuedAt = Math.floor(Date.now() / 1_000);
   const sourceToken = jwt({ aud: sourceAudience, sub: "mock-github-caller" });
-  const stewardToken = options.acceptedBearerToken ??
-    jwt({
-      aud: stewardAudience,
-      exp: issuedAt + 120,
-      iat: issuedAt,
-      sub: "mock-corporate-user",
-    });
+  const mintStewardToken = () => {
+    const issuedAt = Math.floor(Date.now() / 1_000);
+    return {
+      token: jwt({ aud: stewardAudience, exp: issuedAt + 120, iat: issuedAt, sub: "mock-corporate-user" }),
+      refreshAt: issuedAt + 60,
+    };
+  };
+  // A run can outlast one token, so an exchange near expiry issues a fresh one.
+  let minted = mintStewardToken();
+  let stewardToken = options.acceptedBearerToken ?? minted.token;
   const acceptedSourceTokens = new Set([sourceToken]);
   let payload: Buffer<ArrayBufferLike> | undefined;
   let baseUrl = "";
   const server = createServer((request, response) => {
     void (async () => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      observations.requests.push(`${request.method ?? ""} ${url.pathname}`);
+      if (options.requestLog) {
+        await appendFile(options.requestLog, `${request.method ?? ""} ${url.pathname}\n`, "utf8");
+      }
       if (request.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
         observations.protectedResourceDiscoveryRequests += 1;
         json(response, 200, {
@@ -261,6 +275,10 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         }
         acceptedSourceTokens.add(bearer);
         observations.sourceTokenAtExchange += 1;
+        if (!options.acceptedBearerToken && Date.now() / 1_000 >= minted.refreshAt) {
+          minted = mintStewardToken();
+          stewardToken = minted.token;
+        }
         if ((await requestBody(request)).length !== 0) {
           json(response, 400, { error: "invalid_request" });
           return;
@@ -320,7 +338,9 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         json(
           response,
           200,
-          options.terminalFailureReason === undefined
+          options.runUntilCancelled
+            ? task(observations.finalized, observations.finalized ? "cancelled" : "running", undefined, directTask)
+            : options.terminalFailureReason === undefined
             ? task(observations.finalized, "succeeded", undefined, directTask)
             : task(
                 observations.finalized,
@@ -347,6 +367,12 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
             ? directTask?.stdout ?? "mock agent stdout\n"
             : directTask?.stderr ?? "mock agent stderr\n",
         );
+      } else if (
+        request.method === "DELETE" &&
+        url.pathname === `/v1/tasks/${taskUid}` &&
+        options.refuseCleanupStatus !== undefined
+      ) {
+        json(response, options.refuseCleanupStatus, { error: "TaskCleanupRefused" });
       } else if (request.method === "DELETE" && url.pathname === `/v1/tasks/${taskUid}`) {
         if (options.finalizationMarker) {
           await writeFile(options.finalizationMarker, `${taskUid}\n`, "utf8");
@@ -356,7 +382,9 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         json(
           response,
           202,
-          options.terminalFailureReason === undefined
+          options.runUntilCancelled
+            ? task(false, "running", undefined, directTask)
+            : options.terminalFailureReason === undefined
             ? task(true, "succeeded", undefined, directTask)
             : task(true, "failed", options.terminalFailureReason, directTask),
         );
@@ -389,9 +417,12 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const finalizationMarker = process.argv[3];
   if (!portFile) throw new Error("mock server requires a port-file argument");
   if (!finalizationMarker) throw new Error("mock server requires a finalization-marker argument");
+  const requestLog = process.env.MOCK_STEWARD_REQUEST_LOG;
   const mock = await startMockSteward({
     finalizationMarker,
     acceptExternalGithubOidcToken: true,
+    runUntilCancelled: process.env.MOCK_STEWARD_RUN_UNTIL_CANCELLED === "true",
+    ...(requestLog ? { requestLog } : {}),
   });
   await writeFile(portFile, new URL(mock.url).port, "utf8");
   const stop = () => void mock.close().then(() => process.exit(0));
