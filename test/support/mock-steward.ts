@@ -33,6 +33,7 @@ export interface MockSteward {
     stewardTokenAtExchange: number;
     stewardTokenAtSteward: number;
     operations: MockOperation[];
+    requests: string[];
     taskSubmission?: unknown;
     idempotencyKey?: string;
   };
@@ -57,6 +58,8 @@ export interface MockStewardOptions {
     stderr?: string;
   };
   packagePathSupported?: boolean | null;
+  // Keep the Task running until a cleanup request cancels it, as Steward does for a live Task.
+  runUntilCancelled?: boolean;
 }
 
 type MockDirectTask =
@@ -116,7 +119,7 @@ function hasExactAudience(token: string, audience: string): boolean {
 
 function task(
   finalized: boolean,
-  phase: "submitted" | "running" | "succeeded" | "failed",
+  phase: "submitted" | "running" | "succeeded" | "failed" | "cancelled",
   failureReason?: string,
   directTask?: MockDirectTask,
 ) {
@@ -196,6 +199,7 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
     stewardTokenAtExchange: 0,
     stewardTokenAtSteward: 0,
     operations: [],
+    requests: [],
   };
   const issuedAt = Math.floor(Date.now() / 1_000);
   const sourceToken = jwt({ aud: sourceAudience, sub: "mock-github-caller" });
@@ -212,6 +216,7 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
   const server = createServer((request, response) => {
     void (async () => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      observations.requests.push(`${request.method ?? ""} ${url.pathname}`);
       if (request.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
         observations.protectedResourceDiscoveryRequests += 1;
         json(response, 200, {
@@ -320,7 +325,9 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         json(
           response,
           200,
-          options.terminalFailureReason === undefined
+          options.runUntilCancelled
+            ? task(observations.finalized, observations.finalized ? "cancelled" : "running", undefined, directTask)
+            : options.terminalFailureReason === undefined
             ? task(observations.finalized, "succeeded", undefined, directTask)
             : task(
                 observations.finalized,
@@ -356,7 +363,9 @@ export async function startMockSteward(options: MockStewardOptions = {}): Promis
         json(
           response,
           202,
-          options.terminalFailureReason === undefined
+          options.runUntilCancelled
+            ? task(false, "running", undefined, directTask)
+            : options.terminalFailureReason === undefined
             ? task(true, "succeeded", undefined, directTask)
             : task(true, "failed", options.terminalFailureReason, directTask),
         );
